@@ -275,6 +275,7 @@ export default function App() {
   const extremeSpeedBoost = useRef(0); // імпульс за 22+/с, забувається ×0.75
   const suspicionCooldownUntil = useRef(0); // після пройденого challenge
   const syntheticTaps = useRef<number[]>([]); // ts скриптових подій (isTrusted=false)
+  const [karmaInfo, setKarmaInfo] = useState(false); // меню «що це?» біля спідометра
 
   /* Казино */
   const [casinoGame, setCasinoGame] = useState<'slots' | 'dice' | 'wheel'>('slots');
@@ -1852,6 +1853,54 @@ export default function App() {
         </div>
       )}
 
+      {/* Меню «Що це?» — пояснення карми та зон */}
+      {karmaInfo && (
+        <div className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-sm flex items-center justify-center p-6" onClick={() => setKarmaInfo(false)}>
+          <div
+            className="glass border border-amber-500/40 rounded-3xl p-5 max-w-xs w-full max-h-[85vh] overflow-y-auto"
+            style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-4xl mb-2 text-center">🛡</div>
+            <h2 className="text-lg font-black text-amber-100 text-center mb-1">TapSentinel v5</h2>
+            <p className="text-[11px] text-amber-300/70 leading-relaxed mb-3">
+              Це поведінковий рейтинг акаунта — <b className="text-amber-200">карма 0–100</b>. Античит стежить за
+              ритмом натискань: люди тапають нерівно, з паузами й різними точками — боти рівно, як метроном.
+              Підозрілі патерни знижують карму, а чим менша карма — тим більше обмежень.
+            </p>
+            <div className="space-y-1.5 text-[11px] leading-relaxed mb-3">
+              <div className="flex items-start gap-2">
+                <span>🟢</span>
+                <span><b className="text-emerald-300">75–100 — Чистий:</b> все доступно</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span>🟡</span>
+                <span><b className="text-yellow-300">50–74 — Під підозрою:</b> ставки в казино максимум 1K</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span>🟠</span>
+                <span><b className="text-orange-300">25–49 — Погана репутація:</b> казино закрите, офлайн-дохід −50%</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span>🔴</span>
+                <span><b className="text-red-300">0–24 — Тінь бабусі:</b> кліки дають ×0.05, лідерборд заморожено, нагороди від адміна не видаються</span>
+              </div>
+            </div>
+            <div className="bg-black/30 rounded-xl p-2.5 text-[11px] text-amber-300/70 leading-relaxed mb-3">
+              <div className="font-black text-amber-300/80 mb-1">Як відновити карму:</div>
+              <div>• Пройди випробування «Злови 3 фокачі» — <b className="text-amber-200">+10</b></div>
+              <div>• Грай чесно — <b className="text-amber-200">+1 за годину</b> гри</div>
+            </div>
+            <button
+              onClick={() => { setKarmaInfo(false); haptic.light(); }}
+              className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-2.5 rounded-2xl transition active:scale-95 shadow-lg shadow-amber-500/25"
+            >
+              Зрозуміло
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ===== TOP BAR ===== */}
       <div className="relative z-10 shrink-0 glass border-b border-amber-500/15 px-4 py-2">
         <div className="flex items-center justify-between">
@@ -2660,8 +2709,13 @@ export default function App() {
             </div>
 
             {/* Статус акаунта — спідометр античиту */}
-            <div className="glass-card rounded-2xl p-4">
+            <div className="glass-card rounded-2xl p-4 relative">
               <div className="text-[11px] font-bold text-amber-400/50 mb-1 text-center tracking-widest">🛡 СТАТУС АКАУНТА</div>
+              <button
+                onClick={() => { setKarmaInfo(true); haptic.light(); }}
+                className="absolute right-3 top-3 w-6 h-6 rounded-full bg-black/40 border border-amber-400/40 text-amber-300/80 text-[11px] font-black flex items-center justify-center active:scale-90 transition-transform"
+                title="Що це і як працює?"
+              >?</button>
               <div className="text-center text-[9px] font-bold text-emerald-300/60 mb-1 tracking-wide">ЗАХИЩЕНО TAPSENTINEL v5 — BEHAVIORAL ANTI-CHEAT</div>
               <svg viewBox="0 0 200 112" className="w-44 mx-auto">
                 <path d="M 20 100 A 80 80 0 0 1 87.5 21" stroke="#34d399" strokeWidth="14" fill="none" strokeLinecap="round" />
