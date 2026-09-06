@@ -40,6 +40,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
   const [pausedLeft, setPausedLeft] = useState(0);
   const [winner, setWinner] = useState<string | null>(null);
   const [reason, setReason] = useState<string | null>(null);
+  const [startTs, setStartTs] = useState(0);
   const [error, setError] = useState('');
   const [, forceTick] = useState(0);
 
@@ -80,6 +81,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
           offsetRef.current = data.serverNow - Date.now();
           setOffset(offsetRef.current);
         }
+        if (typeof data.startTs === 'number' && data.startTs > 0) setStartTs(data.startTs);
         if (data.me) setBase(data.me.score);
         if (data.opp) {
           setOppScore(data.opp.score);
@@ -144,8 +146,8 @@ export default function DuelApp({ duelId }: { duelId: string }) {
   }
 
   const liveNow = stage === 'live';
-  const countdownN = stage === 'countdown' && snap?.startTs ? Math.max(0, Math.ceil((snap.startTs - nowAligned()) / 1000)) : 0;
-  const elapsed = snap?.startTs && (stage === 'live' || stage === 'paused') ? Math.max(0, nowAligned() - snap.startTs) : 0;
+  const countdownN = stage === 'countdown' && startTs ? Math.max(0, Math.ceil((startTs - nowAligned()) / 1000)) : 0;
+  const elapsed = startTs && (stage === 'live' || stage === 'paused') ? Math.max(0, nowAligned() - startTs) : 0;
 
   // ===== ФИНАЛ =====
   if (stage === 'finished') {
