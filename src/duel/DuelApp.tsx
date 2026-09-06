@@ -275,25 +275,38 @@ export default function DuelApp({ duelId }: { duelId: string }) {
         </div>
       </div>
 
-      {/* Интро VS: фазовая машина — аватар 1 → аватар 2 → VS → затухание */}
+      {/* Интро VS: фазовая машина — аватар 1 → аватар 2 → VS → затухание. Абсолютные позиции — ноль дёрганий */}
       {stage === 'countdown' && introPhase !== '' && (
         <div
-          className="flex-1 flex items-center justify-center gap-3 px-4"
+          className="flex-1 relative"
           style={introPhase === 'fade' ? { animation: 'duel-fade-all 0.6s ease forwards' } : undefined}
         >
-          {introPhase !== '' && (
-            <Avatar src={myPhoto} name={myName || 'Ти'} side="left" />
-          )}
+          {/* твой аватар — левый центр */}
+          <div className="absolute" style={{ left: '22%', top: '46%', transform: 'translate(-50%, -50%)' }}>
+            <div style={{ animation: introPhase === 'p1' ? 'duel-in-left 0.65s cubic-bezier(0.2, 1.2, 0.4, 1) both' : undefined }}>
+              <Avatar src={myPhoto} name={myName || 'Ти'} side="left" />
+            </div>
+          </div>
+
+          {/* VS — центр */}
           {(introPhase === 'vs' || introPhase === 'fade') && (
-            <div
-              className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-orange-500 drop-shadow-[0_0_18px_rgba(251,146,60,0.8)]"
-              style={{ animation: 'duel-vs-pop 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both' }}
-            >
-              VS
+            <div className="absolute z-10" style={{ left: '50%', top: '46%', transform: 'translate(-50%, -50%)' }}>
+              <div
+                className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-orange-500 drop-shadow-[0_0_22px_rgba(251,146,60,0.9)]"
+                style={{ animation: 'duel-vs-pop 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both' }}
+              >
+                VS
+              </div>
             </div>
           )}
+
+          {/* аватар соперника — правый центр */}
           {(introPhase === 'p2' || introPhase === 'vs' || introPhase === 'fade') && (
-            <Avatar name={oppName || 'Соперник'} side="right" />
+            <div className="absolute" style={{ left: '78%', top: '46%', transform: 'translate(-50%, -50%)' }}>
+              <div style={{ animation: introPhase === 'p2' ? 'duel-in-right 0.65s cubic-bezier(0.2, 1.2, 0.4, 1) both' : undefined }}>
+                <Avatar name={oppName || 'Соперник'} side="right" />
+              </div>
+            </div>
           )}
         </div>
       )}
