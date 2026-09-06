@@ -51,27 +51,53 @@ const Avatar = ({ src, name, u, side }: { src?: string; name: string; u?: string
 
 const SAVE_KEY = 'focaccia-clicker-v1';
 const storage = {
-  get(key: string): Promise<string | null> {
-    const local = (): string | null => {
+  async get(key: string): Promise<string | null> {
+    const getLocal = (): string | null => {
       try { return window.localStorage.getItem(key); } catch { return null; }
     };
-    return new Promise((resolve) => {
-      const wTg = (window as unknown as { Telegram?: { WebApp?: { CloudStorage?: { getItem: (k: string, cb: (e: any, v: string) => void) => void } } } }).Telegram?.WebApp;
-      if (!wTg?.CloudStorage) { resolve(local()); return; }
+    const localVal = getLocal();
+
+    let cloudVal: string | null = null;
+    const wTg = (window as unknown as { Telegram?: { WebApp?: { CloudStorage?: { getItem: (k: string, cb: (e: any, v: string) => void) => void } } } }).Telegram?.WebApp;
+    if (wTg?.CloudStorage) {
       try {
-        wTg.CloudStorage.getItem(key, (err, value) => {
-          if (!err && value) resolve(value);
-          else resolve(local());
+        cloudVal = await new Promise<string | null>((resolve) => {
+          const timer = setTimeout(() => resolve(null), 1200);
+          wTg.CloudStorage.getItem(key, (err: any, value: string) => {
+            clearTimeout(timer);
+            if (!err && value) resolve(value);
+            else resolve(null);
+          });
         });
-      } catch { resolve(local()); }
-    });
+      } catch { cloudVal = null; }
+    }
+
+    if (!localVal && !cloudVal) return null;
+    if (!localVal) return cloudVal;
+    if (!cloudVal) return localVal;
+
+    try {
+      const lObj = JSON.parse(localVal);
+      const cObj = JSON.parse(cloudVal);
+      const lTime = Number(lObj?.lastSave) || 0;
+      const cTime = Number(cObj?.lastSave) || 0;
+
+      if (lTime > cTime + 1000) return localVal;
+      if (cTime > lTime + 1000) return cloudVal;
+
+      const lTotal = Number(lObj?.total) || 0;
+      const cTotal = Number(cObj?.total) || 0;
+      return lTotal >= cTotal ? localVal : cloudVal;
+    } catch {
+      return localVal || cloudVal;
+    }
   },
   set(key: string, value: string) {
+    try { window.localStorage.setItem(key, value); } catch { /* */ }
     try {
       const wTg = (window as unknown as { Telegram?: { WebApp?: { CloudStorage?: { setItem: (k: string, v: string, cb?: () => void) => void } } } }).Telegram?.WebApp;
       if (wTg?.CloudStorage) wTg.CloudStorage.setItem(key, value, () => {});
     } catch { /* */ }
-    try { window.localStorage.setItem(key, value); } catch { /* */ }
   },
 };
 
@@ -281,6 +307,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
       const nextSave = activeSave ? { ...activeSave } : {};
       if (gem) nextSave.diamonds = Math.max(0, (Number(nextSave.diamonds) || 0) - curStake);
       else nextSave.focaccia = Math.max(0, (Number(nextSave.focaccia) || 0) - curStake);
+      nextSave.lastSave = Date.now();
 
       setUserSave(nextSave);
       storage.set(SAVE_KEY, JSON.stringify(nextSave));
@@ -322,6 +349,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
           if (curPaid > 0) {
             if (gem) s.diamonds = (s.diamonds || 0) + curPaid;
             else s.focaccia = (s.focaccia || 0) + curPaid;
+            s.lastSave = Date.now();
             storage.set(SAVE_KEY, JSON.stringify(s));
             storage.set('focaccia-balance', JSON.stringify({ f: s.focaccia || 0, d: s.diamonds || 0, ts: Date.now() }));
           }
@@ -332,12 +360,14 @@ export default function DuelApp({ duelId }: { duelId: string }) {
           const curPot = (st && st.pot && st.pot > 0) ? st.pot : (curStake * 2);
           if (gem) s.diamonds = (s.diamonds || 0) + curPot;
           else s.focaccia = (s.focaccia || 0) + curPot;
+          s.lastSave = Date.now();
           storage.set(SAVE_KEY, JSON.stringify(s));
           storage.set('focaccia-balance', JSON.stringify({ f: s.focaccia || 0, d: s.diamonds || 0, ts: Date.now() }));
         } else if (winner === 'draw') {
           if (curPaid > 0) {
             if (gem) s.diamonds = (s.diamonds || 0) + curPaid;
             else s.focaccia = (s.focaccia || 0) + curPaid;
+            s.lastSave = Date.now();
             storage.set(SAVE_KEY, JSON.stringify(s));
             storage.set('focaccia-balance', JSON.stringify({ f: s.focaccia || 0, d: s.diamonds || 0, ts: Date.now() }));
           }

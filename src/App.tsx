@@ -17,29 +17,61 @@ const tg = window.Telegram?.WebApp;
 const tgUser = (tg?.initDataUnsafe?.user || undefined) as { id?: number; first_name?: string; username?: string } | undefined;
 const API_BASE = 'https://focaccia-bot.vercel.app';
 
-/* ---- Storage: CloudStorage → localStorage fallback ---- */
+/* ---- Storage: Smart conflict resolver (localStorage + CloudStorage) ---- */
 const storage = {
-  get(key: string): Promise<string | null> {
-    const local = (): string | null => {
+  async get(key: string): Promise<string | null> {
+    const getLocal = (): string | null => {
       try { return window.localStorage.getItem(key); } catch { return null; }
     };
-    return new Promise((resolve) => {
-      if (!tg?.CloudStorage) { resolve(local()); return; }
+
+    const localVal = getLocal();
+
+    let cloudVal: string | null = null;
+    if (tg?.CloudStorage) {
       try {
-        tg.CloudStorage.getItem(key, (err, value) => {
-          if (!err && value) resolve(value);
-          else resolve(local());
+        cloudVal = await new Promise<string | null>((resolve) => {
+          const timer = setTimeout(() => resolve(null), 1200);
+          tg.CloudStorage.getItem(key, (err: any, value: string) => {
+            clearTimeout(timer);
+            if (!err && value) resolve(value);
+            else resolve(null);
+          });
         });
-      } catch { resolve(local()); }
-    });
+      } catch { cloudVal = null; }
+    }
+
+    if (!localVal && !cloudVal) return null;
+    if (!localVal) return cloudVal;
+    if (!cloudVal) return localVal;
+
+    // Порівнюємо сейви за `lastSave` (і прогресом), щоб ніколи не затерти свіжіші покупки застарілим кешем
+    try {
+      const lObj = JSON.parse(localVal);
+      const cObj = JSON.parse(cloudVal);
+      const lTime = Number(lObj?.lastSave) || 0;
+      const cTime = Number(cObj?.lastSave) || 0;
+
+      // Якщо різниця в часі більше 1 секунди — безумовно перемагає новіший сейв!
+      if (lTime > cTime + 1000) return localVal;
+      if (cTime > lTime + 1000) return cloudVal;
+
+      // Якщо час однаковий/близький — перемагає той, де більший загальний видобуток (total)
+      const lTotal = Number(lObj?.total) || 0;
+      const cTotal = Number(cObj?.total) || 0;
+      return lTotal >= cTotal ? localVal : cloudVal;
+    } catch {
+      return localVal || cloudVal;
+    }
   },
   set(key: string, value: string) {
-    try { if (tg?.CloudStorage) tg.CloudStorage.setItem(key, value, () => {}); } catch { /* WebApp unsupported */ }
+    // 1. МИТТЄВИЙ синхронний запис у localStorage (0.05 мс, ніколи не губиться при швидкому закритті)
     try { window.localStorage.setItem(key, value); } catch { /* */ }
+    // 2. Асинхронний бекап у Telegram CloudStorage
+    try { if (tg?.CloudStorage) tg.CloudStorage.setItem(key, value, () => {}); } catch { /* WebApp unsupported */ }
   },
   remove(key: string) {
-    try { if (tg?.CloudStorage) tg.CloudStorage.removeItem(key, () => {}); } catch { /* WebApp unsupported */ }
     try { window.localStorage.removeItem(key); } catch { /* */ }
+    try { if (tg?.CloudStorage) tg.CloudStorage.removeItem(key, () => {}); } catch { /* WebApp unsupported */ }
   },
 };
 
@@ -300,6 +332,15 @@ export default function App() {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  const saveNow = useCallback((customState?: SaveState) => {
+    const cur = customState || stateRef.current;
+    if (!cur) return;
+    const toSave: SaveState = { ...cur, lastSave: Date.now() };
+    stateRef.current = toSave;
+    storage.set(SAVE_KEY, JSON.stringify(toSave));
+    storage.set('focaccia-balance', JSON.stringify({ f: toSave.focaccia, d: toSave.diamonds, ts: Date.now() }));
+  }, []);
+
   const reportSync = useCallback(() => {
     if (!tgUser?.id) return;
     const cur = stateRef.current;
@@ -347,6 +388,8 @@ export default function App() {
       setState(s);
       setKarma(s.karma ?? 100);
       setLoading(false);
+      stateRef.current = s;
+      saveNow(s);
       setTimeout(reportSync, 100);
 
       // Check for admin rewards or reset order
@@ -377,6 +420,7 @@ export default function App() {
                 setState((p) => {
                   const next = { ...p, focaccia: p.focaccia + data.reward, total: p.total + data.reward };
                   stateRef.current = next;
+                  saveNow(next);
                   return next;
                 });
                 addToast('🎁 Нагорода!', `+${formatNum(data.reward)} фокач від адміна!`, '🎁');
@@ -386,6 +430,7 @@ export default function App() {
                 setState((p) => {
                   const next = { ...p, diamonds: (p.diamonds || 0) + data.diamonds };
                   stateRef.current = next;
+                  saveNow(next);
                   return next;
                 });
                 addToast('💎 Нагорода за дуель!', `+${formatNum(data.diamonds)} 💎 отримано!`, '💎');
@@ -396,6 +441,7 @@ export default function App() {
                 setState((p) => {
                   const next = { ...p, prestige: p.prestige + data.rebirth };
                   stateRef.current = next;
+                  saveNow(next);
                   return next;
                 });
                 addToast('🔄 Ребіртхи від адміна!', `+${data.rebirth} 🔄 до престижу!`, '🔄');
@@ -406,6 +452,7 @@ export default function App() {
                 setState((p) => {
                   const next = { ...p, focaccia: Math.max(0, p.focaccia - data.deduct) };
                   stateRef.current = next;
+                  saveNow(next);
                   return next;
                 });
                 addToast('⚖️ Коригування', `-${formatNum(data.deduct)} фокач списано адміністратором`, '⚠️');
@@ -867,22 +914,33 @@ export default function App() {
 
   useEffect(() => {
     if (loading) return;
-    if (!tgUser?.id) return;
-    reportSync();
-    const iv = setInterval(reportSync, 30000);
     const onHide = () => {
-      if (document.visibilityState === 'hidden') reportSync();
+      if (document.visibilityState === 'hidden') {
+        saveNow();
+        reportSync();
+      }
+    };
+    const onExit = () => {
+      saveNow();
+      reportSync();
     };
     document.addEventListener('visibilitychange', onHide);
-    window.addEventListener('beforeunload', reportSync);
-    window.addEventListener('pagehide', reportSync);
+    window.addEventListener('beforeunload', onExit);
+    window.addEventListener('pagehide', onExit);
+
+    let iv: ReturnType<typeof setInterval> | undefined;
+    if (tgUser?.id) {
+      reportSync();
+      iv = setInterval(reportSync, 30000);
+    }
+
     return () => {
-      clearInterval(iv);
+      if (iv) clearInterval(iv);
       document.removeEventListener('visibilitychange', onHide);
-      window.removeEventListener('beforeunload', reportSync);
-      window.removeEventListener('pagehide', reportSync);
+      window.removeEventListener('beforeunload', onExit);
+      window.removeEventListener('pagehide', onExit);
     };
-  }, [loading, tgUser, reportSync]);
+  }, [loading, tgUser, reportSync, saveNow]);
 
   /* ---- Game tick ---- */
   useEffect(() => {
@@ -1132,12 +1190,10 @@ export default function App() {
   useEffect(() => {
     if (loading) return;
     const iv = setInterval(() => {
-      const cur = stateRef.current;
-      storage.set(SAVE_KEY, JSON.stringify({ ...cur, lastSave: Date.now() }));
-      storage.set('focaccia-balance', JSON.stringify({ f: cur.focaccia, d: cur.diamonds, ts: Date.now() }));
-    }, 3000);
+      saveNow();
+    }, 2000);
     return () => clearInterval(iv);
-  }, [loading]);
+  }, [loading, saveNow]);
 
   /* ---- Achievements ---- */
   useEffect(() => {
@@ -1251,14 +1307,24 @@ export default function App() {
   // Валюта казино: фокачі або алмази
   const casinoCurSym = casinoCur === 'gem' ? '💎' : '🫓';
   const casinoBalance = casinoCur === 'gem' ? state.diamonds : Math.floor(state.focaccia);
-  const casinoTake = (b: number) => setState((p) =>
-    casinoCur === 'gem'
-      ? { ...p, diamonds: Math.max(0, p.diamonds - b) }
-      : { ...p, focaccia: Math.max(0, p.focaccia - b) },
-  );
-  const casinoGive = (cur: 'foc' | 'gem', a: number) => setState((p) =>
-    cur === 'gem' ? { ...p, diamonds: p.diamonds + a } : { ...p, focaccia: p.focaccia + a },
-  );
+  const casinoTake = (b: number) => {
+    const cur = stateRef.current;
+    const next: SaveState = casinoCur === 'gem'
+      ? { ...cur, diamonds: Math.max(0, cur.diamonds - b) }
+      : { ...cur, focaccia: Math.max(0, cur.focaccia - b) };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+  };
+  const casinoGive = (curType: 'foc' | 'gem', a: number) => {
+    const cur = stateRef.current;
+    const next: SaveState = curType === 'gem'
+      ? { ...cur, diamonds: cur.diamonds + a }
+      : { ...cur, focaccia: cur.focaccia + a };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+  };
 
   // Після кожної гри: виграш гріє «везіння», програш охолоджує
   const updateLuck = (mult: number) => {
@@ -1542,13 +1608,17 @@ export default function App() {
         setBossSlain({ emoji: currentBoss.emoji, id: ++floatId.current });
         doFlash('success');
         burstConfetti(['💥', '⚔️', '🏆', '✨', '🫓']);
-        setState((p) => ({
-          ...p,
-          focaccia: p.focaccia + rFocaccia,
-          total: p.total + rFocaccia,
-          diamonds: p.diamonds + rDiamonds,
-          bossesDefeated: p.bossesDefeated + 1,
-        }));
+        const cur = stateRef.current;
+        const next: SaveState = {
+          ...cur,
+          focaccia: cur.focaccia + rFocaccia,
+          total: cur.total + rFocaccia,
+          diamonds: cur.diamonds + rDiamonds,
+          bossesDefeated: cur.bossesDefeated + 1,
+        };
+        stateRef.current = next;
+        setState(next);
+        saveNow(next);
         addToast('🏆 БОСА ЗНИЩЕНО!', `+${rDiamonds} 💎 та +${formatNum(rFocaccia)} 🫓!`, '⚔️');
         haptic.success();
         return null; // boss cleared
@@ -1567,14 +1637,17 @@ export default function App() {
 
     const gotDiamond = Math.random() < 0.4;
     const bonus = Math.max(50, Math.floor((cpsRef.current || 10) * 15));
-
-    setState((p) => ({
-      ...p,
-      focaccia: p.focaccia + bonus,
-      total: p.total + bonus,
-      diamonds: p.diamonds + (gotDiamond ? 1 : 0),
-      pestsSquashed: p.pestsSquashed + 1,
-    }));
+    const cur = stateRef.current;
+    const next: SaveState = {
+      ...cur,
+      focaccia: cur.focaccia + bonus,
+      total: cur.total + bonus,
+      diamonds: cur.diamonds + (gotDiamond ? 1 : 0),
+      pestsSquashed: cur.pestsSquashed + 1,
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
 
     addToast(
       '💥 РОЗЧАВЛЕНО!',
@@ -1586,41 +1659,68 @@ export default function App() {
   const fixBuilding = (id: string) => {
     const b = BUILDINGS.find((x) => x.id === id);
     if (!b) return;
+    const cur = stateRef.current;
     const cost = Math.max(50, Math.floor(b.baseCost * 0.3));
-    if (state.focaccia < cost) {
+    if (cur.focaccia < cost) {
       addToast('Не вистачає фокач', `Ремонт коштує 🫓 ${formatNum(cost)}`, '❌');
       return;
     }
-    setState((p) => ({ ...p, focaccia: p.focaccia - cost }));
+    const next: SaveState = { ...cur, focaccia: cur.focaccia - cost };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
     setBrokenBuilding(null);
     addToast('Ремонт завершено!', `${b.name} знову працює на 100%!`, '🔧');
     haptic.success();
   };
 
   const buyBuilding = (id: string) => {
-    const b = BUILDINGS.find((x) => x.id === id)!;
-    const cost = buildingCost(b, state.buildings[id] || 0);
-    if (state.focaccia < cost) return;
-    setState((p) => ({ ...p, focaccia: p.focaccia - cost, buildings: { ...p.buildings, [id]: (p.buildings[id] || 0) + 1 } }));
+    const b = BUILDINGS.find((x) => x.id === id);
+    if (!b) return;
+    const cur = stateRef.current;
+    const cost = buildingCost(b, cur.buildings[id] || 0);
+    if (cur.focaccia < cost) return;
+    const next: SaveState = {
+      ...cur,
+      focaccia: cur.focaccia - cost,
+      buildings: { ...cur.buildings, [id]: (cur.buildings[id] || 0) + 1 },
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
     haptic.medium();
   };
 
   const buyUpgrade = (id: string) => {
-    const u = CLICK_UPGRADES.find((x) => x.id === id)!;
-    if (state.focaccia < u.cost || state.upgrades.includes(id)) return;
-    setState((p) => ({ ...p, focaccia: p.focaccia - u.cost, upgrades: [...p.upgrades, id] }));
+    const u = CLICK_UPGRADES.find((x) => x.id === id);
+    if (!u) return;
+    const cur = stateRef.current;
+    if (cur.focaccia < u.cost || cur.upgrades.includes(id)) return;
+    const next: SaveState = {
+      ...cur,
+      focaccia: cur.focaccia - u.cost,
+      upgrades: [...cur.upgrades, id],
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
     addToast('Куплено!', u.name, u.emoji);
     haptic.success();
   };
 
   const buyVipUpgrade = (id: string) => {
-    const u = VIP_UPGRADES.find((x) => x.id === id)!;
-    if (state.diamonds < u.cost || state.vipUpgrades?.includes(id)) return;
-    setState((p) => ({
-      ...p,
-      diamonds: p.diamonds - u.cost,
-      vipUpgrades: [...(p.vipUpgrades || []), id],
-    }));
+    const u = VIP_UPGRADES.find((x) => x.id === id);
+    if (!u) return;
+    const cur = stateRef.current;
+    if (cur.diamonds < u.cost || cur.vipUpgrades?.includes(id)) return;
+    const next: SaveState = {
+      ...cur,
+      diamonds: cur.diamonds - u.cost,
+      vipUpgrades: [...(cur.vipUpgrades || []), id],
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
     addToast('ВІП куплено!', u.name, u.emoji);
     haptic.success();
   };
@@ -1631,20 +1731,30 @@ export default function App() {
     doFlash('golden');
     burstConfetti(['🫓', '⭐', '✨', '🌟', '💛']);
     const roll = Math.random();
+    let bonus = 0;
+    let dGain = 0;
     if (roll < 0.45) {
       setFrenzy(20);
       addToast('ФРЕНЗІ!', 'x7 до всього на 20 секунд!', '🔥');
     } else if (roll < 0.8) {
-      const bonus = Math.max(cps * 60 * 3, clickPower * 200, 50);
-      setState((p) => ({ ...p, focaccia: p.focaccia + bonus, total: p.total + bonus }));
+      bonus = Math.max(cps * 60 * 3, clickPower * 200, 50);
       addToast('Удача!', `+${formatNum(bonus)} фокач!`, '✨');
     } else {
       // Golden gives diamonds!
-      const dGain = 2;
-      setState((p) => ({ ...p, diamonds: p.diamonds + dGain }));
+      dGain = 2;
       addToast('Діамантовий скарб!', `+${dGain} 💎 рідкісних діамантів!`, '💎');
     }
-    setState((p) => ({ ...p, goldenCaught: p.goldenCaught + 1 }));
+    const cur = stateRef.current;
+    const next: SaveState = {
+      ...cur,
+      focaccia: cur.focaccia + bonus,
+      total: cur.total + bonus,
+      diamonds: cur.diamonds + dGain,
+      goldenCaught: cur.goldenCaught + 1,
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
   };
 
   const doPrestige = () => {
@@ -1653,19 +1763,24 @@ export default function App() {
       title: 'Ребіртх', emoji: '🔄',
       text: `Зробити +${prestigeGain} Ребіртх? (+${prestigeGain * 10}% до всього назавжди, +${prestigeGain * 5} енергії, та розблокування нових будівель і прокачок!). Фокачі та будівлі скинуться, але 💎 діаманти та ВІП залишаться!`,
       onConfirm: () => {
-        setState((p) => ({
+        const cur = stateRef.current;
+        const next: SaveState = {
           ...defaultState(),
-          prestige: p.prestige + prestigeGain,
-          diamonds: p.diamonds,
-          vipUpgrades: p.vipUpgrades,
-          achievements: p.achievements,
-          goldenCaught: p.goldenCaught,
-          maxCombo: p.maxCombo,
-          bossesDefeated: p.bossesDefeated,
-          pestsSquashed: p.pestsSquashed,
-          lastReset: p.lastReset,
-        }));
-        addToast('Ребіртх виконано!', `+${(state.prestige + prestigeGain) * 10}% бонус та нові відкриття!`, '🔄');
+          prestige: cur.prestige + prestigeGain,
+          diamonds: cur.diamonds,
+          vipUpgrades: cur.vipUpgrades,
+          achievements: cur.achievements,
+          goldenCaught: cur.goldenCaught,
+          maxCombo: cur.maxCombo,
+          bossesDefeated: cur.bossesDefeated,
+          pestsSquashed: cur.pestsSquashed,
+          lastReset: cur.lastReset,
+        };
+        stateRef.current = next;
+        setState(next);
+        saveNow(next);
+        reportSync();
+        addToast('Ребіртх виконано!', `+${(cur.prestige + prestigeGain) * 10}% бонус та нові відкриття!`, '🔄');
         doFlash('golden');
         burstConfetti(['🔄', '💎', '✨', '⭐', '🫓']);
         haptic.success();
