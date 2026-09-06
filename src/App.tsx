@@ -201,6 +201,14 @@ interface LeaderRow {
   online?: boolean;
 }
 
+// TapSentinel v5.1: сырой тап — performance.now() для ритма, Date.now() для сессий
+interface Tap {
+  t: number;    // performance.now() — монотонные часы для интервалов
+  wall: number; // Date.now() — настенные часы для сессий/кулдауна
+  x: number;
+  y: number;
+}
+
 /* ---- Казино «Однарука бабуся» ---- */
 const CASINO_SYMBOLS = ['💎', '👵', '⭐', '🍅', '🫓', '🧄'];
 const CASINO_PAYOUTS: Record<string, number> = { '💎': 50, '👵': 15, '⭐': 8, '🍅': 4, '🫓': 2, '🧄': 1.5 };
@@ -255,8 +263,9 @@ export default function App() {
   const [challenge, setChallenge] = useState<null | { caught: number; x: number; y: number; timeLeft: number; result: null | 'pending' | 'win' | 'fail' | 'denied' }>(null);
   const [karma, setKarma] = useState(100); // поведінковий рівень 0-100 (синхронізується з сервером)
   const casinoMaxBet = karma < 50 ? 0 : karma < 75 ? 1000 : Infinity; // дотівська лестниця обмежень
-  const tapRing = useRef<{ buf: { t: number; x: number; y: number }[]; head: number; count: number }>({ buf: new Array(360), head: 0, count: 0 });
-  const lastRawTap = useRef(0);
+  const tapRing = useRef<{ buf: Tap[]; head: number; count: number }>({ buf: new Array(360), head: 0, count: 0 });
+  const lastRawTap = useRef(0); // performance.now()
+  const challengeOpening = useRef(false); // guard от double-flag race
   const activeNoBreakMs = useRef(0); // час гри без жодної паузи ≥ 20с
   const fastStreakMs = useRef(0); // безперервна серія дотиків швидше 8/с
   const bLongSession = useRef(false);  // 90+ хв без пауз — слабкий сигнал у B
@@ -468,25 +477,25 @@ export default function App() {
     setTimeout(() => setMilestone((m) => (m && m.id === id ? null : m)), 950);
   }, []);
 
-  /* ---- TapSentinel v5 — Behavioral Anti-Cheat: R/C/B evidence ---- */
+  /* ---- TapSentinel v5.1 — Behavioral Anti-Cheat: R/C/B evidence ---- */
   // Кольцевой буфер сырых тапов — без shift на каждый тап
-  const pushTap = (tap: { t: number; x: number; y: number }) => {
+  const pushTap = (tap: Tap) => {
     const ring = tapRing.current;
     ring.buf[ring.head] = tap;
     ring.head = (ring.head + 1) % 360;
     ring.count = Math.min(ring.count + 1, 360);
   };
-  const getTaps = (n: number): { t: number; x: number; y: number }[] => {
+  const getTaps = (n: number): Tap[] => {
     const ring = tapRing.current;
     const count = Math.min(ring.count, n);
-    const out: { t: number; x: number; y: number }[] = [];
+    const out: Tap[] = [];
     for (let i = count - 1; i >= 0; i--) out.push(ring.buf[(ring.head - 1 - i + 720) % 360]);
     return out;
   };
 
   // R — ритм-скор 0..100 для заданного окна (формула: скорость 30%, регулярность 20%,
-  // кучкование 15%, структура шума 25%, пауза 10%)
-  const rhythmScore = (taps: { t: number; x: number; y: number }[]): number => {
+  // кучкование 15%, структура шума 25%, пауза 10%). Интервалы — по performance.now().
+  const rhythmScore = (taps: Tap[]): number => {
     if (taps.length < 10) return 0;
     const ivs: number[] = [];
     for (let i = 1; i < taps.length; i++) ivs.push(taps[i].t - taps[i - 1].t);
@@ -516,7 +525,7 @@ export default function App() {
       noiseStructure = Math.max(0, Math.min(100, ((0.50 - ratio) / (0.50 - 0.32)) * 100));
     }
 
-    const speedScore = mean >= 100 ? 0 : mean >= 70 ? 15 : mean >= 55 ? 30 : mean >= 45 ? 50 : mean >= 35 ? 70 : mean >= 25 ? 85 : 100;
+    const speedScore = mean >= 125 ? 0 : mean >= 100 ? 25 : mean >= 70 ? 45 : mean >= 55 ? 60 : mean >= 45 ? 75 : mean >= 35 ? 85 : mean >= 25 ? 92 : 100;
     const regularityScore = cv >= 0.25 ? 0 : cv >= 0.18 ? 20 : cv >= 0.12 ? 40 : cv >= 0.08 ? 60 : cv >= 0.05 ? 80 : 100;
     const clusterScore = clusterFrac < 0.55 ? 0 : clusterFrac < 0.70 ? 30 : clusterFrac < 0.80 ? 55 : clusterFrac < 0.90 ? 75 : 100;
     const pauseScore = hasPause ? 0 : 20;
@@ -524,18 +533,24 @@ export default function App() {
     return Math.round(0.30 * speedScore + 0.20 * regularityScore + 0.15 * clusterScore + 0.25 * noiseStructure + 0.10 * pauseScore);
   };
 
-  // C — координаты 0..100: статистика движения, а не «точка стоит»
-  const coordScore = (taps: { t: number; x: number; y: number }[]): number => {
+  // C — координаты 0..100: статистика движения. repeat1 ловит A→A→A, repeat2 —
+  // возвраты к точке 2–5 тапов назад (A→B→A→B). Оба паттерна = бот.
+  const coordScore = (taps: Tap[]): number => {
     if (taps.length < 60) return 0;
     const xs = taps.map((t) => t.x);
     const ys = taps.map((t) => t.y);
-    // repeatScore: доля тапов в ≤8px от ПРЕДЫДУЩЕГО (палец прыгает — бот ползёт/стоит)
-    let repeated = 0;
+    const close = (i: number, j: number) => Math.abs(xs[i] - xs[j]) <= 8 && Math.abs(ys[i] - ys[j]) <= 8;
+    let rep1 = 0, rep2 = 0;
     for (let i = 1; i < taps.length; i++) {
-      if (Math.abs(xs[i] - xs[i - 1]) <= 8 && Math.abs(ys[i] - ys[i - 1]) <= 8) repeated++;
+      if (close(i, i - 1)) rep1++;
+      for (let k = 2; k <= 5 && i - k >= 0; k++) {
+        if (close(i, i - k)) { rep2++; break; }
+      }
     }
-    const repeatedPointFraction = repeated / (taps.length - 1);
-    const repeatScore = repeatedPointFraction > 0.90 ? 100 : repeatedPointFraction > 0.75 ? 70 : repeatedPointFraction > 0.55 ? 40 : 0;
+    const frac1 = rep1 / (taps.length - 1);
+    const frac2 = rep2 / (taps.length - 1);
+    const patternFraction = Math.max(frac1, frac2);
+    const repeatScore = patternFraction > 0.90 ? 100 : patternFraction > 0.75 ? 70 : patternFraction > 0.55 ? 40 : 0;
 
     // movementScore: дисперсия длины шага (у бота шаг почти константный)
     const steps: number[] = [];
@@ -563,22 +578,25 @@ export default function App() {
     return Math.round(0.35 * repeatScore + 0.25 * movementScore + 0.20 * directionScore + 0.20 * pathScore);
   };
 
-  // B — поведение 0..100: слабые сессионные факторы + скрипты
+  // B — поведение 0..100: слабые сессионные факторы + скрипты (лестница: ≥8 → 60, ≥20 → 100)
   const behaviourScore = (): number => {
     let b = 0;
-    if (syntheticTaps.current.filter((ts) => Date.now() - ts < 60000).length >= 8) b += 60; // скриптовые события
+    const now = Date.now();
+    const syntheticRate = syntheticTaps.current.filter((ts) => now - ts < 60000).length;
+    if (syntheticRate >= 20) b = 100;
+    else if (syntheticRate >= 8) b += 60;
     if (bLongSession.current) b += 10;   // 90+ мин без пауз
     if (bFastStreak.current) b += 10;    // 3+ мин быстрее 8/с
     const big = getTaps(300);
     if (big.length >= 300) {
-      const span = big[big.length - 1].t - big[0].t;
+      const span = big[big.length - 1].wall - big[0].wall;
       if (span > 8 * 60 * 1000) b += 10; // темп не менялся 8+ минут реального времени
     }
     return Math.min(100, b);
   };
 
   // H — «человечность» 0..100: естественность снижает suspicion
-  const humanScore = (taps: { t: number; x: number; y: number }[]): number => {
+  const humanScore = (taps: Tap[]): number => {
     if (taps.length < 40) return 0;
     const ivs: number[] = [];
     for (let i = 1; i < taps.length; i++) ivs.push(taps[i].t - taps[i - 1].t);
@@ -615,14 +633,14 @@ export default function App() {
     const platform = tg?.platform || 'unknown';
     const pathVariation = platform === 'ios' || platform === 'android' ? Math.min(100, (stdX + stdY) * 4) : 50;
 
-    // sessionVariation: если окно растянуто по времени — были перерывы
-    const span = taps[taps.length - 1].t - taps[0].t;
+    // sessionVariation: если окно растянуто по времени — были перерывы (настенные часы)
+    const span = taps[taps.length - 1].wall - taps[0].wall;
     const sessionVariation = span > 15 * 60000 ? 100 : span > 8 * 60000 ? 60 : 20;
 
     return Math.round(0.30 * tempoDrift + 0.20 * intervalVariation + 0.15 * pauseNaturalness + 0.20 * pathVariation + 0.15 * sessionVariation);
   };
 
-  // Полный анализ: мульти-масштабы R → C, B, H → evidence → suspicion → challenge
+  // Полный анализ: мульти-масштабы R → C, B, H (мульти-масштаб) → evidence → suspicion → challenge
   const analyzeIntegrity = () => {
     const tAll = getTaps(360);
     const t300 = tAll.slice(-300);
@@ -644,7 +662,11 @@ export default function App() {
     const R = wSum > 0 ? rSum / wSum : 0;
     const C = coordScore(t300);
     const B = behaviourScore();
-    const H = humanScore(t40.length >= 40 ? t40 : []);
+    // H тоже мульти-масштаб: короткий эпизод не определяет человечность
+    const H40 = humanScore(t40.length >= 40 ? t40 : []);
+    const H100 = t100.length >= 100 ? humanScore(t100) : 0;
+    const H300 = t300.length >= 300 ? humanScore(t300) : 0;
+    const H = 0.20 * H40 + 0.35 * H100 + 0.45 * H300;
 
     // Импульс за экстремальную скорость (22+/с на коротком окне), быстро забывается
     if (t10.length >= 10) {
@@ -654,7 +676,9 @@ export default function App() {
       if (m10 < 45) extremeSpeedBoost.current = Math.min(25, extremeSpeedBoost.current + 12);
     }
 
-    const evidenceRaw = 0.50 * R + 0.25 * C + 0.25 * B - 0.35 * H + extremeSpeedBoost.current;
+    // H гасит, но не более 25 — высокая человечность не может похоронить сигнал
+    const humanMitigation = Math.min(25, 0.35 * H);
+    const evidenceRaw = 0.50 * R + 0.25 * C + 0.25 * B - humanMitigation + extremeSpeedBoost.current;
     const evidence = Math.max(0, Math.min(100, evidenceRaw));
 
     // Временное сглаживание + забывание
@@ -663,27 +687,32 @@ export default function App() {
     if (recentEvidence.current.length > 5) recentEvidence.current.shift();
     extremeSpeedBoost.current *= 0.75;
 
-    // Триггер: несколько независимых подтверждений, устойчивых во времени.
-    // Пороги откалиброваны симуляциями: человек evidence 4-5 (никогда),
-    // боты 11-25 → триггер за 6-31с. Гипотезы до проверки на реальных записях.
-    const strongWindows = recentEvidence.current.filter((v) => v >= 12).length;
-    const veryStrong = recentEvidence.current.filter((v) => v >= 20).length;
-    const independentSignals = (R >= 60 ? 1 : 0) + (C >= 45 ? 1 : 0) + (B >= 45 ? 1 : 0);
+    // Триггер: ratio вместо count (не зависит от длины буфера) + ≥2 независимых сигнала.
+    // Пороги откалиброваны симуляциями (гипотезы до реальных записей):
+    // человек evidence 5-6 (никогда), джиттер-боты 18-26 → триггер за 10-13с.
+    const recent = recentEvidence.current;
+    const enoughHistory = recent.length >= 5;
+    const strongRatio = recent.length === 0 ? 0 : recent.filter((v) => v >= 12).length / recent.length;
+    const veryStrongRatio = recent.length === 0 ? 0 : recent.filter((v) => v >= 20).length / recent.length;
+    const independentSignals = (R >= 40 ? 1 : 0) + (C >= 45 ? 1 : 0) + (B >= 45 ? 1 : 0);
     const inCooldown = Date.now() < suspicionCooldownUntil.current;
     if (
       !inCooldown &&
       challenge === null &&
+      !challengeOpening.current &&
+      enoughHistory &&
       suspicion.current >= 16 &&
-      strongWindows >= 4 &&
-      veryStrong >= 2 &&
-      independentSignals >= 1
+      strongRatio >= 0.60 &&
+      veryStrongRatio >= 0.35 &&
+      independentSignals >= 2
     ) {
       triggerChallenge();
     }
   };
 
   const triggerChallenge = () => {
-    if (challenge !== null) return;
+    if (challenge !== null || challengeOpening.current) return;
+    challengeOpening.current = true; // guard от double-flag race
     setChallenge({ caught: 0, x: 20 + Math.random() * 55, y: 30 + Math.random() * 32, timeLeft: 5, result: null });
     addToast('🚫 Авто-клікер не смачний!', 'Фокачі пригорають… Доведи бабусі, що ти не робот!', '👵');
     haptic.error();
@@ -694,8 +723,13 @@ export default function App() {
         body: JSON.stringify({ userId: tgUser.id, event: 'flag' }),
       })
         .then((r) => r.json())
-        .then((data) => { if (typeof data?.karma === 'number') setKarma(data.karma); })
-        .catch(() => {});
+        .then((data) => {
+          if (typeof data?.karma === 'number') setKarma(data.karma);
+          challengeOpening.current = false; // challenge установлен — guard снят
+        })
+        .catch(() => { challengeOpening.current = false; });
+    } else {
+      challengeOpening.current = false;
     }
   };
 
@@ -708,19 +742,20 @@ export default function App() {
       return;
     }
     const rect = e.currentTarget.getBoundingClientRect();
-    const now = Date.now();
+    const perfT = performance.now();
+    const wallT = Date.now();
     const prev = lastRawTap.current;
-    lastRawTap.current = now;
+    lastRawTap.current = perfT;
 
     // Історія поведінки (слабкі сигнали для B, не тригери)
-    if (prev && now - prev < 20000) activeNoBreakMs.current += now - prev;
+    if (prev && perfT - prev < 20000) activeNoBreakMs.current += perfT - prev;
     else activeNoBreakMs.current = 0;
     if (activeNoBreakMs.current > 90 * 60 * 1000) bLongSession.current = true;
-    if (prev && now - prev < 125) fastStreakMs.current += now - prev;
+    if (prev && perfT - prev < 125) fastStreakMs.current += perfT - prev;
     else fastStreakMs.current = 0;
     if (fastStreakMs.current > 3 * 60 * 1000) bFastStreak.current = true;
 
-    pushTap({ t: now, x: e.clientX - rect.left, y: e.clientY - rect.top });
+    pushTap({ t: perfT, wall: wallT, x: e.clientX - rect.left, y: e.clientY - rect.top });
     analyzeIntegrity();
   };
 
@@ -1053,9 +1088,12 @@ export default function App() {
     return () => clearInterval(iv);
   }, [challengeActive]);
 
-  // Challenge провалено → карма −5 на сервері
+  // Challenge провалено → карма −5 на сервері + cooldown 90с (не можна спамити спробами)
   useEffect(() => {
     if (challenge?.result !== 'fail') return;
+    suspicion.current = Math.max(0, suspicion.current * 0.50);
+    recentEvidence.current = [];
+    suspicionCooldownUntil.current = Date.now() + 90 * 1000;
     if (tgUser?.id) {
       fetch(`${API_BASE}/api/leaderboard`, {
         method: 'POST',
@@ -1086,8 +1124,8 @@ export default function App() {
     if (caught >= 3) {
       setChallenge((c) => (c ? { ...c, caught, result: 'pending' } : c));
       const finishLocal = () => {
-        // Cooldown: suspicion обнуляється, підвищена чутливість вимкнена на 7 хв
-        suspicion.current = 0;
+        // Cooldown PASS: suspicion гасится, повышенная чувствительность выключена на 7 хв
+        suspicion.current *= 0.25;
         recentEvidence.current = [];
         suspicionCooldownUntil.current = Date.now() + 7 * 60 * 1000;
         setChallenge((c) => (c ? { ...c, result: 'win' } : c));
