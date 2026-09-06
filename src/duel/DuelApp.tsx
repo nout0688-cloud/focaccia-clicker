@@ -151,9 +151,25 @@ export default function DuelApp({ duelId }: { duelId: string }) {
 
   const liveNow = stage === 'live';
   const msToStart = stage === 'countdown' && startTs ? Math.max(0, startTs - nowAligned()) : 0;
-  const introShowing = stage === 'countdown' && msToStart > 3000; // первые 4с — интро VS
   const countdownN = Math.ceil(msToStart / 1000);
   const elapsed = startTs && (stage === 'live' || stage === 'paused') ? Math.max(0, nowAligned() - startTs) : 0;
+
+  // Интро: фазовая машина (детерминированная, без CSS-задержек)
+  // p1: мой аватар влетает (1.1с) → p2: аватар соперника (1.1с) → vs: VS (1.4с) → fade: затухание (0.6с)
+  const [introPhase, setIntroPhase] = useState<'' | 'p1' | 'p2' | 'vs' | 'fade'>('');
+  const introStartedFor = useRef('');
+
+  useEffect(() => {
+    if (stage !== 'countdown' || !startTs || introStartedFor.current === duelId) return;
+    introStartedFor.current = duelId;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    setIntroPhase('p1');
+    timers.push(setTimeout(() => setIntroPhase('p2'), 1100));
+    timers.push(setTimeout(() => setIntroPhase('vs'), 2200));
+    timers.push(setTimeout(() => setIntroPhase('fade'), 3600));
+    timers.push(setTimeout(() => setIntroPhase(''), 4200));
+    return () => timers.forEach(clearTimeout);
+  }, [stage, startTs, duelId]);
 
   // аватарка: фото Telegram если есть, иначе кружок с инициалом
   const myPhoto = (tg?.initDataUnsafe?.user as { photo_url?: string } | undefined)?.photo_url;
@@ -162,12 +178,12 @@ export default function DuelApp({ duelId }: { duelId: string }) {
     <div
       className="flex flex-col items-center gap-2 w-32"
       style={{
-        animation: `${side === 'left' ? 'duel-in-left' : 'duel-in-right'} 0.65s cubic-bezier(0.2, 1.2, 0.4, 1) ${side === 'left' ? 0.1 : 0.85}s both`,
+        animation: `${side === 'left' ? 'duel-in-left' : 'duel-in-right'} 0.65s cubic-bezier(0.2, 1.2, 0.4, 1) both`,
       }}
     >
       <div
         className="w-20 h-20 rounded-full overflow-hidden border-[3px] border-amber-400/80 bg-gradient-to-br from-amber-600/40 to-orange-900/40 flex items-center justify-center"
-        style={{ animation: 'duel-glow-pulse 1.6s ease-in-out 1.6s infinite' }}
+        style={{ animation: 'duel-glow-pulse 1.6s ease-in-out infinite' }}
       >
         {src ? (
           <img src={src} alt="" className="w-full h-full object-cover" />
@@ -259,25 +275,31 @@ export default function DuelApp({ duelId }: { duelId: string }) {
         </div>
       </div>
 
-      {/* Интро VS: аватарки влетают, VS между ними, всё плавно тает */}
-      {introShowing && (
+      {/* Интро VS: фазовая машина — аватар 1 → аватар 2 → VS → затухание */}
+      {stage === 'countdown' && introPhase !== '' && (
         <div
-          className="flex-1 flex items-center justify-center gap-3 px-4 pointer-events-none"
-          style={{ animation: 'duel-fade-all 0.7s ease 3.3s forwards' }}
+          className="flex-1 flex items-center justify-center gap-3 px-4"
+          style={introPhase === 'fade' ? { animation: 'duel-fade-all 0.6s ease forwards' } : undefined}
         >
-          <Avatar src={myPhoto} name={myName || 'Ти'} side="left" />
-          <div
-            className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-orange-500 drop-shadow-[0_0_18px_rgba(251,146,60,0.8)]"
-            style={{ animation: 'duel-vs-pop 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) 1.7s both', transform: 'rotate(-6deg)' }}
-          >
-            VS
-          </div>
-          <Avatar name={oppName} side="right" />
+          {introPhase !== '' && (
+            <Avatar src={myPhoto} name={myName || 'Ти'} side="left" />
+          )}
+          {(introPhase === 'vs' || introPhase === 'fade') && (
+            <div
+              className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-orange-500 drop-shadow-[0_0_18px_rgba(251,146,60,0.8)]"
+              style={{ animation: 'duel-vs-pop 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) both' }}
+            >
+              VS
+            </div>
+          )}
+          {(introPhase === 'p2' || introPhase === 'vs' || introPhase === 'fade') && (
+            <Avatar name={oppName || 'Соперник'} side="right" />
+          )}
         </div>
       )}
 
       {/* Отсчёт */}
-      {stage === 'countdown' && !introShowing && (
+      {stage === 'countdown' && introPhase === '' && (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <div key={countdownN} className="text-8xl font-black text-amber-300" style={{ animation: 'num-pop 0.5s cubic-bezier(0.34,1.56,0.64,1)' }}>
