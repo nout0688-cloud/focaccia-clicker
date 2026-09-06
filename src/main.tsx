@@ -36,6 +36,12 @@ class DuelBoundary extends React.Component<{ duelId: string }, { err: string | n
             <div className="text-5xl mb-3">⚠️</div>
             <p className="text-red-300 font-bold mb-2">Ошибка дуэли:</p>
             <pre className="text-[10px] text-amber-300/70 whitespace-pre-wrap">{this.state.err}</pre>
+            <button
+              onClick={() => { window.location.href = window.location.pathname + '?v=' + Date.now() + '&duel=' + this.props.duelId; }}
+              className="mt-4 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold rounded-xl text-xs active:scale-95 cursor-pointer shadow-lg"
+            >
+              🔄 Оновити версію
+            </button>
           </div>
         </div>
       );

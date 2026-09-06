@@ -354,6 +354,15 @@ export default function App() {
                 });
                 addToast('🎁 Нагорода!', `+${formatNum(data.reward)} фокач від адміна!`, '🎁');
               }
+              if (data?.diamonds && data.diamonds > 0) {
+                setState((p) => {
+                  const next = { ...p, diamonds: (p.diamonds || 0) + data.diamonds };
+                  stateRef.current = next;
+                  return next;
+                });
+                addToast('💎 Нагорода за дуель!', `+${formatNum(data.diamonds)} 💎 отримано!`, '💎');
+                haptic.success();
+              }
               if (data?.rebirth && data.rebirth > 0) {
                 setState((p) => {
                   const next = { ...p, prestige: p.prestige + data.rebirth };
@@ -831,6 +840,8 @@ export default function App() {
           total: Math.floor(cur.total),
           prestige: cur.prestige,
           clicks: Math.floor(cur.clicks),
+          focaccia: Math.floor(cur.focaccia),
+          diamonds: Math.floor(cur.diamonds),
         }),
       })
         .then((r) => r.json())

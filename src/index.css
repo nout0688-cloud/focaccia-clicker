@@ -388,3 +388,17 @@
 button { -webkit-tap-highlight-color: transparent; }
 
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+
+@keyframes duel-in-left {
+  0% { opacity: 0; transform: translateX(-120px) scale(0.7); }
+  100% { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes duel-in-right {
+  0% { opacity: 0; transform: translateX(120px) scale(0.7); }
+  100% { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes num-pop {
+  0% { opacity: 0; transform: scale(0.3); }
+  60% { opacity: 1; transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
