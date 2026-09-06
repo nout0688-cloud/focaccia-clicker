@@ -1,0 +1,2526 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ACHIEVEMENTS,
+  BUILDINGS,
+  CLICK_UPGRADES,
+  VIP_UPGRADES,
+  buildingCost,
+  formatCps,
+  formatNum,
+} from './game/data';
+import { cn } from './utils/cn';
+import focacciaImg from './assets/focaccia.png';
+import goldenImg from './assets/golden.png';
+
+/* ---- Telegram WebApp ---- */
+const tg = window.Telegram?.WebApp;
+const tgUser = (tg?.initDataUnsafe?.user || undefined) as { id?: number; first_name?: string; username?: string } | undefined;
+const API_BASE = 'https://focaccia-bot.vercel.app';
+
+/* ---- Storage: CloudStorage → localStorage fallback ---- */
+const storage = {
+  get(key: string): Promise<string | null> {
+    const local = (): string | null => {
+      try { return window.localStorage.getItem(key); } catch { return null; }
+    };
+    return new Promise((resolve) => {
+      if (!tg?.CloudStorage) { resolve(local()); return; }
+      try {
+        tg.CloudStorage.getItem(key, (err, value) => {
+          if (!err && value) resolve(value);
+          else resolve(local());
+        });
+      } catch { resolve(local()); }
+    });
+  },
+  set(key: string, value: string) {
+    try { if (tg?.CloudStorage) tg.CloudStorage.setItem(key, value, () => {}); } catch { /* WebApp unsupported */ }
+    try { window.localStorage.setItem(key, value); } catch { /* */ }
+  },
+  remove(key: string) {
+    try { if (tg?.CloudStorage) tg.CloudStorage.removeItem(key, () => {}); } catch { /* WebApp unsupported */ }
+    try { window.localStorage.removeItem(key); } catch { /* */ }
+  },
+};
+
+/* ---- Haptic feedback ---- */
+const haptic = {
+  light: () => tg?.HapticFeedback?.impactOccurred('light'),
+  medium: () => tg?.HapticFeedback?.impactOccurred('medium'),
+  heavy: () => tg?.HapticFeedback?.impactOccurred('heavy'),
+  success: () => tg?.HapticFeedback?.notificationOccurred('success'),
+  error: () => tg?.HapticFeedback?.notificationOccurred('error'),
+};
+
+/* ---- Types ---- */
+interface SaveState {
+  focaccia: number;
+  total: number;
+  clicks: number;
+  buildings: Record<string, number>;
+  upgrades: string[];
+  vipUpgrades: string[];
+  achievements: string[];
+  maxCombo: number;
+  goldenCaught: number;
+  prestige: number;
+  energy: number;
+  diamonds: number;
+  bossesDefeated: number;
+  pestsSquashed: number;
+  luck?: number; // везіння в казино: мінус — не щастило, плюс — щастило
+  karma?: number; // поведінковий рівень 0-100: чим менше — тим більше обмежень
+  lastReset: number;
+  lastSave: number;
+}
+
+interface FloatText {
+  id: number;
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  direction?: 'left' | 'right';
+}
+
+interface Toast {
+  id: number;
+  title: string;
+  text: string;
+  emoji: string;
+}
+
+interface Crumb {
+  id: number;
+  x: number;
+  y: number;
+  emoji: string;
+  dx: number;
+}
+
+interface ConfirmModal {
+  title: string;
+  text: string;
+  emoji: string;
+  onConfirm: () => void;
+  confirmText?: string;
+  isAlert?: boolean;
+}
+
+interface Boss {
+  id: string;
+  name: string;
+  emoji: string;
+  maxHp: number;
+  currentHp: number;
+  timeLeft: number;
+  rewardDiamonds: number;
+  rewardFocaccia: number;
+}
+
+interface Pest {
+  id: number;
+  x: number;
+  y: number;
+  name: string;
+  emoji: string;
+  dir: 1 | -1;
+}
+
+interface ActiveEvent {
+  title: string;
+  emoji: string;
+  timeLeft: number;
+  cpsMult: number;
+}
+
+const SAVE_KEY = 'focaccia-clicker-v1';
+const MAX_ENERGY_BASE = 50;
+
+const defaultState = (): SaveState => ({
+  focaccia: 0,
+  total: 0,
+  clicks: 0,
+  buildings: {},
+  upgrades: [],
+  vipUpgrades: [],
+  achievements: [],
+  maxCombo: 0,
+  goldenCaught: 0,
+  prestige: 0,
+  energy: MAX_ENERGY_BASE,
+  diamonds: 0,
+  bossesDefeated: 0,
+  pestsSquashed: 0,
+  luck: 0,
+  karma: 100,
+  lastReset: 0,
+  lastSave: Date.now(),
+});
+
+async function loadState(): Promise<SaveState> {
+  try {
+    const raw = await storage.get(SAVE_KEY);
+    if (!raw) return defaultState();
+    const parsed = JSON.parse(raw);
+    delete parsed.photo;
+    return { ...defaultState(), ...parsed };
+  } catch { return defaultState(); }
+}
+
+const PHRASES = [
+  'Ммм, фокача!', 'Ще одну!', 'Смачно!', 'Дай ще!', 'Хрустить!',
+  'Бле-е-е 👅', 'ФОКАЧА!!!', 'Ням-ням', 'З томатом!', 'Це моя фокача!',
+  'Гаряча! 🔥', 'Божественно!', 'Ще-ще-ще!', 'Обожнюю! 💛',
+];
+
+const BOSS_TYPES = [
+  { id: 'rat', name: 'Король Щурів', emoji: '🐀', hp: 30, time: 20, diamonds: 3, timeCps: 60 },
+  { id: 'mold', name: 'Мутантна Цвіль', emoji: '🦠', hp: 45, time: 22, diamonds: 5, timeCps: 120 },
+  { id: 'fire', name: 'Пекельна Пожежа', emoji: '🔥', hp: 60, time: 25, diamonds: 8, timeCps: 180 },
+  { id: 'mafia', name: 'Дон Фокачіо', emoji: '🤵', hp: 80, time: 30, diamonds: 12, timeCps: 300 },
+];
+
+const PEST_TYPES = [
+  { name: 'Тарган-злодюжка', emoji: '🪳' },
+  { name: 'Голодний жук', emoji: '🐜' },
+  { name: 'Хитрий щур', emoji: '🐁' },
+];
+
+type Page = 'shop' | 'casino' | 'clicker' | 'leaders' | 'settings';
+const PAGE_ORDER: Page[] = ['shop', 'casino', 'clicker', 'leaders', 'settings'];
+type ShopTab = 'buildings' | 'upgrades' | 'vip' | 'achievements';
+
+interface LeaderRow {
+  id: string;
+  name: string;
+  username: string;
+  total: number;
+  prestige: number;
+  flag?: boolean;
+  online?: boolean;
+}
+
+/* ---- Казино «Однарука бабуся» ---- */
+const CASINO_SYMBOLS = ['💎', '👵', '⭐', '🍅', '🫓', '🧄'];
+const CASINO_PAYOUTS: Record<string, number> = { '💎': 50, '👵': 15, '⭐': 8, '🍅': 4, '🫓': 2, '🧄': 1.5 };
+const CASINO_PAIR_MULT = 1.4;
+const CASINO_BETS = [100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000];
+const randSymbol = () => CASINO_SYMBOLS[Math.floor(Math.random() * CASINO_SYMBOLS.length)];
+const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+// Колесо: 10 секторів, сума = 9.5 → повернення ~95%
+const WHEEL_SEGMENTS = [0, 0.5, 1.5, 0, 2, 0, 0.5, 0, 5, 0];
+const WHEEL_EDGE = 360 / WHEEL_SEGMENTS.length;
+const wheelGradient = WHEEL_SEGMENTS.map((m, i) => {
+  const color = m === 0 ? '#160f05' : m >= 5 ? '#f59e0b' : m >= 2 ? '#b45309' : '#6b3f0e';
+  return `${color} ${i * WHEEL_EDGE}deg ${(i + 1) * WHEEL_EDGE}deg`;
+}).join(', ');
+
+export default function App() {
+  const [state, setState] = useState<SaveState>(defaultState);
+  const [loading, setLoading] = useState(true);
+  const [floats, setFloats] = useState<FloatText[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [combo, setCombo] = useState(0);
+  const [squish, setSquish] = useState(false);
+  const [page, setPage] = useState<Page>('clicker');
+  const [pageDir, setPageDir] = useState<1 | -1>(1);
+  const goPage = (p: Page) => {
+    if (p === page) return;
+    setPageDir(PAGE_ORDER.indexOf(p) > PAGE_ORDER.indexOf(page) ? 1 : -1);
+    setPage(p);
+    if (p === 'leaders') loadLeaders();
+    haptic.light();
+  };
+  const [shopTab, setShopTab] = useState<ShopTab>('buildings');
+  const [phrase, setPhrase] = useState('Натисни!');
+  const [golden, setGolden] = useState<{ x: number; y: number } | null>(null);
+  const [frenzy, setFrenzy] = useState(0);
+  const [offlineGain, setOfflineGain] = useState<number | null>(null);
+  const [shake, setShake] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<ConfirmModal | null>(null);
+  const [recharging, setRecharging] = useState(false);
+  const [clickRipple, setClickRipple] = useState<{x: number; y: number; id: number} | null>(null);
+  const [confetti, setConfetti] = useState<{ id: number; x: number; delay: number; emoji: string; size: number }[]>([]);
+  const [crumbs, setCrumbs] = useState<Crumb[]>([]);
+  const [flash, setFlash] = useState<{ type: string; id: number } | null>(null);
+  const [milestone, setMilestone] = useState<{ text: string; id: number } | null>(null);
+  const [bossSlain, setBossSlain] = useState<{ emoji: string; id: number } | null>(null);
+  const [toastsLeaving, setToastsLeaving] = useState<number[]>([]);
+  const [leaders, setLeaders] = useState<LeaderRow[] | null>(null);
+  const [leadersLoading, setLeadersLoading] = useState(false);
+  const [myRank, setMyRank] = useState<number | null>(null);
+
+  /* Античит: режим «фокачі пригорають» + випробування */
+  const [suspected, setSuspected] = useState(false);
+  const [challenge, setChallenge] = useState<null | { caught: number; x: number; y: number; timeLeft: number; result: null | 'pending' | 'win' | 'fail' | 'denied' }>(null);
+  const rawTaps = useRef<{ t: number; x: number; y: number }[]>([]); // ВСІ дотики до булки, навіть без енергії
+  const lastRawTap = useRef(0);
+  const activeNoBreakMs = useRef(0); // час гри без жодної паузи ≥ 20с
+  const fastStreakMs = useRef(0); // безперервна серія дотиків швидше 8/с
+  const susWindows = useRef(0);
+  const untrustedClicks = useRef(0);
+  const [karma, setKarma] = useState(100); // поведінковий рівень 0-100 (синхронізується з сервером)
+  const casinoMaxBet = karma < 50 ? 0 : karma < 75 ? 1000 : Infinity; // дотівська лестниця обмежень
+
+  /* Казино */
+  const [casinoGame, setCasinoGame] = useState<'slots' | 'dice' | 'wheel'>('slots');
+  const [casinoBet, setCasinoBet] = useState(100);
+  const [casinoCustomBet, setCasinoCustomBet] = useState('100');
+  const [casinoReels, setCasinoReels] = useState<[string, string, string]>(['🫓', '👵', '💎']);
+  const [casinoSpinning, setCasinoSpinning] = useState(false);
+  const [casinoMsg, setCasinoMsg] = useState<null | { text: string; win: boolean }>(null);
+  const [diceRoll, setDiceRoll] = useState<null | { mine: number; house: number }>(null);
+  const [wheelAngle, setWheelAngle] = useState(0);
+
+  /* New mechanics state */
+  const [boss, setBoss] = useState<Boss | null>(null);
+  const [pest, setPest] = useState<Pest | null>(null);
+  const [brokenBuilding, setBrokenBuilding] = useState<string | null>(null);
+  const [activeEvent, setActiveEvent] = useState<ActiveEvent | null>(null);
+
+  const floatId = useRef(0);
+  const lastClick = useRef(0);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  /* ---- Init ---- */
+  useEffect(() => {
+    if (tg) { tg.ready(); tg.expand(); }
+    // Ref for the admin polling interval so it can be cleared on unmount
+    let adminIv: ReturnType<typeof setInterval> | undefined;
+
+    loadState().then((s) => {
+      const elapsed = Math.min((Date.now() - s.lastSave) / 1000, 60 * 60 * 8);
+      if (elapsed > 30) {
+        let base = 0;
+        for (const b of BUILDINGS) base += (s.buildings[b.id] || 0) * b.cps;
+        let mult = 1;
+        for (const u of CLICK_UPGRADES)
+          if (u.cpsMult && s.upgrades.includes(u.id)) mult *= u.cpsMult;
+        if (s.vipUpgrades?.includes('vip_chef')) mult *= 1.3;
+        const karmaMult = (s.karma ?? 100) < 50 ? 0.5 : 1; // погана карма — офлайн-дохід −50%
+        const gain = base * mult * (1 + s.prestige * 0.1) * elapsed * 0.5 * karmaMult;
+        if (gain > 1) { s.focaccia += gain; s.total += gain; setOfflineGain(gain); }
+      }
+      setState(s);
+      setKarma(s.karma ?? 100);
+      setLoading(false);
+
+      // Check for admin rewards or reset order
+      const checkAdmin = (userState: SaveState) => {
+        if (!tgUser?.id) return;
+        fetch(`https://focaccia-bot.vercel.app/api/reward?userId=${tgUser.id}&lastReset=${userState.lastReset || 0}`)
+          .then((r) => r.json())
+          .then((data) => {
+            if (typeof data?.karma === 'number') setKarma(data.karma);
+            if (data?.reset) {
+              const fresh = defaultState();
+              if (data.resetTime) fresh.lastReset = data.resetTime;
+              storage.set(SAVE_KEY, JSON.stringify(fresh));
+              stateRef.current = fresh;
+              setState(fresh);
+              setConfirmModal({
+                title: 'Скидання акаунту',
+                text: 'Адміністратор провів скидання гри. Твій прогрес розпочато спочатку!',
+                emoji: '🗑️',
+                isAlert: true,
+                confirmText: 'Ок',
+                onConfirm: () => setConfirmModal(null),
+              });
+              haptic.error();
+            } else {
+              if (data?.reward && data.reward > 0) {
+                setState((p) => {
+                  const next = { ...p, focaccia: p.focaccia + data.reward, total: p.total + data.reward };
+                  stateRef.current = next;
+                  return next;
+                });
+                addToast('🎁 Нагорода!', `+${formatNum(data.reward)} фокач від адміна!`, '🎁');
+              }
+              if (data?.rebirth && data.rebirth > 0) {
+                setState((p) => {
+                  const next = { ...p, prestige: p.prestige + data.rebirth };
+                  stateRef.current = next;
+                  return next;
+                });
+                addToast('🔄 Ребіртхи від адміна!', `+${data.rebirth} 🔄 до престижу!`, '🔄');
+                haptic.success();
+              }
+            }
+          })
+          .catch(() => { /* silent fail */ });
+      };
+
+      checkAdmin(s);
+
+      // Check every 25 seconds while playing
+      adminIv = setInterval(() => checkAdmin(stateRef.current), 25000);
+    });
+
+    // Cleanup: clear the admin polling interval on component unmount
+    return () => clearInterval(adminIv);
+  }, []);
+
+  /* ---- Derived ---- */
+  const prestigeMult = 1 + state.prestige * 0.1;
+
+  const clickPower = useMemo(() => {
+    let add = 1, mult = 1;
+    for (const u of CLICK_UPGRADES) {
+      if (!state.upgrades.includes(u.id)) continue;
+      if (u.clickAdd) add += u.clickAdd;
+      if (u.clickMult) mult *= u.clickMult;
+    }
+    return add * mult * prestigeMult;
+  }, [state.upgrades, prestigeMult]);
+
+  const cps = useMemo(() => {
+    let base = 0;
+    for (const b of BUILDINGS) {
+      const isBroken = brokenBuilding === b.id;
+      base += (state.buildings[b.id] || 0) * b.cps * (isBroken ? 0.5 : 1);
+    }
+    let mult = 1;
+    for (const u of CLICK_UPGRADES) {
+      if (u.cpsMult && state.upgrades.includes(u.id)) mult *= u.cpsMult;
+    }
+    if (state.vipUpgrades?.includes('vip_chef')) mult *= 1.3;
+    if (activeEvent) mult *= activeEvent.cpsMult;
+    return base * mult * prestigeMult;
+  }, [state.buildings, state.upgrades, state.vipUpgrades, brokenBuilding, activeEvent, prestigeMult]);
+
+  const frenzyMult = frenzy > 0 ? 7 : 1;
+  const comboMult = 1 + Math.min(combo, 100) * 0.02;
+  const cpsRef = useRef(cps);
+  cpsRef.current = cps * frenzyMult;
+  const prestigeGain = Math.floor(Math.cbrt(state.total / 1e6));
+  const nextRebirthTarget = Math.pow(Math.max(1, prestigeGain + 1), 3) * 1e6;
+  const prevRebirthTarget = prestigeGain > 0 ? Math.pow(prestigeGain, 3) * 1e6 : 0;
+  const rebirthProgress = Math.min(
+    100,
+    Math.max(0, ((state.total - prevRebirthTarget) / (nextRebirthTarget - prevRebirthTarget)) * 100)
+  );
+
+  const maxEnergy = useMemo(() => {
+    let cap = MAX_ENERGY_BASE + state.prestige * 5;
+    if (state.vipUpgrades?.includes('vip_energy')) cap += 25;
+    return cap;
+  }, [state.prestige, state.vipUpgrades]);
+
+  const energyRegenSpeed = useMemo(() => {
+    let mult = 1;
+    for (const u of CLICK_UPGRADES) {
+      if (u.energyRegen && state.upgrades.includes(u.id)) mult *= u.energyRegen;
+    }
+    return mult;
+  }, [state.upgrades]);
+
+  /* ---- Helpers ---- */
+  const addFloat = useCallback((x: number, y: number, text: string, color = 'text-amber-300') => {
+    const id = ++floatId.current;
+    const direction = Math.random() < 0.5 ? 'left' : 'right';
+    setFloats((f) => [...f, { id, x, y, text, color, direction }]);
+    setTimeout(() => setFloats((f) => f.filter((t) => t.id !== id)), 850);
+  }, []);
+
+  const closeToast = useCallback((id: number) => {
+    setToastsLeaving((l) => (l.includes(id) ? l : [...l, id]));
+    setTimeout(() => {
+      setToasts((t) => t.filter((x) => x.id !== id));
+      setToastsLeaving((l) => l.filter((x) => x !== id));
+    }, 300);
+  }, []);
+
+  const addToast = useCallback((title: string, text: string, emoji: string) => {
+    const id = ++floatId.current;
+    setToasts((t) => [...t, { id, title, text, emoji }]);
+    setTimeout(() => closeToast(id), 4000);
+  }, [closeToast]);
+
+  const doFlash = useCallback((type: string) => {
+    const id = ++floatId.current;
+    setFlash({ type, id });
+    setTimeout(() => setFlash((f) => (f && f.id === id ? null : f)), 500);
+  }, []);
+
+  const burstConfetti = useCallback((emojis: string[] = ['🫓', '✨', '⭐', '🔥', '💎']) => {
+    const base = ++floatId.current;
+    setConfetti(
+      Array.from({ length: 14 }, (_, i) => ({
+        id: base * 100 + i,
+        x: Math.random() * 100,
+        delay: Math.random() * 0.5,
+        emoji: emojis[Math.floor(Math.random() * emojis.length)],
+        size: 13 + Math.random() * 14,
+      })),
+    );
+    setTimeout(() => setConfetti([]), 2700);
+  }, []);
+
+  const showMilestone = useCallback((text: string) => {
+    const id = ++floatId.current;
+    setMilestone({ text, id });
+    setTimeout(() => setMilestone((m) => (m && m.id === id ? null : m)), 950);
+  }, []);
+
+  /* ---- Антиавтокликер ---- */
+  const enterSuspicion = () => {
+    if (suspected) return;
+    setSuspected(true);
+    susWindows.current = 0;
+    rawTaps.current = [];
+    if (tgUser?.id) {
+      fetch(`${API_BASE}/api/leaderboard`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: tgUser.id, event: 'flag' }),
+      })
+        .then((r) => r.json())
+        .then((data) => { if (typeof data?.karma === 'number') setKarma(data.karma); })
+        .catch(() => {});
+    }
+  };
+
+  // Аналізуємо ПОТОК ДОТИКІВ (pointerdown), а не зареєстровані кліки:
+  // енергія квантує кліки під перезарядку — це давало хибні спрацювання.
+  // Людина: варіативність у ЧАСІ (локальні темпи плавають), у ПРОСТОРІ (розкид точок),
+  // стрибки між дотиками, втома/паузи. Бот із джитером та «рухомою точкою» ловиться на
+  // однорідність локальних темпів, малий крок траєкторії та відсутність втоми.
+  const evaluateRhythm = () => {
+    const taps = rawTaps.current;
+    if (taps.length < 41) return;
+    const win = taps.slice(-40);
+    const ivs: number[] = [];
+    for (let i = 1; i < win.length; i++) ivs.push(win[i].t - win[i - 1].t);
+    const mean = ivs.reduce((a, b) => a + b, 0) / ivs.length;
+    const sd = Math.sqrt(ivs.reduce((a, b) => a + (b - mean) ** 2, 0) / ivs.length);
+    const cv = sd / mean;
+    const sorted = [...ivs].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const tol = Math.max(8, median * 0.15);
+    const clusterFrac = ivs.filter((iv) => Math.abs(iv - median) <= tol).length / ivs.length;
+    const hasPause = ivs.some((iv) => iv > 2500);
+
+    // Однорідність локальних темпів: середня швидкість кожних 10 дотиків.
+    // Джиттер бота — незалежний шум, тому його локальні темпи майже ідентичні.
+    // У людини темп «пливе» між десятками: 60 → 150 → 90 мс.
+    const subMeans: number[] = [];
+    for (let s = 0; s < 4; s++) {
+      const sub = ivs.slice(s * 10, s * 10 + 10);
+      subMeans.push(sub.reduce((a, b) => a + b, 0) / sub.length);
+    }
+    const smMean = subMeans.reduce((a, b) => a + b, 0) / subMeans.length;
+    const smSd = Math.sqrt(subMeans.reduce((a, b) => a + (b - smMean) ** 2, 0) / subMeans.length);
+    const subCv = smMean > 0 ? smSd / smMean : 1;
+
+    // Позиція: сигма розкиду + плавність траєкторії між дотиками
+    const xs = win.map((t) => t.x);
+    const ys = win.map((t) => t.y);
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    const stdX = Math.sqrt(xs.reduce((a, b) => a + (b - mx) ** 2, 0) / xs.length);
+    const stdY = Math.sqrt(ys.reduce((a, b) => a + (b - my) ** 2, 0) / ys.length);
+    const posLoose = stdX + stdY;
+    let stepSum = 0;
+    for (let i = 1; i < win.length; i++) stepSum += Math.hypot(win[i].x - win[i - 1].x, win[i].y - win[i - 1].y);
+    const stepAvg = stepSum / (win.length - 1);
+    const bbox = (Math.max(...xs) - Math.min(...xs)) + (Math.max(...ys) - Math.min(...ys));
+    const smoothPath = stepAvg < 4 && bbox > 15; // точка «повзе», а не стрибає
+
+    let score = 0;
+    if (mean < 45) score += 4;          // 22+ дотиків/с — фізично неможливо
+    else if (mean < 70) score += 2;     // 14+/с стабільно
+    if (cv < 0.08) score += 2;          // майже метроном
+    else if (cv < 0.2) score += 1;
+    if (clusterFrac > 0.8) score += 2;  // інтервали купкуються біля медіани
+    // Головний сигнал: незалежний шум. У бота subCv ≈ 0.3×cv (джиттер незалежний),
+    // у людини темп дрейфує → subCv ≥ 0.5×cv. Відношення < 0.35 = шумова машина.
+    if (cv >= 0.08 && mean < 400 && subCv / cv < 0.35) score += 3;
+    if (!hasPause) score += 1;          // людина робить мікропаузи — бот ніколи
+
+    // На мобільних палець не бʼє двічі в одну точку і не «повзе» плавно.
+    // (На десктопі миша легітимно стоїть на місці, тому там не перевіряємо.)
+    const platform = tg?.platform || 'unknown';
+    if (platform === 'ios' || platform === 'android') {
+      if (posLoose < 5) score += 2;
+      else if (posLoose < 16) score += 1;
+      if (smoothPath) score += 1;
+    }
+
+    // Порог 7 відкалібровано симуляціями: людина 1-3% вікон, боти 84-100%.
+    const botLike = score >= 7;
+    susWindows.current = botLike ? susWindows.current + 1 : Math.max(0, susWindows.current - 1);
+    if (susWindows.current >= 2) enterSuspicion();
+  };
+
+  // Кожен фізичний дотик до булки — сире джерело для аналізу
+  const markRawTap = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!e.nativeEvent.isTrusted) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const now = Date.now();
+    const prev = lastRawTap.current;
+    lastRawTap.current = now;
+
+    // Антисесія: гра без жодної паузи ≥ 20с довше 90 хвилин — так може тільки бот.
+    // Людина баєриться, відволікається, п'є чай.
+    if (prev && now - prev < 20000) activeNoBreakMs.current += now - prev;
+    else activeNoBreakMs.current = 0;
+    if (activeNoBreakMs.current > 90 * 60 * 1000) {
+      activeNoBreakMs.current = 0;
+      enterSuspicion();
+    }
+
+    // Антивтома: серія дотиків швидше 8/с без жодного проміжку ≥ 125мс,
+    // довша за ~3 хвилини. Людина на такому темпі видихає за десятки секунд.
+    if (prev && now - prev < 125) fastStreakMs.current += now - prev;
+    else fastStreakMs.current = 0;
+    if (fastStreakMs.current > 3 * 60 * 1000) {
+      fastStreakMs.current = 0;
+      enterSuspicion();
+    }
+
+    rawTaps.current.push({ t: now, x: e.clientX - rect.left, y: e.clientY - rect.top });
+    if (rawTaps.current.length > 61) rawTaps.current.shift();
+    if (!suspected) evaluateRhythm();
+  };
+
+  /* ---- Leaderboard: report my stats + load top players ---- */
+  const loadLeaders = useCallback(() => {
+    setLeadersLoading(true);
+    fetch(`${API_BASE}/api/leaderboard`)
+      .then((r) => r.json())
+      .then((data) => setLeaders(data?.players || []))
+      .catch(() => setLeaders([]))
+      .finally(() => setLeadersLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!tgUser?.id) return;
+    const report = () => {
+      const cur = stateRef.current;
+      fetch(`${API_BASE}/api/leaderboard`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: tgUser.id,
+          name: tgUser.first_name || 'Гравець',
+          username: tgUser.username || '',
+          total: Math.floor(cur.total),
+          prestige: cur.prestige,
+          clicks: Math.floor(cur.clicks),
+        }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (typeof data?.karma === 'number') setKarma(data.karma);
+          if (data?.rank) setMyRank(data.rank);
+        })
+        .catch(() => { /* silent */ });
+    };
+    report();
+    const iv = setInterval(report, 60000);
+    return () => clearInterval(iv);
+  }, [loading]);
+
+  /* ---- Game tick ---- */
+  useEffect(() => {
+    if (loading) return;
+    const iv = setInterval(() => {
+      const gain = cpsRef.current / 10;
+      if (gain > 0) setState((p) => ({ ...p, focaccia: p.focaccia + gain, total: p.total + gain }));
+    }, 100);
+    return () => clearInterval(iv);
+  }, [loading]);
+
+  /* ---- Combo decay ---- */
+  useEffect(() => {
+    const iv = setInterval(() => {
+      if (Date.now() - lastClick.current > 1200) setCombo((c) => (c > 0 ? Math.max(0, c - 3) : 0));
+    }, 200);
+    return () => clearInterval(iv);
+  }, []);
+
+  /* ---- Energy regen ---- */
+  useEffect(() => {
+    if (!loading && state.energy <= 0 && !recharging) setRecharging(true);
+  }, [loading, state.energy, recharging]);
+
+  useEffect(() => {
+    if (!recharging) return;
+    const interval = Math.max(50, Math.floor(1000 / energyRegenSpeed));
+    const iv = setInterval(() => {
+      setState((p) => {
+        let cap = MAX_ENERGY_BASE + p.prestige * 5;
+        if (p.vipUpgrades?.includes('vip_energy')) cap += 25;
+        const next = p.energy + 1;
+        if (next >= cap) { setRecharging(false); return { ...p, energy: cap }; }
+        return { ...p, energy: next };
+      });
+    }, interval);
+    return () => clearInterval(iv);
+  }, [recharging, energyRegenSpeed]);
+
+  /* ---- Frenzy ---- */
+  useEffect(() => {
+    if (frenzy <= 0) return;
+    const t = setTimeout(() => setFrenzy((f) => f - 1), 1000);
+    return () => clearTimeout(t);
+  }, [frenzy]);
+
+  /* ---- Golden Focaccia ---- */
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout>;
+    let goldenHideTimeout: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const hasGoldenUpgrade = stateRef.current.vipUpgrades?.includes('vip_golden');
+      const baseDelay = hasGoldenUpgrade ? 25000 : 50000;
+      const randomExtra = hasGoldenUpgrade ? 30000 : 55000;
+      timeout = setTimeout(() => {
+        setGolden({ x: 10 + Math.random() * 80, y: 15 + Math.random() * 55 });
+        goldenHideTimeout = setTimeout(() => setGolden(null), 9000);
+        schedule();
+      }, baseDelay + Math.random() * randomExtra);
+    };
+    schedule();
+    return () => {
+      clearTimeout(timeout);
+      clearTimeout(goldenHideTimeout);
+    };
+  }, []);
+
+  /* ---- Active Event countdown ---- */
+  useEffect(() => {
+    if (!activeEvent) return;
+    const iv = setInterval(() => {
+      setActiveEvent((e) => {
+        if (!e) return null;
+        if (e.timeLeft <= 1) return null;
+        return { ...e, timeLeft: e.timeLeft - 1 };
+      });
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [activeEvent]);
+
+  /* ---- Random Events / Taxes (every 90s) ---- */
+  useEffect(() => {
+    if (loading) return;
+    const iv = setInterval(() => {
+      const roll = Math.random();
+      const cur = stateRef.current;
+      if (cur.total < 1000) return;
+
+      if (roll < 0.35 && cur.focaccia >= 500) {
+        // Tax inspection
+        const hasAccountant = cur.vipUpgrades?.includes('vip_tax');
+        const taxRate = hasAccountant ? 0.01 : 0.05;
+        const tax = Math.max(1, Math.floor(cur.focaccia * taxRate));
+        setState((p) => ({ ...p, focaccia: Math.max(0, p.focaccia - tax) }));
+        addToast('👮 Податкова!', `Сплачено ${taxRate * 100}% податку (-${formatNum(tax)} 🫓)`, '📋');
+        doFlash('tax');
+        haptic.medium();
+      } else if (roll < 0.6) {
+        // Baking Festival
+        setActiveEvent({ title: 'Свято випічки', emoji: '☀️', timeLeft: 25, cpsMult: 2.0 });
+        addToast('☀️ Свято випічки!', 'Виробництво x2 на 25 секунд!', '🎉');
+        haptic.success();
+      } else if (roll < 0.8) {
+        // Damp weather
+        setActiveEvent({ title: 'Сирість у печі', emoji: '🌧️', timeLeft: 20, cpsMult: 0.7 });
+        addToast('🌧️ Сирість на кухні!', 'CPS -30% на 20 секунд', '💨');
+        haptic.error();
+      } else {
+        // Grandma surprise gift
+        const bonus = Math.max(100, Math.floor((cpsRef.current || 10) * 90));
+        setState((p) => ({ ...p, focaccia: p.focaccia + bonus, total: p.total + bonus }));
+        addToast('👵 Бабусин пиріг!', `+${formatNum(bonus)} смачних фокач!`, '🥐');
+        haptic.success();
+      }
+    }, 90000);
+    return () => clearInterval(iv);
+  }, [loading, addToast]);
+
+  /* ---- Pest spawner & nibble ---- */
+  useEffect(() => {
+    if (loading) return;
+    const iv = setInterval(() => {
+      if (pest || stateRef.current.total < 500) return;
+      const pType = PEST_TYPES[Math.floor(Math.random() * PEST_TYPES.length)];
+      setPest({
+        id: Date.now(),
+        x: 15 + Math.random() * 70,
+        y: 25 + Math.random() * 45,
+        name: pType.name,
+        emoji: pType.emoji,
+        dir: Math.random() < 0.5 ? 1 : -1,
+      });
+      addToast('⚠️ Шкідник!', `${pType.name} пробрався на склад! Тапни його!`, pType.emoji);
+      haptic.medium();
+    }, 45000);
+    return () => clearInterval(iv);
+  }, [loading, pest, addToast]);
+
+  // Pest auto-escape and focaccia stealing
+  useEffect(() => {
+    if (!pest) return;
+    const escapeTimer = setTimeout(() => {
+      setPest(null);
+      addToast('💨 Втік!', 'Шкідник наївся і втік!', '🏃');
+    }, 14000);
+
+    const stealInterval = setInterval(() => {
+      setState((p) => {
+        if (p.focaccia <= 10) return p;
+        const hasTrap = p.vipUpgrades?.includes('vip_trap');
+        const loss = Math.max(1, Math.floor(p.focaccia * (hasTrap ? 0.002 : 0.005)));
+        return { ...p, focaccia: Math.max(0, p.focaccia - loss) };
+      });
+    }, 2000);
+
+    return () => {
+      clearTimeout(escapeTimer);
+      clearInterval(stealInterval);
+    };
+  }, [pest, addToast]);
+
+  // Pest crawl — wanders around the screen, flipping to face its direction
+  useEffect(() => {
+    if (!pest) return;
+    const iv = setInterval(() => {
+      setPest((p) => {
+        if (!p) return null;
+        const dx = (Math.random() - 0.5) * 26;
+        const dy = (Math.random() - 0.5) * 18;
+        return {
+          ...p,
+          x: Math.min(82, Math.max(8, p.x + dx)),
+          y: Math.min(68, Math.max(22, p.y + dy)),
+          dir: dx > 0 ? -1 : 1,
+        };
+      });
+    }, 1200);
+    return () => clearInterval(iv);
+  }, [pest?.id]);
+
+  /* ---- Boss battle spawner ---- */
+  useEffect(() => {
+    if (loading) return;
+    const iv = setInterval(() => {
+      if (boss || stateRef.current.total < 3000) return;
+      // Spawn random boss
+      const bType = BOSS_TYPES[Math.floor(Math.random() * BOSS_TYPES.length)];
+      const currentCps = Math.max(10, cpsRef.current);
+      setBoss({
+        id: bType.id,
+        name: bType.name,
+        emoji: bType.emoji,
+        maxHp: bType.hp,
+        currentHp: bType.hp,
+        timeLeft: bType.time,
+        rewardDiamonds: bType.diamonds,
+        rewardFocaccia: Math.max(100, Math.floor(currentCps * bType.timeCps)),
+      });
+      addToast('🚨 БОС НАПАВ!', `${bType.name} атакує! Заклікай його!`, bType.emoji);
+      haptic.heavy();
+    }, 180000);
+    return () => clearInterval(iv);
+  }, [loading, boss, addToast]);
+
+  // Boss timer — deadline-based: the countdown follows wall-clock time, so it
+  // keeps working even if the webview throttles or freezes background timers.
+  useEffect(() => {
+    if (!boss) return;
+    const deadline = Date.now() + boss.timeLeft * 1000;
+    let fled = false;
+    const iv = setInterval(() => {
+      const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      if (!fled) setBoss((b) => (b ? { ...b, timeLeft: left } : b));
+      if (left <= 0 && !fled) {
+        fled = true;
+        clearInterval(iv);
+        const stolen = Math.floor(stateRef.current.focaccia * 0.1);
+        if (stolen > 0) {
+          setState((p) => ({ ...p, focaccia: Math.max(0, p.focaccia - stolen) }));
+          addToast('💀 Бос втік!', `Вкрав ${formatNum(stolen)} фокач! Наступного разу бий швидше!`, '😱');
+        } else {
+          addToast('💀 Бос втік!', 'Твоя каса була порожня — красти нічого!', '😱');
+        }
+        haptic.error();
+        setBoss(null);
+      }
+    }, 250);
+    return () => clearInterval(iv);
+  }, [boss?.id, addToast]);
+
+  /* ---- Building maintenance (wear & tear) ---- */
+  useEffect(() => {
+    if (loading) return;
+    const iv = setInterval(() => {
+      if (brokenBuilding) return;
+      const owned = BUILDINGS.filter((b) => (stateRef.current.buildings[b.id] || 0) > 0);
+      if (owned.length === 0) return;
+      const target = owned[Math.floor(Math.random() * owned.length)];
+      setBrokenBuilding(target.id);
+      addToast('🔧 Зношення!', `${target.name} зламалась! (-50% CPS). Полагодь у магазині!`, '⚠️');
+      haptic.error();
+    }, 140000);
+    return () => clearInterval(iv);
+  }, [loading, brokenBuilding, addToast]);
+
+  /* ---- Autosave ---- */
+  useEffect(() => {
+    if (loading) return;
+    const iv = setInterval(() => {
+      storage.set(SAVE_KEY, JSON.stringify({ ...stateRef.current, lastSave: Date.now() }));
+    }, 3000);
+    return () => clearInterval(iv);
+  }, [loading]);
+
+  /* ---- Achievements ---- */
+  useEffect(() => {
+    if (loading) return;
+    const achState = {
+      total: state.total, clicks: state.clicks, cps,
+      buildings: state.buildings, maxCombo: state.maxCombo,
+      goldenCaught: state.goldenCaught, prestige: state.prestige,
+      diamonds: state.diamonds, bossesDefeated: state.bossesDefeated,
+      pestsSquashed: state.pestsSquashed,
+    };
+    const newly = ACHIEVEMENTS.filter((a) => !state.achievements.includes(a.id) && a.check(achState));
+    if (newly.length) {
+      setState((p) => ({
+        ...p,
+        achievements: [...p.achievements, ...newly.map((a) => a.id)],
+      }));
+      newly.forEach((a) => {
+        addToast('Досягнення!', a.name, a.emoji);
+        haptic.success();
+      });
+    }
+  }, [loading, state.total, state.clicks, cps, state.buildings, state.maxCombo, state.goldenCaught, state.prestige, state.diamonds, state.bossesDefeated, state.pestsSquashed, state.achievements, addToast]);
+
+  /* ---- Випробування античиту: таймер + авто-відкриття при підозрі ---- */
+  const challengeActive = !!challenge && challenge.result === null;
+  useEffect(() => {
+    if (!challengeActive) return;
+    const iv = setInterval(() => {
+      setChallenge((c) => {
+        if (!c || c.result !== null) return c;
+        if (c.timeLeft <= 0.1) return { ...c, result: 'fail' };
+        return { ...c, timeLeft: Math.max(0, Math.round((c.timeLeft - 0.1) * 10) / 10) };
+      });
+    }, 100);
+    return () => clearInterval(iv);
+  }, [challengeActive]);
+
+  useEffect(() => {
+    if (!suspected || loading) return;
+    const shadow = karma < 25; // «Тінь бабусі» — випробування не діє
+    const open = () => setChallenge((c) => (c ? c : { caught: 0, x: 20 + Math.random() * 55, y: 30 + Math.random() * 32, timeLeft: 5, result: null }));
+    const t = setTimeout(() => {
+      if (shadow) {
+        addToast('🔴 Тінь бабусі!', 'Карма замала — випробування не діє. Грай чесно, карма відновиться.', '🔴');
+      } else {
+        open();
+        addToast('🚫 Авто-клікер не смачний!', 'Фокачі пригорають… Доведи бабусі, що ти не робот!', '👵');
+      }
+      haptic.error();
+    }, 1500);
+    const iv = setInterval(() => {
+      if (shadow) {
+        addToast('🔴 Тінь бабусі…', 'Грай чесно — карма поступово відновиться', '⏳');
+      } else {
+        open();
+        addToast('👵 Фокачі все ще пригорають…', 'Пройди випробування, щоб зняти підозру!', '🚫');
+      }
+    }, 90000);
+    return () => { clearTimeout(t); clearInterval(iv); };
+  }, [suspected, loading, karma, addToast]);
+
+  const catchChallengeTarget = (e: React.MouseEvent) => {
+    if (!e.nativeEvent.isTrusted) return;
+    if (!challenge || challenge.result !== null) return;
+    haptic.light();
+    const caught = challenge.caught + 1;
+    if (caught >= 3) {
+      susWindows.current = 0;
+      rawTaps.current = [];
+      setChallenge((c) => (c ? { ...c, caught, result: 'pending' } : c));
+      const finishLocal = () => {
+        setSuspected(false);
+        setChallenge((c) => (c ? { ...c, result: 'win' } : c));
+        addToast('✅ Бабуся повірила тобі!', 'Підозру знято, фокачі більше не пригорають!', '🫓');
+        haptic.success();
+      };
+      if (tgUser?.id) {
+        fetch(`${API_BASE}/api/leaderboard`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: tgUser.id, event: 'clear' }),
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            if (typeof data?.karma === 'number') setKarma(data.karma);
+            if (data?.ok === false) {
+              // «Тінь бабусі» — випробування не діє
+              setChallenge((c) => (c ? { ...c, result: 'denied' } : c));
+              haptic.error();
+            } else {
+              finishLocal();
+            }
+          })
+          .catch(finishLocal);
+      } else {
+        finishLocal();
+      }
+    } else {
+      setChallenge((c) => (c ? { ...c, caught, x: 20 + Math.random() * 55, y: 30 + Math.random() * 32 } : c));
+    }
+  };
+
+  /* ---- Казино: система везіння + три ігри ---- */
+
+  // Після кожної гри: виграш гріє «везіння», програш охолоджує
+  const updateLuck = (mult: number) => {
+    setState((p) => ({ ...p, luck: Math.max(-8, Math.min(12, (p.luck || 0) + mult - 0.95)) }));
+  };
+
+  const creditWin = (mult: number, combo: string, jackpot: boolean) => {
+    const winAmt = Math.floor(casinoBet * mult);
+    setState((p) => ({ ...p, focaccia: p.focaccia + winAmt }));
+    setCasinoMsg({ text: `Виграш +${formatNum(winAmt)} 🫓 (×${mult})`, win: true });
+    updateLuck(mult);
+    if (jackpot || mult >= 5) {
+      burstConfetti(['🫓', '💎', '⭐', '✨']);
+      doFlash('golden');
+      addToast('🎰 ДЖЕКПОТ!', `${combo} — +${formatNum(winAmt)} 🫓!`, '💎');
+      haptic.heavy();
+    } else {
+      haptic.success();
+    }
+  };
+
+  const slotsScore = (r: [string, string, string]) => {
+    if (r[0] === r[1] && r[1] === r[2]) return CASINO_PAYOUTS[r[0]];
+    if (r[0] === r[1] || r[1] === r[2] || r[0] === r[2]) return CASINO_PAIR_MULT;
+    return 0;
+  };
+
+  const spinCasino = () => {
+    if (casinoSpinning) return;
+    if (casinoBet > casinoMaxBet) {
+      addToast('🔒 Карма замала', `Максимальна ставка — ${formatNum(casinoMaxBet)} 🫓`, '❌');
+      return;
+    }
+    if (state.focaccia < casinoBet) {
+      addToast('🎰 Не вистачає фокач!', `Ставка ${formatNum(casinoBet)} 🫓 — зменш її`, '❌');
+      return;
+    }
+    setCasinoSpinning(true);
+    setCasinoMsg(null);
+    setState((p) => ({ ...p, focaccia: p.focaccia - casinoBet }));
+    haptic.medium();
+
+    // Фінальні барабани — з урахуванням везіння (може кинути двічі)
+    let final: [string, string, string] = [randSymbol(), randSymbol(), randSymbol()];
+    let finalMult = slotsScore(final);
+    const luck = stateRef.current.luck || 0;
+    if (luck >= 4 || luck <= -4) {
+      const alt: [string, string, string] = [randSymbol(), randSymbol(), randSymbol()];
+      const altMult = slotsScore(alt);
+      const takeAlt = luck >= 4 ? altMult <= finalMult : altMult >= finalMult;
+      if (takeAlt) { final = alt; finalMult = altMult; }
+    }
+
+    const iv = setInterval(() => {
+      setCasinoReels([randSymbol(), randSymbol(), randSymbol()]);
+    }, 70);
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    timers.push(setTimeout(() => setCasinoReels((r) => [final[0], r[1], r[2]]), 500));
+    timers.push(setTimeout(() => setCasinoReels((r) => [r[0], final[1], r[2]]), 950));
+    timers.push(setTimeout(() => setCasinoReels((r) => [r[0], r[1], final[2]]), 1400));
+    timers.push(setTimeout(() => {
+      clearInterval(iv);
+      timers.forEach(clearTimeout);
+      setCasinoReels(final);
+      setCasinoSpinning(false);
+
+      if (finalMult > 0) {
+        const winAmt = Math.floor(casinoBet * finalMult);
+        setState((p) => ({ ...p, focaccia: p.focaccia + winAmt }));
+        setCasinoMsg({ text: `Виграш +${formatNum(winAmt)} 🫓 (×${finalMult})`, win: true });
+        updateLuck(finalMult);
+        if (finalMult >= 8) {
+          burstConfetti(['🫓', '💎', '⭐', '✨']);
+          doFlash('golden');
+          addToast('🎰 ДЖЕКПОТ!', `${final[0]}${final[1]}${final[2]} — +${formatNum(winAmt)} 🫓!`, '💎');
+          haptic.heavy();
+        } else {
+          haptic.success();
+        }
+      } else {
+        setCasinoMsg({ text: 'Мимо… фокача пригоріла. Спробуй ще!', win: false });
+        updateLuck(0);
+        haptic.light();
+      }
+    }, 1500));
+  };
+
+  const rollDice = () => {
+    if (casinoSpinning) return;
+    if (casinoBet > casinoMaxBet) {
+      addToast('🔒 Карма замала', `Максимальна ставка — ${formatNum(casinoMaxBet)} 🫓`, '❌');
+      return;
+    }
+    if (state.focaccia < casinoBet) {
+      addToast('🎲 Не вистачає фокач!', `Ставка ${formatNum(casinoBet)} 🫓 — зменш її`, '❌');
+      return;
+    }
+    setCasinoSpinning(true);
+    setCasinoMsg(null);
+    setState((p) => ({ ...p, focaccia: p.focaccia - casinoBet }));
+    haptic.medium();
+
+    // генеруємо дуель: свій кістяк vs бабуся; рахуємо множник
+    const duelMult = (mine: number, house: number) => (mine > house ? 1.9 : mine === house ? 1 : 0);
+    let result = { mine: 1 + Math.floor(Math.random() * 6), house: 1 + Math.floor(Math.random() * 6) };
+    let mult = duelMult(result.mine, result.house);
+    const luck = stateRef.current.luck || 0;
+    if (luck >= 4 || luck <= -4) {
+      const alt = { mine: 1 + Math.floor(Math.random() * 6), house: 1 + Math.floor(Math.random() * 6) };
+      const altMult = duelMult(alt.mine, alt.house);
+      const takeAlt = luck >= 4 ? altMult <= mult : altMult >= mult;
+      if (takeAlt) { result = alt; mult = altMult; }
+    }
+
+    // анімація кидка
+    const iv = setInterval(() => {
+      setDiceRoll({ mine: 1 + Math.floor(Math.random() * 6), house: 1 + Math.floor(Math.random() * 6) });
+    }, 90);
+    setTimeout(() => {
+      clearInterval(iv);
+      setDiceRoll(result);
+      setCasinoSpinning(false);
+
+      if (mult === 1.9) {
+        const winAmt = Math.floor(casinoBet * 1.9);
+        setState((p) => ({ ...p, focaccia: p.focaccia + winAmt }));
+        setCasinoMsg({ text: `Твої ${(DICE_FACES[result.mine - 1])} проти ${(DICE_FACES[result.house - 1])} — виграш +${formatNum(winAmt)} 🫓!`, win: true });
+        updateLuck(1.9);
+        haptic.success();
+      } else if (mult === 1) {
+        setState((p) => ({ ...p, focaccia: p.focaccia + casinoBet }));
+        setCasinoMsg({ text: 'Нічия — ставка повернулась', win: false });
+        updateLuck(1);
+        haptic.light();
+      } else {
+        setCasinoMsg({ text: `Бабуся перемогла: ${(DICE_FACES[result.house - 1])} проти ${(DICE_FACES[result.mine - 1])}. Ще раз?`, win: false });
+        updateLuck(0);
+        haptic.light();
+      }
+    }, 1100);
+  };
+
+  const spinWheel = () => {
+    if (casinoSpinning) return;
+    if (casinoBet > casinoMaxBet) {
+      addToast('🔒 Карма замала', `Максимальна ставка — ${formatNum(casinoMaxBet)} 🫓`, '❌');
+      return;
+    }
+    if (state.focaccia < casinoBet) {
+      addToast('🎡 Не вистачає фокач!', `Ставка ${formatNum(casinoBet)} 🫓 — зменш її`, '❌');
+      return;
+    }
+    setCasinoSpinning(true);
+    setCasinoMsg(null);
+    setState((p) => ({ ...p, focaccia: p.focaccia - casinoBet }));
+    haptic.medium();
+
+    // вибір сектора з урахуванням везіння
+    const pick = () => Math.floor(Math.random() * WHEEL_SEGMENTS.length);
+    let idx = pick();
+    let mult = WHEEL_SEGMENTS[idx];
+    const luck = stateRef.current.luck || 0;
+    if (luck >= 4 || luck <= -4) {
+      const alt = pick();
+      const altMult = WHEEL_SEGMENTS[alt];
+      const takeAlt = luck >= 4 ? altMult <= mult : altMult >= mult;
+      if (takeAlt) { idx = alt; mult = altMult; }
+    }
+
+    // обертання: 4 повних оберти + докрутка до сектора (вказівник зверху)
+    const current = wheelAngle;
+    const targetOffset = (360 - ((idx * WHEEL_EDGE + WHEEL_EDGE / 2) % 360)) % 360;
+    const target = current + 1440 + ((targetOffset - (current % 360)) % 360);
+    setWheelAngle(target);
+
+    setTimeout(() => {
+      setCasinoSpinning(false);
+      if (mult > 0) {
+        creditWin(mult, `Колесо ×${mult}`, false);
+      } else {
+        setCasinoMsg({ text: 'Колесо показало порожній сектор… Ще раз?', win: false });
+        updateLuck(0);
+        haptic.light();
+      }
+    }, 2500);
+  };
+
+  /* ---- Actions ---- */
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!e.nativeEvent.isTrusted) {
+      // Кліки, згенеровані скриптом, не винагороджуємо і рахуємо як підозру
+      untrustedClicks.current++;
+      if (untrustedClicks.current >= 10) { untrustedClicks.current = 0; enterSuspicion(); }
+      return;
+    }
+    if (state.energy <= 0) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const now = Date.now();
+    const burning = suspected || karma < 25; // «фокачі пригорають» — підозра або Тінь бабусі
+    const newCombo = burning ? combo : (now - lastClick.current < 1200 ? combo + 1 : 1);
+    lastClick.current = now;
+    setCombo(newCombo);
+    if (!burning && [25, 50, 75, 100].includes(newCombo)) {
+      showMilestone(`🔥 КОМБО x${newCombo}! 🔥`);
+      burstConfetti(newCombo >= 100 ? ['🔥', '💥', '⭐', '🫓'] : ['✨', '⭐']);
+      haptic.success();
+    }
+
+    const crit = !burning && Math.random() < 0.05;
+    const gain = clickPower * comboMult * frenzyMult * (crit ? 10 : 1) * (burning ? 0.05 : 1);
+
+    setState((p) => {
+      const newEnergy = p.energy - 1;
+      if (newEnergy <= 0) setRecharging(true);
+      return {
+        ...p,
+        focaccia: p.focaccia + gain,
+        total: p.total + gain,
+        clicks: p.clicks + 1,
+        maxCombo: Math.max(p.maxCombo, newCombo),
+        energy: Math.max(0, newEnergy),
+      };
+    });
+
+    setClickRipple({ x, y, id: floatId.current + 1 });
+    setTimeout(() => setClickRipple(null), 500);
+
+    addFloat(x, y, `+${formatNum(gain)}${crit ? ' 💥' : ''}`, crit ? 'text-red-400 text-3xl font-black' : 'text-amber-300');
+    setSquish(true);
+    setTimeout(() => setSquish(false), 120);
+
+    if (crit) {
+      setShake(true);
+      setTimeout(() => setShake(false), 300);
+      doFlash('crit');
+      const crumbBase = ++floatId.current;
+      const newCrumbs: Crumb[] = Array.from({ length: 4 }, (_, i) => ({
+        id: crumbBase * 10 + i,
+        x, y,
+        emoji: ['🫓', '🍞', '🥖', '🍪'][i],
+        dx: (Math.random() - 0.5) * 70,
+      }));
+      setCrumbs((c) => [...c, ...newCrumbs]);
+      newCrumbs.forEach((cr) => setTimeout(() => setCrumbs((c) => c.filter((x) => x.id !== cr.id)), 720));
+      haptic.heavy();
+      for (let i = 0; i < 3; i++) {
+        setTimeout(() => {
+          addFloat(
+            x + (Math.random() - 0.5) * 80, y + (Math.random() - 0.5) * 80,
+            ['💥', '⭐', '✨', '🔥'][Math.floor(Math.random() * 4)],
+            'text-2xl',
+          );
+        }, i * 60);
+      }
+    } else {
+      haptic.light();
+    }
+
+    if (Math.random() < 0.15) setPhrase(PHRASES[Math.floor(Math.random() * PHRASES.length)]);
+  };
+
+  const attackBoss = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    haptic.heavy();
+
+    setBoss((currentBoss) => {
+      if (!currentBoss) return null;
+
+      // Read damage from the current stateRef to avoid stale closure on vipUpgrades
+      const damage = stateRef.current.vipUpgrades?.includes('vip_knife') ? 2 : 1;
+      const newHp = currentBoss.currentHp - damage;
+
+      addFloat(window.innerWidth / 2, window.innerHeight * 0.35, `-${damage} ⚔️`, 'text-red-400 text-2xl font-black');
+
+      if (newHp <= 0) {
+        // Boss defeated — apply rewards outside this setter via setState
+        const rDiamonds = currentBoss.rewardDiamonds;
+        const rFocaccia = currentBoss.rewardFocaccia;
+        setBossSlain({ emoji: currentBoss.emoji, id: ++floatId.current });
+        doFlash('success');
+        burstConfetti(['💥', '⚔️', '🏆', '✨', '🫓']);
+        setState((p) => ({
+          ...p,
+          focaccia: p.focaccia + rFocaccia,
+          total: p.total + rFocaccia,
+          diamonds: p.diamonds + rDiamonds,
+          bossesDefeated: p.bossesDefeated + 1,
+        }));
+        addToast('🏆 БОСА ЗНИЩЕНО!', `+${rDiamonds} 💎 та +${formatNum(rFocaccia)} 🫓!`, '⚔️');
+        haptic.success();
+        return null; // boss cleared
+      }
+
+      return { ...currentBoss, currentHp: newHp };
+    });
+  };
+
+  const squashPest = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!pest) return;
+    setPest(null);
+    haptic.heavy();
+    burstConfetti(['💀', '🪲', '✨', '⭐']);
+
+    const gotDiamond = Math.random() < 0.4;
+    const bonus = Math.max(50, Math.floor((cpsRef.current || 10) * 15));
+
+    setState((p) => ({
+      ...p,
+      focaccia: p.focaccia + bonus,
+      total: p.total + bonus,
+      diamonds: p.diamonds + (gotDiamond ? 1 : 0),
+      pestsSquashed: p.pestsSquashed + 1,
+    }));
+
+    addToast(
+      '💥 РОЗЧАВЛЕНО!',
+      gotDiamond ? `+1 💎 та +${formatNum(bonus)} 🫓!` : `+${formatNum(bonus)} 🫓 захищено!`,
+      '🪲',
+    );
+  };
+
+  const fixBuilding = (id: string) => {
+    const b = BUILDINGS.find((x) => x.id === id);
+    if (!b) return;
+    const cost = Math.max(50, Math.floor(b.baseCost * 0.3));
+    if (state.focaccia < cost) {
+      addToast('Не вистачає фокач', `Ремонт коштує 🫓 ${formatNum(cost)}`, '❌');
+      return;
+    }
+    setState((p) => ({ ...p, focaccia: p.focaccia - cost }));
+    setBrokenBuilding(null);
+    addToast('Ремонт завершено!', `${b.name} знову працює на 100%!`, '🔧');
+    haptic.success();
+  };
+
+  const buyBuilding = (id: string) => {
+    const b = BUILDINGS.find((x) => x.id === id)!;
+    const cost = buildingCost(b, state.buildings[id] || 0);
+    if (state.focaccia < cost) return;
+    setState((p) => ({ ...p, focaccia: p.focaccia - cost, buildings: { ...p.buildings, [id]: (p.buildings[id] || 0) + 1 } }));
+    haptic.medium();
+  };
+
+  const buyUpgrade = (id: string) => {
+    const u = CLICK_UPGRADES.find((x) => x.id === id)!;
+    if (state.focaccia < u.cost || state.upgrades.includes(id)) return;
+    setState((p) => ({ ...p, focaccia: p.focaccia - u.cost, upgrades: [...p.upgrades, id] }));
+    addToast('Куплено!', u.name, u.emoji);
+    haptic.success();
+  };
+
+  const buyVipUpgrade = (id: string) => {
+    const u = VIP_UPGRADES.find((x) => x.id === id)!;
+    if (state.diamonds < u.cost || state.vipUpgrades?.includes(id)) return;
+    setState((p) => ({
+      ...p,
+      diamonds: p.diamonds - u.cost,
+      vipUpgrades: [...(p.vipUpgrades || []), id],
+    }));
+    addToast('ВІП куплено!', u.name, u.emoji);
+    haptic.success();
+  };
+
+  const catchGolden = () => {
+    setGolden(null);
+    haptic.heavy();
+    doFlash('golden');
+    burstConfetti(['🫓', '⭐', '✨', '🌟', '💛']);
+    const roll = Math.random();
+    if (roll < 0.45) {
+      setFrenzy(20);
+      addToast('ФРЕНЗІ!', 'x7 до всього на 20 секунд!', '🔥');
+    } else if (roll < 0.8) {
+      const bonus = Math.max(cps * 60 * 3, clickPower * 200, 50);
+      setState((p) => ({ ...p, focaccia: p.focaccia + bonus, total: p.total + bonus }));
+      addToast('Удача!', `+${formatNum(bonus)} фокач!`, '✨');
+    } else {
+      // Golden gives diamonds!
+      const dGain = 2;
+      setState((p) => ({ ...p, diamonds: p.diamonds + dGain }));
+      addToast('Діамантовий скарб!', `+${dGain} 💎 рідкісних діамантів!`, '💎');
+    }
+    setState((p) => ({ ...p, goldenCaught: p.goldenCaught + 1 }));
+  };
+
+  const doPrestige = () => {
+    if (prestigeGain < 1) return;
+    setConfirmModal({
+      title: 'Ребіртх', emoji: '🔄',
+      text: `Зробити +${prestigeGain} Ребіртх? (+${prestigeGain * 10}% до всього назавжди, +${prestigeGain * 5} енергії, та розблокування нових будівель і прокачок!). Фокачі та будівлі скинуться, але 💎 діаманти та ВІП залишаться!`,
+      onConfirm: () => {
+        setState((p) => ({
+          ...defaultState(),
+          prestige: p.prestige + prestigeGain,
+          diamonds: p.diamonds,
+          vipUpgrades: p.vipUpgrades,
+          achievements: p.achievements,
+          goldenCaught: p.goldenCaught,
+          maxCombo: p.maxCombo,
+          bossesDefeated: p.bossesDefeated,
+          pestsSquashed: p.pestsSquashed,
+          lastReset: p.lastReset,
+        }));
+        addToast('Ребіртх виконано!', `+${(state.prestige + prestigeGain) * 10}% бонус та нові відкриття!`, '🔄');
+        doFlash('golden');
+        burstConfetti(['🔄', '💎', '✨', '⭐', '🫓']);
+        haptic.success();
+        setConfirmModal(null);
+      },
+    });
+  };
+
+  const resetGame = () => {
+    setConfirmModal({
+      title: 'Скинути гру?', emoji: '🗑️',
+      text: 'Ти впевнений? Весь прогрес, досягнення та престиж будуть втрачені НАЗАВЖДИ!',
+      onConfirm: () => {
+        setConfirmModal({
+          title: '⚠️ ОСТАННЄ ПОПЕРЕДЖЕННЯ', emoji: '💀',
+          text: `Ти збираєшся видалити ${formatNum(state.total)} фокач, ${state.achievements.length} досягнень, ${state.diamonds} 💎 і ${state.prestige} очок престижу. Це НЕ можна відмінити!`,
+          onConfirm: () => { storage.remove(SAVE_KEY); setState(defaultState()); haptic.error(); setConfirmModal(null); },
+        });
+      },
+    });
+  };
+
+  const totalBuildings = Object.values(state.buildings).reduce((a, b) => a + b, 0);
+  const energyPercent = (state.energy / maxEnergy) * 100;
+
+  /* ---- Loading ---- */
+  if (loading) {
+    return (
+      <div className="h-screen bg-[#0d0a04] flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-8xl mb-6" style={{ animation: 'bob 1.5s ease-in-out infinite' }}>🫓</div>
+          <div className="text-amber-400 font-black text-xl tracking-widest">ЗАВАНТАЖЕННЯ</div>
+          <div className="mt-4 w-48 h-1 bg-amber-900/50 rounded-full overflow-hidden mx-auto">
+            <div className="h-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full" style={{ animation: 'shimmer 1.5s ease-in-out infinite', width: '60%' }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn('h-screen bg-[#0d0a04] text-amber-50 font-sans select-none overflow-hidden relative flex flex-col', frenzy > 0 && 'frenzy-bg')}>
+      {/* Animated BG */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0 opacity-[0.04]" style={{ background: 'radial-gradient(ellipse at 30% 20%, #fbbf24, transparent 50%), radial-gradient(ellipse at 70% 80%, #f97316, transparent 50%)', animation: 'gradient-bg 8s ease-in-out infinite', backgroundSize: '200% 200%' }} />
+        {[...Array(frenzy > 0 ? 14 : 6)].map((_, i) => (
+          <div
+            key={i}
+            className={cn('absolute text-xs', frenzy > 0 ? 'text-orange-400/30' : 'text-amber-500/20')}
+            style={{
+              left: `${5 + ((i * 37) % 90)}%`,
+              bottom: '-10px',
+              animation: `float-particle ${7 + (i % 4) * 2}s linear infinite`,
+              animationDelay: `${i * 0.8}s`,
+            }}
+          >
+            {(frenzy > 0 ? ['🔥', '💥', '⭐', '🫓'] : ['🫓', '✨', '•', '🫓', '⭐', '•'])[i % (frenzy > 0 ? 4 : 6)]}
+          </div>
+        ))}
+      </div>
+
+      {/* Pest crawl on screen — only on the clicker page */}
+      {pest && page === 'clicker' && (
+        <button
+          onClick={squashPest}
+          className="pest-crawl fixed z-40 p-2 cursor-pointer transition-transform active:scale-75 animate-pest"
+          style={{ left: `${pest.x}%`, top: `${pest.y}%`, filter: 'drop-shadow(0 0 14px rgba(239,68,68,0.95))' }}
+          title="Натисни щоб прибити шкідника!"
+        >
+          <span className="text-3xl inline-block" style={{ transform: `scaleX(${pest.dir})` }}>{pest.emoji}</span>
+          <div className="text-[9px] bg-red-600/90 text-white font-black px-1.5 py-0.5 rounded-full whitespace-nowrap shadow mt-0.5 animate-bounce">
+            Тапни! 💥
+          </div>
+        </button>
+      )}
+
+      {/* Golden focaccia */}
+      {golden && (
+        <button
+          onClick={catchGolden}
+          className="fixed z-40 w-18 h-18 animate-golden cursor-pointer"
+          style={{ left: `${golden.x}%`, top: `${golden.y}%`, filter: 'drop-shadow(0 0 20px rgba(251,191,36,0.8)) drop-shadow(0 0 40px rgba(251,191,36,0.4))' }}
+        >
+          <img src={goldenImg} alt="" className="w-full h-full object-contain" draggable={false} />
+          <div className="absolute inset-[-8px] rounded-full border-2 border-amber-300/50" style={{ animation: 'ring-pulse 1.5s ease-out infinite' }} />
+          {[0, 1, 2, 3].map((i) => (
+            <span key={i} className="animate-orbit absolute left-1/2 top-1/2 text-xs" style={{ animationDelay: `${-i * 0.55}s` }}>✨</span>
+          ))}
+        </button>
+      )}
+
+      {/* Screen flash */}
+      {flash && (
+        <div
+          key={flash.id}
+          className={cn(
+            'animate-flash pointer-events-none fixed inset-0 z-[45]',
+            flash.type === 'crit' && 'bg-red-500/20',
+            flash.type === 'golden' && 'bg-amber-300/25',
+            flash.type === 'success' && 'bg-emerald-400/20',
+            flash.type === 'tax' && 'bg-red-600/25',
+          )}
+        />
+      )}
+
+      {/* Confetti rain */}
+      {confetti.map((c) => (
+        <span
+          key={c.id}
+          className="animate-confetti pointer-events-none fixed top-0 z-[46]"
+          style={{ left: `${c.x}%`, fontSize: c.size, animationDelay: `${c.delay}s` }}
+        >
+          {c.emoji}
+        </span>
+      ))}
+
+      {/* Boss slain explosion */}
+      {bossSlain && (
+        <div key={bossSlain.id} className="pointer-events-none fixed inset-0 z-[45] flex items-center justify-center">
+          <span className="animate-boss-defeat text-[7rem]">{bossSlain.emoji}</span>
+        </div>
+      )}
+
+      {/* Toasts */}
+      <div className="fixed top-2 left-2 right-2 z-50 flex flex-col gap-2 pointer-events-auto">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            onClick={() => { closeToast(t.id); haptic.light(); }}
+            className={cn(
+              'animate-toast glass rounded-2xl p-3 flex items-center gap-3 shadow-2xl border border-amber-500/30 cursor-pointer active:scale-95 transition-transform',
+              toastsLeaving.includes(t.id) && 'toast-exit',
+            )}
+            title="Натисни, щоб закрити"
+          >
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-2xl shrink-0">{t.emoji}</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] uppercase tracking-widest text-amber-400 font-bold">{t.title}</div>
+              <div className="text-xs font-semibold truncate text-amber-100">{t.text}</div>
+            </div>
+            <div className="text-amber-500/40 text-xs font-bold px-1">✕</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Confirm modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6" onClick={() => setConfirmModal(null)}>
+          <div className="glass border border-amber-500/40 rounded-3xl p-7 text-center max-w-xs w-full shadow-[0_0_60px_rgba(251,191,36,0.1)]" style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="text-6xl mb-3">{confirmModal.emoji}</div>
+            <h2 className="text-xl font-black mb-2 text-amber-100">{confirmModal.title}</h2>
+            <p className="text-amber-300/80 mb-6 text-sm leading-relaxed">{confirmModal.text}</p>
+            {confirmModal.isAlert ? (
+              <button
+                className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl transition active:scale-95 shadow-lg shadow-amber-500/25"
+                onClick={confirmModal.onConfirm}
+              >
+                {confirmModal.confirmText || 'Ок'}
+              </button>
+            ) : (
+              <div className="flex gap-3">
+                <button className="flex-1 glass border border-amber-500/20 text-amber-200 font-bold py-3 rounded-2xl transition active:scale-95" onClick={() => setConfirmModal(null)}>Ні</button>
+                <button className="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl transition active:scale-95 shadow-lg shadow-amber-500/25" onClick={confirmModal.onConfirm}>{confirmModal.confirmText || 'Так'}</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Offline modal */}
+      {offlineGain !== null && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6" onClick={() => setOfflineGain(null)}>
+          <div className="glass border border-amber-500/40 rounded-3xl p-7 text-center max-w-xs w-full shadow-[0_0_60px_rgba(251,191,36,0.15)]" style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
+            <div className="text-6xl mb-3">😴</div>
+            <h2 className="text-xl font-black mb-1 text-amber-100">Поки тебе не було…</h2>
+            <p className="text-amber-300/70 mb-3 text-sm">Бабусі напекли тобі</p>
+            <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-orange-300 mb-6">+{formatNum(offlineGain)} 🫓</div>
+            <button className="bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl w-full transition active:scale-95 shadow-lg shadow-amber-500/25" onClick={() => { setOfflineGain(null); doFlash('golden'); burstConfetti(['🫓', '🥐', '⭐', '✨']); }}>Забрати!</button>
+          </div>
+        </div>
+      )}
+
+      {/* Античит-випробування «Бабуся не вірить» */}
+      {challenge && (
+        <div className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-6">
+          <div className="text-5xl mb-2">👵</div>
+          <h2 className="text-xl font-black text-amber-100 mb-1 text-center">Бабуся не вірить тобі!</h2>
+          {challenge.result === null && (
+            <>
+              <p className="text-amber-300/70 text-sm mb-4 text-center">Злови 3 фокачі за 5 секунд і доведи, що ти не робот</p>
+              <div className="text-amber-200 font-black text-2xl tabular-nums mb-1">{challenge.caught}/3</div>
+              <div className="w-48 h-2 bg-black/50 rounded-full overflow-hidden mb-6 border border-amber-500/20">
+                <div className="h-full bg-gradient-to-r from-amber-500 to-red-500 transition-all duration-100" style={{ width: `${(challenge.timeLeft / 5) * 100}%` }} />
+              </div>
+            </>
+          )}
+          {challenge.result === null && (
+            <button
+              onClick={catchChallengeTarget}
+              className="absolute w-20 h-20 rounded-full overflow-hidden border-4 border-amber-400 shadow-[0_0_40px_rgba(251,191,36,0.6)] animate-bob active:scale-90 transition-transform cursor-pointer"
+              style={{ left: `calc(${challenge.x}% - 40px)`, top: `calc(${challenge.y}% - 40px)` }}
+            >
+              <img src={focacciaImg} alt="" className="w-full h-full object-cover pointer-events-none" draggable={false} />
+            </button>
+          )}
+          {challenge.result === 'pending' && (
+            <div className="text-center" style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
+              <div className="text-6xl mb-3 animate-bob">⏳</div>
+              <p className="text-amber-200 font-bold mb-4">Бабуся перевіряє карму…</p>
+            </div>
+          )}
+          {challenge.result === 'win' && (
+            <div className="text-center" style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
+              <div className="text-6xl mb-3">✅</div>
+              <p className="text-emerald-300 font-bold mb-5">Бабуся повірила тобі! Фокачі більше не пригорають.</p>
+              <button onClick={() => setChallenge(null)} className="bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 px-8 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25">Грати далі</button>
+            </div>
+          )}
+          {challenge.result === 'denied' && (
+            <div className="text-center" style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
+              <div className="text-6xl mb-3">🔴</div>
+              <p className="text-red-300 font-bold mb-1">Тінь бабусі не слухає!</p>
+              <p className="text-amber-300/60 text-[11px] mb-5">Карма нижче 25 — випробування не діє. Грай чесно, карма відновиться.</p>
+              <button onClick={() => setChallenge(null)} className="bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 px-8 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25">Зрозуміло</button>
+            </div>
+          )}
+          {challenge.result === 'fail' && (
+            <div className="text-center" style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
+              <div className="text-6xl mb-3">💀</div>
+              <p className="text-red-300 font-bold mb-5">Не встиг! Фокачі поки що пригорають…</p>
+              <button
+                onClick={() => setChallenge({ caught: 0, x: 20 + Math.random() * 55, y: 30 + Math.random() * 32, timeLeft: 5, result: null })}
+                className="bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 px-8 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25"
+              >
+                Ще спроба
+              </button>
+              <button onClick={() => setChallenge(null)} className="block mx-auto mt-3 text-xs text-amber-500/50 font-bold">Пізніше</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===== TOP BAR ===== */}
+      <div className="relative z-10 shrink-0 glass border-b border-amber-500/15 px-4 py-2">
+        <div className="flex items-center justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <div key={state.clicks} className="animate-num-pop text-2xl font-black tabular-nums leading-tight">
+                <span className={cn('text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300', frenzy > 0 && 'animate-rainbow')}>{formatNum(state.focaccia)}</span>
+                <span className="text-xl ml-1">🫓</span>
+              </div>
+              <div className="flex items-center gap-1 bg-cyan-500/15 border border-cyan-500/30 px-2 py-0.5 rounded-lg text-xs font-black text-cyan-300 animate-diamond">
+                <span>💎</span>
+                <span>{state.diamonds}</span>
+              </div>
+            </div>
+            <div className="text-amber-400/60 text-[11px] font-medium mt-0.5">
+              {formatCps(cps * frenzyMult)}/с • {formatNum(clickPower * comboMult * frenzyMult)}/клік
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            {brokenBuilding && (
+              <div onClick={() => { goPage('shop'); setShopTab('buildings'); }} className="cursor-pointer text-red-300 text-[10px] font-black bg-red-500/25 px-2 py-1 rounded-full border border-red-500/40 animate-pulse">
+                🔧 Зламано!
+              </div>
+            )}
+            {activeEvent && (
+              <div className={cn(
+                'text-[10px] font-black px-2 py-1 rounded-full border animate-pulse',
+                activeEvent.cpsMult > 1 ? 'text-amber-200 bg-amber-500/20 border-amber-500/40' : 'text-blue-300 bg-blue-500/20 border-blue-500/40',
+              )}>
+                {activeEvent.emoji} {activeEvent.timeLeft}с
+              </div>
+            )}
+            {frenzy > 0 && (
+              <div className="text-orange-300 font-black animate-pulse text-xs bg-gradient-to-r from-orange-500/20 to-red-500/20 px-2.5 py-1 rounded-full border border-orange-500/40">
+                🔥 x7 {frenzy}с
+              </div>
+            )}
+            {state.prestige > 0 && frenzy <= 0 && !activeEvent && (
+              <div className="text-fuchsia-300 text-[10px] font-bold bg-fuchsia-500/15 px-2 py-1 rounded-full border border-fuchsia-500/25">
+                🔄 {state.prestige} Ребіртх (+{state.prestige * 10}%)
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ===== MAIN CONTENT ===== */}
+      <div className="relative z-10 flex-1 overflow-hidden">
+
+        {/* --- CLICKER --- */}
+        {page === 'clicker' && (
+          <div className={cn('relative h-full flex flex-col items-center justify-center gap-2 p-3.5', shake ? 'animate-shake' : pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
+            {milestone && (
+              <div
+                key={milestone.id}
+                className="animate-milestone pointer-events-none absolute left-1/2 top-1/2 z-30 whitespace-nowrap text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-orange-400 to-red-500 drop-shadow-[0_2px_12px_rgba(249,115,22,0.7)]"
+              >
+                {milestone.text}
+              </div>
+            )}
+
+            {/* Boss Battle Banner if boss is active */}
+            {boss ? (
+              <div className="w-full max-w-xs glass border-2 border-red-500/60 rounded-2xl p-3 shadow-[0_0_30px_rgba(239,68,68,0.4)] text-center animate-boss">
+                <div className="flex items-center justify-between text-xs font-black text-red-300 mb-1">
+                  <span>🚨 {boss.name}</span>
+                  <span className={cn('tabular-nums font-mono', boss.timeLeft <= 5 && 'text-red-400 font-bold animate-bounce')}>
+                    ⏱️ {boss.timeLeft}с
+                  </span>
+                </div>
+                <div className="h-2.5 bg-black/60 rounded-full overflow-hidden border border-red-500/30 mb-2">
+                  <div
+                    className="h-full bg-gradient-to-r from-red-600 via-red-500 to-orange-400 transition-all duration-100"
+                    style={{ width: `${(boss.currentHp / boss.maxHp) * 100}%` }}
+                  />
+                </div>
+                <button
+                  onClick={attackBoss}
+                  className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white font-black py-2 rounded-xl text-sm transition active:scale-95 shadow-lg shadow-red-600/30 flex items-center justify-center gap-2"
+                >
+                  <span className="text-xl">{boss.emoji}</span>
+                  <span>АТАКУВАТИ! ({boss.currentHp}/{boss.maxHp} HP)</span>
+                  <span className="text-xs opacity-75">{state.vipUpgrades?.includes('vip_knife') ? '⚔️ x2' : '⚔️ x1'}</span>
+                </button>
+              </div>
+            ) : null}
+
+            {/* Combo */}
+            <div className="w-full max-w-xs">
+              <div className="flex justify-between text-[10px] font-bold text-amber-500/70 mb-0.5">
+                <span>КОМБО</span>
+                <span className={cn(combo >= 25 && 'text-orange-400', combo >= 100 && 'text-red-400 animate-pulse', combo >= 50 && 'combo-flame')}>
+                  x{combo} {comboMult > 1 && `(×${comboMult.toFixed(2)})`}
+                </span>
+              </div>
+              <div className="h-1.5 bg-black/50 rounded-full overflow-hidden">
+                <div className={cn('h-full bg-gradient-to-r from-amber-500 via-orange-400 to-red-500 transition-all duration-150 rounded-full', combo >= 50 && 'combo-blaze')} style={{ width: `${Math.min(combo, 100)}%` }} />
+              </div>
+            </div>
+
+            {/* Energy */}
+            <div className="w-full max-w-xs">
+              <div className="flex justify-between text-[10px] font-bold mb-0.5">
+                <span className={cn(recharging && state.energy <= 0 ? 'text-cyan-400 animate-pulse' : 'text-cyan-500/70')}>
+                  {state.energy <= 0 ? '⏳ ПЕРЕЗАРЯДКА' : '⚡ ЕНЕРГІЯ'}
+                </span>
+                <span className="text-cyan-400/80 tabular-nums">{state.energy}/{maxEnergy}</span>
+              </div>
+              <div className="h-2 bg-black/50 rounded-full overflow-hidden relative">
+                <div
+                  className={cn('h-full transition-all duration-200 rounded-full relative overflow-hidden',
+                    state.energy <= 0 ? 'bg-cyan-800' : energyPercent < 30 ? 'bg-gradient-to-r from-cyan-600 to-cyan-400' : 'bg-gradient-to-r from-cyan-500 to-blue-400',
+                    state.energy >= maxEnergy && 'animate-energy-full',
+                  )}
+                  style={{ width: `${energyPercent}%` }}
+                >
+                  {recharging && <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent" style={{ animation: 'shimmer 1.5s ease-in-out infinite' }} />}
+                </div>
+              </div>
+            </div>
+
+            {/* Speech */}
+            <div className="relative">
+              <div className="bg-white/95 text-amber-950 font-bold px-5 py-1.5 rounded-2xl shadow-xl text-sm animate-bob backdrop-blur">
+                <span key={phrase} className="animate-wobble-once inline-block">{state.energy <= 0 ? '⏳ Зачекай...' : phrase}</span>
+              </div>
+              <div className="absolute left-1/2 -bottom-1.5 -translate-x-1/2 w-3 h-3 bg-white/95 rotate-45 rounded-sm" />
+            </div>
+
+            {/* Clicker */}
+            <div className="relative">
+              {state.energy > 0 && frenzy <= 0 && [0, 1, 2].map((i) => (
+                <span key={i} className="animate-steam pointer-events-none absolute -top-5 text-base" style={{ left: `${28 + i * 22}%`, animationDelay: `${i * 0.8}s` }}>💨</span>
+              ))}
+              {frenzy > 0 && (
+                <div className="pointer-events-none absolute inset-[-30px]">
+                  {[...Array(6)].map((_, i) => (
+                    <span key={i} className="animate-fire absolute text-lg" style={{ left: `${8 + i * 16}%`, bottom: 0, animationDelay: `${i * 0.18}s` }}>🔥</span>
+                  ))}
+                </div>
+              )}
+              <div className="absolute inset-[-20px] rounded-full border border-amber-400/10" style={{ animation: 'ring-pulse 3s ease-out infinite' }} />
+              <div className="absolute inset-[-35px] rounded-full border border-amber-400/5" style={{ animation: 'ring-pulse-2 3s ease-out infinite', animationDelay: '0.5s' }} />
+              <div className={cn('absolute inset-[-15px] rounded-full blur-2xl transition-colors duration-500',
+                frenzy > 0 ? 'bg-orange-500/40' : state.energy <= 0 ? 'bg-cyan-500/10' : 'bg-amber-400/25'
+              )} style={{ animation: 'glow 2.5s ease-in-out infinite' }} />
+              <button
+                onPointerDown={markRawTap}
+                onClick={handleClick}
+                className={cn(
+                  'relative w-48 h-48 sm:w-56 sm:h-56 rounded-full overflow-hidden cursor-pointer transition-all duration-100 active:scale-95',
+                  'border-[5px] shadow-[0_0_40px_rgba(251,191,36,0.3),inset_0_-4px_12px_rgba(0,0,0,0.2)]',
+                  squish && 'scale-90',
+                  frenzy > 0 ? 'border-orange-400 animate-spin-slow shadow-[0_0_60px_rgba(249,115,22,0.5)]' : 'border-amber-400/80',
+                  state.energy <= 0 && 'opacity-40 grayscale border-cyan-500/40 shadow-none',
+                )}
+              >
+                <img src={focacciaImg} alt="" className="w-full h-full object-cover pointer-events-none" draggable={false} />
+                {clickRipple && (
+                  <div
+                    className="animate-shockwave"
+                    style={{
+                      left: clickRipple.x,
+                      top: clickRipple.y,
+                      width: 80,
+                      height: 80,
+                    }}
+                  />
+                )}
+                {floats.map((f) => (
+                  <span
+                    key={f.id}
+                    className={cn(
+                      'absolute pointer-events-none font-black text-xl drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]',
+                      f.color,
+                      f.direction === 'left' ? 'animate-float-left' : 'animate-float-right',
+                    )}
+                    style={{ left: f.x, top: f.y }}
+                  >
+                    {f.text}
+                  </span>
+                ))}
+                {crumbs.map((c) => (
+                  <span
+                    key={c.id}
+                    className="animate-crumb absolute pointer-events-none text-sm"
+                    style={{ left: c.x, top: c.y, '--dx': `${c.dx}px` } as React.CSSProperties}
+                  >
+                    {c.emoji}
+                  </span>
+                ))}
+              </button>
+            </div>
+
+            {/* Stats row */}
+            <div className="flex gap-4 text-center text-[10px] mt-0.5">
+              <div><div className="text-amber-500/50">З'їдено</div><div className="font-black text-amber-200/80 text-sm tabular-nums">{formatNum(state.total)}</div></div>
+              <div><div className="text-amber-500/50">Кліків</div><div className="font-black text-amber-200/80 text-sm tabular-nums">{state.clicks.toLocaleString()}</div></div>
+              <div><div className="text-amber-500/50">Босів</div><div className="font-black text-red-300 text-sm tabular-nums">⚔️ {state.bossesDefeated}</div></div>
+            </div>
+          </div>
+        )}
+
+        {/* --- SHOP --- */}
+        {page === 'shop' && (
+          <div className={cn('h-full flex flex-col', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
+            <div className="flex shrink-0 p-1.5 gap-1">
+              {([
+                ['buildings', '🏗️', 'Будівлі', totalBuildings],
+                ['upgrades', '⚡', 'Апгрейди', state.upgrades.length],
+                ['vip', '💎', 'ВІП', state.vipUpgrades?.length || 0],
+                ['achievements', '🏆', 'Досягн.', state.achievements.length],
+              ] as [ShopTab, string, string, number][]).map(([id, icon, label, count]) => (
+                <button
+                  key={id}
+                  onClick={() => setShopTab(id)}
+                  className={cn(
+                    'flex-1 py-2 text-[10px] font-bold rounded-xl transition-all',
+                    shopTab === id
+                      ? 'glass text-amber-200 border border-amber-500/30 shadow-lg'
+                      : 'text-amber-500/50 active:text-amber-300',
+                  )}
+                >
+                  {icon} {label} <span className="opacity-50">({count})</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1.5">
+              {/* BUILDINGS */}
+              {shopTab === 'buildings' && BUILDINGS.map((b, i) => {
+                const owned = state.buildings[b.id] || 0;
+                const cost = buildingCost(b, owned);
+                const can = state.focaccia >= cost;
+                const isBroken = brokenBuilding === b.id;
+                const repairCost = Math.max(50, Math.floor(b.baseCost * 0.3));
+                const canRepair = state.focaccia >= repairCost;
+                const prevOwned = i === 0 || (state.buildings[BUILDINGS[i - 1].id] || 0) > 0;
+                const visible = owned > 0 || prevOwned || state.total >= b.baseCost * 0.5;
+                const isRebirthLocked = (b.requireRebirth || 0) > state.prestige;
+
+                if (isRebirthLocked) {
+                  return (
+                    <div key={b.id} style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }} className="glass-card rounded-xl p-2.5 flex items-center gap-2.5 opacity-50 border border-fuchsia-500/15 animate-card">
+                      <div className="w-10 h-10 rounded-xl bg-black/30 flex items-center justify-center text-xl shrink-0 grayscale">
+                        🔒
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-amber-100/70 text-[13px] flex justify-between">
+                          <span className="truncate">{b.name}</span>
+                          <span className="text-fuchsia-400 text-xs font-bold">Ребіртх {b.requireRebirth} 🔄</span>
+                        </div>
+                        <div className="text-[10px] text-amber-500/50 truncate">
+                          Потрібен {b.requireRebirth} ребіртх для розблокування
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (!visible) return (
+                  <div key={b.id} style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }} className="glass-card rounded-xl p-2.5 flex items-center gap-2.5 opacity-30 animate-card">
+                    <span className="text-xl grayscale w-8 text-center">❓</span>
+                    <span className="text-xs font-bold text-amber-500/50">???</span>
+                  </div>
+                );
+
+                return (
+                  <div key={b.id} style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }} className={cn(
+                    'rounded-xl transition-all animate-card',
+                    isBroken ? 'border border-red-500/50 bg-red-950/30 p-2.5' : '',
+                  )}>
+                    <button onClick={() => buyBuilding(b.id)} disabled={!can}
+                      className={cn('w-full text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all active:scale-[0.98]',
+                        can ? 'glass-card glass-card-hover' : 'glass-card opacity-40',
+                      )}>
+                      <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 transition-colors',
+                        can ? 'bg-amber-500/15' : 'bg-black/20',
+                      )}>{b.emoji}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-amber-100/90 text-[13px] flex justify-between">
+                          <span className="truncate">{b.name}</span>
+                          <span className="text-amber-400/60 tabular-nums ml-2 text-xs">{owned}</span>
+                        </div>
+                        <div className="text-[10px] text-amber-400/40 truncate">{b.desc}</div>
+                        <div className="text-[10px] mt-0.5 flex justify-between">
+                          <span className={cn('font-bold', can ? 'text-emerald-400' : 'text-red-400/70')}>🫓 {formatNum(cost)}</span>
+                          <span className={cn(isBroken ? 'text-red-400 font-bold' : 'text-amber-300/50')}>
+                            {isBroken ? '⚠️ -50% CPS' : `+${formatCps(b.cps * prestigeMult)}/с`}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+
+                    {isBroken && (
+                      <div className="mt-2 flex items-center justify-between pt-1 border-t border-red-500/20">
+                        <span className="text-[10px] text-red-300 font-bold">Зламано! Ефективність впала вдвічі</span>
+                        <button
+                          onClick={() => fixBuilding(b.id)}
+                          disabled={!canRepair}
+                          className="bg-red-500 hover:bg-red-400 disabled:opacity-50 text-white font-black text-[11px] px-3 py-1 rounded-lg shadow active:scale-95"
+                        >
+                          🔧 Полагодити (🫓 {formatNum(repairCost)})
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* UPGRADES */}
+              {shopTab === 'upgrades' && (<>
+                {/* Available upgrades */}
+                {CLICK_UPGRADES
+                  .filter((u) => !state.upgrades.includes(u.id))
+                  .filter((u) => (u.requireRebirth || 0) <= state.prestige)
+                  .filter((u) => {
+                    if (u.requireBuilding) return (state.buildings[u.requireBuilding.id] || 0) >= u.requireBuilding.count;
+                    return state.total >= u.cost * 0.3;
+                  }).length === 0 && (
+                  <div className="text-center text-amber-500/30 py-8 text-xs">✨ Доступних прокачок на цьому ребіртху більше нема</div>
+                )}
+                {CLICK_UPGRADES
+                  .filter((u) => !state.upgrades.includes(u.id))
+                  .filter((u) => (u.requireRebirth || 0) <= state.prestige)
+                  .filter((u) => {
+                    if (u.requireBuilding) return (state.buildings[u.requireBuilding.id] || 0) >= u.requireBuilding.count;
+                    return state.total >= u.cost * 0.3;
+                  }).map((u, i) => {
+                  const can = state.focaccia >= u.cost;
+                  const isEnergy = !!u.energyRegen;
+                  return (
+                    <button key={u.id} onClick={() => buyUpgrade(u.id)} disabled={!can} style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
+                      className={cn('w-full text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all active:scale-[0.98] animate-card',
+                        can ? isEnergy ? 'glass-card border-cyan-500/20 glass-card-hover' : 'glass-card border-sky-500/20 glass-card-hover' : 'glass-card opacity-40',
+                      )}>
+                      <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0',
+                        isEnergy ? 'bg-cyan-500/15' : 'bg-sky-500/15',
+                      )}>{u.emoji}</div>
+                      <div className="flex-1">
+                        <div className={cn('font-bold text-[13px]', isEnergy ? 'text-cyan-100/90' : 'text-sky-100/90')}>{u.name}</div>
+                        <div className={cn('text-[10px]', isEnergy ? 'text-cyan-300/40' : 'text-sky-300/40')}>{u.desc}</div>
+                        <div className={cn('text-[10px] font-bold mt-0.5', can ? 'text-emerald-400' : 'text-red-400/70')}>🫓 {formatNum(u.cost)}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+
+                {/* Locked upgrades preview */}
+                {CLICK_UPGRADES.filter((u) => (u.requireRebirth || 0) > state.prestige).slice(0, 4).map((u, i) => (
+                  <div key={u.id} style={{ animationDelay: `${i * 35}ms` }} className="glass-card rounded-xl p-2.5 flex items-center gap-2.5 opacity-40 border border-fuchsia-500/15 animate-card">
+                    <div className="w-10 h-10 rounded-xl bg-black/30 flex items-center justify-center text-xl shrink-0 grayscale">
+                      🔒
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-amber-100/60 text-[13px] flex justify-between">
+                        <span className="truncate">{u.name}</span>
+                        <span className="text-fuchsia-400 text-xs font-bold">Ребіртх {u.requireRebirth} 🔄</span>
+                      </div>
+                      <div className="text-[10px] text-amber-500/50 truncate">{u.desc}</div>
+                    </div>
+                  </div>
+                ))}
+
+                {state.upgrades.length > 0 && (
+                  <div className="pt-3">
+                    <div className="text-[10px] uppercase font-bold text-amber-500/30 mb-2 tracking-widest">Куплено</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {CLICK_UPGRADES.filter((u) => state.upgrades.includes(u.id)).map((u) => (
+                        <span key={u.id} title={`${u.name}: ${u.desc}`} className="text-lg glass-card rounded-lg w-9 h-9 flex items-center justify-center">{u.emoji}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>)}
+
+              {/* VIP / DIAMONDS SHOP */}
+              {shopTab === 'vip' && (
+                <div className="space-y-2">
+                  <div className="glass-card rounded-xl p-3 flex items-center justify-between border-cyan-500/30 bg-cyan-950/20">
+                    <div>
+                      <div className="text-xs font-black text-cyan-200">💎 Твої діаманти: {state.diamonds}</div>
+                      <div className="text-[10px] text-cyan-300/60">Здобувай за перемогу над босами, шкідників та досягнення!</div>
+                    </div>
+                  </div>
+
+                  {VIP_UPGRADES.map((u, i) => {
+                    const bought = state.vipUpgrades?.includes(u.id);
+                    const can = state.diamonds >= u.cost && !bought;
+                    return (
+                      <button
+                        key={u.id}
+                        onClick={() => buyVipUpgrade(u.id)}
+                        disabled={bought || !can}
+                        style={{ animationDelay: `${Math.min(i, 10) * 45}ms` }}
+                        className={cn(
+                          'relative w-full overflow-hidden text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all active:scale-[0.98] animate-card',
+                          bought
+                            ? 'glass-card border-emerald-500/30 bg-emerald-950/20 opacity-80'
+                            : can
+                            ? 'glass-card border-cyan-500/30 glass-card-hover'
+                            : 'glass-card opacity-40',
+                        )}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-cyan-500/15 flex items-center justify-center text-xl shrink-0">
+                          {u.emoji}
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-bold text-[13px] text-cyan-100/90 flex justify-between">
+                            <span>{u.name}</span>
+                            {bought && <span className="text-emerald-400 text-xs">✓ Куплено</span>}
+                          </div>
+                          <div className="text-[10px] text-cyan-300/60">{u.desc}</div>
+                          {!bought && (
+                            <div className={cn('text-[10px] font-bold mt-0.5', can ? 'text-cyan-300' : 'text-red-400/70')}>
+                              💎 {u.cost} діамантів
+                            </div>
+                          )}
+                        </div>
+                        {can && (
+                          <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
+                            <span className="vip-shine absolute inset-y-0 left-0 w-10 bg-white/10" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ACHIEVEMENTS */}
+              {shopTab === 'achievements' && (
+                <div className="grid grid-cols-2 gap-1.5">
+                  {ACHIEVEMENTS.map((a, i) => {
+                    const done = state.achievements.includes(a.id);
+                    return (
+                      <div key={a.id} style={{ animationDelay: `${Math.min(i, 16) * 30}ms` }} className={cn('glass-card rounded-xl p-3 text-center transition-all animate-card', done && 'border-yellow-400/30 bg-yellow-500/5', !done && 'opacity-30')}>
+                        <div className={cn('text-2xl', !done && 'grayscale')}>{a.emoji}</div>
+                        <div className="font-bold text-xs mt-1">{a.name}</div>
+                        <div className="text-[9px] text-amber-400/40 mt-0.5">{a.desc}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* --- CASINO --- */}
+        {page === 'casino' && (() => {
+          const spinLabel = casinoGame === 'slots' ? '🎰 КРУТИТИ' : casinoGame === 'dice' ? '🎲 КИНУТИ КОСТІ' : '🎡 ОБЕРТИ КОЛЕСО';
+          const doSpin = casinoGame === 'slots' ? spinCasino : casinoGame === 'dice' ? rollDice : spinWheel;
+          const setCustomBet = (raw: string) => {
+            const digits = raw.replace(/\D/g, '').slice(0, 15);
+            setCasinoCustomBet(digits);
+            const n = parseInt(digits || '0', 10);
+            if (n >= 1) setCasinoBet(Math.min(n, Math.floor(state.focaccia), casinoMaxBet));
+            else setCasinoBet(1);
+          };
+          const casinoLocked = karma < 50;
+          return (
+            <div className={cn('h-full overflow-y-auto p-4 space-y-3', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
+              <h2 className="text-base font-black text-amber-200/80 text-center tracking-wide">🎰 КАЗИНО «ОДНАРУКА БАБУСЯ»</h2>
+
+              {/* Ігри */}
+              <div className="flex gap-1.5">
+                {([['slots', '🎰', 'Автомат'], ['dice', '🎲', 'Кості'], ['wheel', '🎡', 'Колесо']] as const).map(([id, icon, label]) => (
+                  <button
+                    key={id}
+                    onClick={() => { setCasinoGame(id); haptic.light(); }}
+                    className={cn(
+                      'flex-1 py-2 rounded-xl text-[11px] font-black transition-all',
+                      casinoGame === id
+                        ? 'glass-card text-amber-200 border border-amber-500/30 shadow-lg'
+                        : 'text-amber-500/50',
+                    )}
+                  >
+                    {icon} {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Ігрове поле */}
+              {casinoLocked ? (
+                <div className="glass-card rounded-2xl p-6 text-center space-y-2">
+                  <div className="text-5xl">🔒</div>
+                  <div className="font-black text-amber-100">Казино закрите</div>
+                  <div className="text-[11px] text-amber-300/60">Карма {karma}/100 — бабуся не довіряє тобі. Грай чесно, підніми карму вище 50, і двері відчиняться.</div>
+                </div>
+              ) : (<>
+              <div className="glass-card rounded-2xl p-4 border-amber-500/25 space-y-4">
+                {casinoGame === 'slots' && (
+                  <div className="flex justify-center gap-2">
+                    {casinoReels.map((s, i) => (
+                      <div
+                        key={i}
+                        className={cn(
+                          'w-[4.5rem] h-[4.5rem] rounded-xl bg-black/50 border-2 flex items-center justify-center text-[2.6rem] leading-none',
+                          casinoSpinning ? 'border-amber-500/40' : 'border-amber-500/25',
+                        )}
+                      >
+                        <span key={s + String(casinoSpinning)} className={cn('inline-block', casinoSpinning && 'blur-[1px] opacity-80')}>{s}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {casinoGame === 'dice' && (
+                  <div className="flex items-center justify-center gap-5 py-1">
+                    <div className="text-center">
+                      <div className="text-[10px] font-black text-amber-500/50 mb-1">ТИ</div>
+                      <div className="w-20 h-20 rounded-xl bg-black/50 border-2 border-amber-500/30 flex items-center justify-center text-[3.4rem] leading-none">
+                        {diceRoll ? DICE_FACES[diceRoll.mine - 1] : '🎲'}
+                      </div>
+                    </div>
+                    <div className="text-2xl font-black text-amber-500/40">VS</div>
+                    <div className="text-center">
+                      <div className="text-[10px] font-black text-red-400/60 mb-1">БАБУСЯ</div>
+                      <div className="w-20 h-20 rounded-xl bg-black/50 border-2 border-red-500/30 flex items-center justify-center text-[3.4rem] leading-none">
+                        {diceRoll ? DICE_FACES[diceRoll.house - 1] : '🎲'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {casinoGame === 'wheel' && (
+                  <div className="flex justify-center py-1">
+                    <div className="relative w-52 h-52">
+                      <div className="absolute left-1/2 -translate-x-1/2 -top-1 z-10 text-lg" style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.8))' }}>🔻</div>
+                      <div
+                        className="absolute inset-0 rounded-full border-4 border-amber-500/40 shadow-[0_0_30px_rgba(251,191,36,0.25)]"
+                        style={{
+                          background: `conic-gradient(${wheelGradient})`,
+                          transform: `rotate(${wheelAngle}deg)`,
+                          transition: casinoSpinning ? 'transform 2.4s cubic-bezier(0.15, 0.85, 0.25, 1)' : 'none',
+                        }}
+                      >
+                        {WHEEL_SEGMENTS.map((m, i) => (
+                          <div key={i} className="absolute inset-0 flex justify-center" style={{ transform: `rotate(${i * WHEEL_EDGE + WHEEL_EDGE / 2}deg)` }}>
+                            <span className="mt-1.5 text-[11px] font-black" style={{ color: m === 0 ? '#6b5a3a' : '#fff' }}>{m > 0 ? `×${m}` : '✖'}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full glass border-2 border-amber-500/40 flex items-center justify-center text-xl">🫓</div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="h-6 text-center">
+                  {casinoMsg && (
+                    <div className={cn('text-[12px] font-black', casinoMsg.win ? 'text-emerald-300' : 'text-amber-500/50')}>
+                      {casinoMsg.text}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={doSpin}
+                  disabled={casinoSpinning || state.focaccia < casinoBet}
+                  className={cn(
+                    'w-full py-3 rounded-xl font-black text-sm transition active:scale-95 shadow-lg',
+                    casinoSpinning || state.focaccia < casinoBet
+                      ? 'bg-white/5 border border-amber-500/15 text-amber-500/40 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-rose-600 via-red-500 to-amber-500 text-white shadow-red-500/30 animate-pulse',
+                  )}
+                >
+                  {casinoSpinning ? '🎲 ГРАЄМО…' : `${spinLabel} — ${formatNum(casinoBet)} 🫓`}
+                </button>
+              </div>
+
+              {/* Ставки */}
+              <div>
+                <div className="text-[10px] uppercase font-bold text-amber-500/30 mb-1.5 tracking-widest">Ставка</div>
+                <div className="flex gap-1.5 mb-1.5">
+                  <input
+                    value={casinoCustomBet}
+                    onChange={(e) => setCustomBet(e.target.value)}
+                    inputMode="numeric"
+                    placeholder="Своя ставка…"
+                    className="flex-1 min-w-0 glass-card rounded-lg px-3 py-2.5 text-[13px] font-black text-amber-200 tabular-nums placeholder:text-amber-500/30 placeholder:font-bold outline-none border border-amber-500/15 focus:border-amber-400/60 transition-colors"
+                  />
+                  <div className="glass-card rounded-lg px-3 py-2.5 text-[13px] font-black text-amber-400/60">🫓</div>
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {CASINO_BETS.map((b) => {
+                    const can = state.focaccia >= b && b <= casinoMaxBet;
+                    return (
+                      <button
+                        key={b}
+                        onClick={() => { setCasinoBet(b); setCasinoCustomBet(String(b)); haptic.light(); }}
+                        disabled={!can}
+                        className={cn(
+                          'py-2 rounded-lg text-[11px] font-black transition active:scale-95',
+                          casinoBet === b
+                            ? 'bg-amber-500/25 border border-amber-400/60 text-amber-200 shadow-lg shadow-amber-500/10'
+                            : can
+                            ? 'glass-card glass-card-hover text-amber-300/70'
+                            : 'glass-card opacity-30 text-amber-500/40 cursor-not-allowed',
+                        )}
+                      >
+                        {formatNum(b)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Правила / виплати */}
+              {casinoGame === 'slots' && (
+                <div className="glass-card rounded-2xl p-3 space-y-1">
+                  <div className="text-[10px] uppercase font-bold text-amber-500/30 mb-1 tracking-widest">Виплати</div>
+                  {Object.entries(CASINO_PAYOUTS).map(([s, m]) => (
+                    <div key={s} className="flex justify-between items-center text-[11px]">
+                      <span className="tracking-widest">{s}{s}{s}</span>
+                      <span className={cn('font-black', m >= 15 ? 'text-fuchsia-300' : 'text-amber-300')}>×{m}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between items-center text-[11px] pt-1 border-t border-amber-500/10">
+                    <span className="text-amber-400/60">Будь-які 2 однакові</span>
+                    <span className="font-black text-amber-300/80">×{CASINO_PAIR_MULT}</span>
+                  </div>
+                </div>
+              )}
+              {casinoGame === 'dice' && (
+                <div className="glass-card rounded-2xl p-3 text-[11px] text-amber-300/60 space-y-1">
+                  <div>• Кинув більший кістяк, ніж бабуся → <b className="text-amber-300">×1.9</b></div>
+                  <div>• Нічия → ставка повертається</div>
+                  <div>• Менший → ставка згоріла 🔥</div>
+                </div>
+              )}
+                  {casinoGame === 'wheel' && (
+                    <div className="glass-card rounded-2xl p-3 text-[11px] text-amber-300/60">
+                      • 5 з 10 секторів порожні, але є ×2, ×5 і два ×0.5/×1.5. Вказівник зверху — куди впаде, те й твій множник.
+                    </div>
+                  )}
+              </>)}
+              <div className="text-center text-[9px] text-amber-500/30 pb-2">Виграш казино не додається до рейтингу «з'їдено»</div>
+            </div>
+          );
+        })()}
+
+        {/* --- LEADERBOARD --- */}
+        {page === 'leaders' && (
+          <div className={cn('h-full overflow-y-auto p-4 space-y-2', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
+            <h2 className="text-base font-black text-amber-200/80 text-center tracking-wide">🏆 ЛІДЕРИ ФОКАЧІ</h2>
+
+            <div className="glass-card rounded-xl p-2.5 text-center text-[11px] font-bold text-amber-300/70">
+              <div>
+                {myRank ? <>Твоє місце: <span className="text-amber-200 font-black">#{myRank}</span></> : 'Залітай у топ — з\'їдь більше фокач! 🫓'}
+              </div>
+              {leaders && (
+                <div className="text-[10px] text-emerald-300/80 mt-0.5 flex items-center justify-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Онлайн: {leaders.filter((l) => l.online).length}
+                </div>
+              )}
+            </div>
+
+            {leadersLoading && <div className="text-center text-amber-500/50 py-8 text-xs animate-pulse">⏳ Завантаження…</div>}
+
+            {!leadersLoading && leaders && leaders.length === 0 && (
+              <div className="text-center text-amber-500/40 py-8 text-xs">Поки що порожньо. Обганяй усіх! 🫓</div>
+            )}
+
+            {!leadersLoading && leaders && leaders.map((pl, i) => {
+              const isMe = !!tgUser?.id && String(pl.id) === String(tgUser.id);
+              const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`;
+              return (
+                <div
+                  key={pl.id}
+                  style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
+                  className={cn(
+                    'rounded-xl p-2.5 flex items-center gap-3 animate-card',
+                    isMe ? 'border border-amber-400/50 bg-amber-500/10' : 'glass-card',
+                  )}
+                >
+                  <div className={cn('shrink-0 text-center font-black w-8', i < 3 ? 'text-lg' : 'text-amber-500/50 text-sm')}>{medal}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-[13px] text-amber-100/90 truncate">
+                      {pl.online && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1 align-middle" title="Онлайн" />}
+                      {pl.name}
+                      {pl.username && <span className="text-amber-500/50 text-[11px] font-normal"> @{pl.username}</span>}
+                      {isMe && <span className="ml-1.5 text-[9px] bg-amber-500/25 text-amber-300 px-1.5 py-0.5 rounded-full font-black align-middle">ЦЕ ТИ</span>}
+                    </div>
+                    <div className="text-[10px] text-fuchsia-300/60">🔄 {pl.prestige} ребіртх(ів)</div>
+                  </div>
+                  {pl.flag && (
+                    <button
+                      onClick={(ev) => { ev.stopPropagation(); addToast('⚠️ Можливо використовував авто-клікер', `${pl.name} — спрацював античит`, '⚠️'); haptic.light(); }}
+                      className="shrink-0 w-6 h-6 rounded-full bg-amber-500/20 border border-amber-400/50 text-xs flex items-center justify-center animate-pulse"
+                      title="Можливо використовував авто-клікер"
+                    >⚠️</button>
+                  )}
+                  <div className="text-right shrink-0">
+                    <div className="font-black text-amber-200 text-sm tabular-nums">{formatNum(pl.total)}</div>
+                    <div className="text-[9px] text-amber-500/40">з'їдено 🫓</div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {!leadersLoading && (
+              <button
+                onClick={loadLeaders}
+                className="w-full glass-card glass-card-hover rounded-xl py-2.5 text-[11px] font-black text-amber-300/70 transition active:scale-95"
+              >
+                🔄 Оновити
+              </button>
+            )}
+
+            <div className="text-center text-[9px] text-amber-500/20 pb-2">Рейтинг за з'їденими фокачами за весь час</div>
+          </div>
+        )}
+
+        {/* --- SETTINGS --- */}
+        {page === 'settings' && (
+          <div className={cn('h-full overflow-y-auto p-4 space-y-3', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
+            <h2 className="text-base font-black text-amber-200/80 text-center tracking-wide">⚙️ НАЛАШТУВАННЯ ТА СТАТИСТИКА</h2>
+
+            <div className="grid grid-cols-3 gap-1.5">
+              {[
+                ['🫓', formatNum(state.total), "З'їдено"],
+                ['💎', String(state.diamonds), 'Діамантів'],
+                ['🔄', String(state.prestige), 'Ребіртхів'],
+                ['⚔️', String(state.bossesDefeated), 'Босів подолано'],
+                ['🪲', String(state.pestsSquashed), 'Шкідників знищено'],
+                ['👆', state.clicks.toLocaleString(), 'Кліків'],
+                ['⚡', `x${state.maxCombo}`, 'Макс комбо'],
+                ['✨', String(state.goldenCaught), 'Золотих'],
+                ['🏗️', String(totalBuildings), 'Будівель'],
+              ].map(([emoji, value, label], i) => (
+                <div key={label} style={{ animationDelay: `${Math.min(i, 9) * 40}ms` }} className="glass-card rounded-xl p-2.5 text-center animate-card">
+                  <div className="text-base">{emoji}</div>
+                  <div className="font-black text-amber-200/80 text-sm tabular-nums">{value}</div>
+                  <div className="text-[9px] text-amber-500/40">{label}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="glass-card rounded-2xl p-4 border-fuchsia-500/30 animate-rebirth-card space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🔄</span>
+                <div>
+                  <div className="font-black text-fuchsia-200 text-sm">Ребіртх: {state.prestige} рівень</div>
+                  <div className="text-[10px] text-fuchsia-400/70">+{state.prestige * 10}% доходу назавжди • +{state.prestige * 5} енергії</div>
+                </div>
+                {prestigeGain >= 1 && (
+                  <span className="ml-auto px-2 py-0.5 rounded-full bg-fuchsia-500/20 border border-fuchsia-500/40 text-fuchsia-300 text-[10px] font-black animate-pulse">
+                    +{prestigeGain} Готово!
+                  </span>
+                )}
+              </div>
+
+              {/* Requirement & Progress Info */}
+              <div className="bg-black/30 rounded-xl p-2.5 border border-fuchsia-500/20 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-fuchsia-300 font-bold flex items-center gap-1">
+                    {prestigeGain < 1 ? '🔒 Потрібно: 1 000 000 🫓 (1 млн / 1кк)' : `🎯 До наступного (+${prestigeGain + 1})`}
+                  </span>
+                  <span className="font-black text-fuchsia-200 tabular-nums">
+                    {rebirthProgress.toFixed(1)}%
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full bg-black/50 h-2.5 rounded-full overflow-hidden border border-fuchsia-500/20">
+                  <div
+                    className="bar-flow h-full bg-gradient-to-r from-fuchsia-600 via-purple-500 to-amber-300 rounded-full transition-all duration-300"
+                    style={{ width: `${rebirthProgress}%` }}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between text-[10px] text-fuchsia-400/60 tabular-nums">
+                  <span>Зароблено: {formatNum(state.total)} 🫓</span>
+                  <span>Ціль: {formatNum(nextRebirthTarget)} 🫓</span>
+                </div>
+              </div>
+
+              <div className="text-[10px] text-fuchsia-300/60 leading-relaxed">
+                {prestigeGain < 1 ? (
+                  <span>
+                    💡 Ребіртх відкривається при досягненні <b>1 000 000 фокач</b> (залишилось ще {formatNum(Math.max(0, 1e6 - state.total))}). Він розблокує нові будівлі та прокачки в магазині! 💎 Діаманти та ВІП зберігаються.
+                  </span>
+                ) : (
+                  <span>
+                    ✨ Скинь фокачі та будівлі → отримай <b className="text-fuchsia-200">+{prestigeGain} Ребіртх{prestigeGain > 1 ? 'ів' : ''}</b>! Відкриває нові будівлі та прокачки в магазині. 💎 Діаманти та ВІП залишаються.
+                  </span>
+                )}
+              </div>
+
+              <button
+                disabled={prestigeGain < 1}
+                onClick={doPrestige}
+                className={cn(
+                  'w-full py-2.5 rounded-xl font-black text-sm transition active:scale-95 shadow-lg',
+                  prestigeGain >= 1
+                    ? 'bg-gradient-to-r from-fuchsia-600 via-purple-600 to-amber-500 text-white animate-pulse shadow-fuchsia-500/40 cursor-pointer'
+                    : 'bg-white/5 border border-fuchsia-500/20 text-fuchsia-400/50 cursor-not-allowed'
+                )}
+              >
+                {prestigeGain >= 1
+                  ? `Зробити Ребіртх (+${prestigeGain} 🔄)`
+                  : `🔒 Потрібно 1 000 000 🫓 (ще ${formatNum(Math.max(0, 1e6 - state.total))})`}
+              </button>
+            </div>
+
+            {/* Статус акаунта — спідометр античиту */}
+            <div className="glass-card rounded-2xl p-4">
+              <div className="text-[11px] font-bold text-amber-400/50 mb-1 text-center tracking-widest">🛡 СТАТУС АКАУНТА</div>
+              <svg viewBox="0 0 200 112" className="w-44 mx-auto">
+                <path d="M 20 100 A 80 80 0 0 1 87.5 21" stroke="#34d399" strokeWidth="14" fill="none" strokeLinecap="round" />
+                <path d="M 87.5 21 A 80 80 0 0 1 164.7 53" stroke="#fbbf24" strokeWidth="14" fill="none" />
+                <path d="M 164.7 53 A 80 80 0 0 1 180 100" stroke="#ef4444" strokeWidth="14" fill="none" strokeLinecap="round" />
+                <g style={{ transform: `rotate(${(100 - karma) * 1.8}deg)`, transformOrigin: '100px 100px', transition: 'transform 0.7s cubic-bezier(0.3, 1, 0.4, 1)' }}>
+                  <line x1="100" y1="100" x2="34" y2="100" stroke="#fef3c7" strokeWidth="4" strokeLinecap="round" />
+                </g>
+                <circle cx="100" cy="100" r="7" fill="#fbbf24" />
+              </svg>
+              <div
+                className="text-center text-[13px] font-black mt-1"
+                style={{ color: suspected ? '#fca5a5' : karma < 25 ? '#fca5a5' : karma < 50 ? '#fcd34d' : karma < 75 ? '#fdba74' : '#6ee7b7' }}
+              >
+                {suspected ? '⚠️ Підозра активна' : karma < 25 ? '🔴 Тінь бабусі' : karma < 50 ? '⚠️ Обмежений режим' : karma < 75 ? '🟡 Під підозрою' : 'Акаунт чистий ✅'}
+              </div>
+              {(karma < 75 || suspected) && (
+                <div className="mt-2 space-y-0.5 text-[10px] text-amber-300/60 bg-black/30 rounded-xl p-2 border border-amber-500/10">
+                  {suspected && <div>🚫 Фокачі пригорають — кліки дають ×0.05</div>}
+                  {karma < 75 && <div>🔒 Ставки в казино — максимум 1K</div>}
+                  {karma < 50 && <div>🔒 Казино закрите, офлайн-дохід −50%</div>}
+                  {karma < 25 && <div>🔒 Лідерборд заморожено, нагороди від адміна не видаються</div>}
+                  <div className="text-amber-500/40">Грай чесно — карма відновиться</div>
+                </div>
+              )}
+              <div className="text-center text-[9px] text-amber-500/30 mt-0.5">Античит стежить за ритмом кліків — грай чесно і стрілка буде в зелені</div>
+            </div>
+
+            <div className="glass-card rounded-2xl p-4">
+              <div className="text-[11px] font-bold text-amber-400/50 mb-2">💡 Підказки та правила</div>
+              <div className="text-[10px] text-amber-300/40 space-y-1 leading-relaxed">
+                <p>• 🔄 Ребіртх доступний від 1 000 000 фокач (1 млн / 1кк) — дає +10% доходу назавжди та відкриває нові товари!</p>
+                <p>• ⚔️ Бий босів швидко — вони тікають і крадуть 10% каси!</p>
+                <p>• 🪲 Тапай шкідників одразу, поки вони не поїли фокачі!</p>
+                <p>• 🔧 Лагодь зношені будівлі в магазині (-50% CPS)</p>
+                <p>• 👮 Плати податок або купуй Бухгалтера у ВІП за 💎</p>
+                <p>• 💎 Діаманти та ВІП-прокачки НЕ зникають після ребіртху</p>
+              </div>
+            </div>
+
+            <div className="glass-card rounded-2xl p-4 border-red-500/15">
+              <button onClick={resetGame} className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300/70 font-bold py-2.5 rounded-xl transition active:scale-95 text-sm">
+                🗑️ Скинути гру повністю
+              </button>
+            </div>
+
+            <div className="text-center text-[9px] text-amber-500/20 pb-2 tracking-wider">ФОКАЧА КЛІКЕР v1.1</div>
+          </div>
+        )}
+      </div>
+
+      {/* ===== BOTTOM NAV ===== */}
+      <nav className="relative z-10 shrink-0 glass border-t border-amber-500/10 safe-bottom">
+        <div className="relative flex">
+          {([
+            ['shop', '🏪', 'Прокачки'],
+            ['casino', '🎰', 'Казино'],
+            ['clicker', '🫓', 'Клікер'],
+            ['leaders', '🏆', 'Лідери'],
+            ['settings', '⚙️', 'Інше'],
+          ] as [Page, string, string][]).map(([id, icon, label]) => (
+            <button
+              key={id}
+              onClick={() => goPage(id)}
+              className={cn('flex-1 flex flex-col items-center py-2.5 transition-all relative', page === id ? 'text-amber-200' : 'text-amber-600/40 active:text-amber-400')}
+            >
+              <span className={cn('text-[22px] transition-all duration-200', page === id && 'animate-nav-bounce drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]')}>{icon}</span>
+              {id === 'clicker' && (boss || pest) && page !== 'clicker' && (
+                <span className="animate-alert-dot absolute z-10 w-3.5 h-3.5 rounded-full bg-red-500 border-2 border-[#0d0a04] left-[calc(50%+13px)] top-[10px]" />
+              )}
+              <span className={cn('text-[9px] font-bold mt-0.5 tracking-wider', page === id ? 'text-amber-300' : '')}>{label}</span>
+            </button>
+          ))}
+          {/* Активний індикатор — плавно переїжджає між вкладками */}
+          <div
+            className="pointer-events-none absolute -top-px h-[2px] w-8 -translate-x-1/2 rounded-full bg-gradient-to-r from-transparent via-amber-400 to-transparent"
+            style={{
+              left: `${((PAGE_ORDER.indexOf(page) + 0.5) / PAGE_ORDER.length) * 100}%`,
+              transition: 'left 0.28s cubic-bezier(0.3, 1, 0.35, 1)',
+            }}
+          />
+        </div>
+      </nav>
+    </div>
+  );
+}

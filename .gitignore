@@ -1,0 +1,4 @@
+node_modules/
+bot-server/
+dist/
+package-lock.json
