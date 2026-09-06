@@ -150,8 +150,34 @@ export default function DuelApp({ duelId }: { duelId: string }) {
   }
 
   const liveNow = stage === 'live';
-  const countdownN = stage === 'countdown' && startTs ? Math.max(0, Math.ceil((startTs - nowAligned()) / 1000)) : 0;
+  const msToStart = stage === 'countdown' && startTs ? Math.max(0, startTs - nowAligned()) : 0;
+  const introShowing = stage === 'countdown' && msToStart > 3000; // первые 4с — интро VS
+  const countdownN = Math.ceil(msToStart / 1000);
   const elapsed = startTs && (stage === 'live' || stage === 'paused') ? Math.max(0, nowAligned() - startTs) : 0;
+
+  // аватарка: фото Telegram если есть, иначе кружок с инициалом
+  const myPhoto = (tg?.initDataUnsafe?.user as { photo_url?: string } | undefined)?.photo_url;
+  const initial = (n: string) => (n.trim()[0] || '?').toUpperCase();
+  const Avatar = ({ src, name, side }: { src?: string; name: string; side: 'left' | 'right' }) => (
+    <div
+      className="flex flex-col items-center gap-2 w-32"
+      style={{
+        animation: `${side === 'left' ? 'duel-in-left' : 'duel-in-right'} 0.65s cubic-bezier(0.2, 1.2, 0.4, 1) ${side === 'left' ? 0.1 : 0.85}s both`,
+      }}
+    >
+      <div
+        className="w-20 h-20 rounded-full overflow-hidden border-[3px] border-amber-400/80 bg-gradient-to-br from-amber-600/40 to-orange-900/40 flex items-center justify-center"
+        style={{ animation: 'duel-glow-pulse 1.6s ease-in-out 1.6s infinite' }}
+      >
+        {src ? (
+          <img src={src} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <span className="text-3xl font-black text-amber-300">{initial(name)}</span>
+        )}
+      </div>
+      <div className="glass rounded-xl px-2.5 py-1 text-[12px] font-black text-amber-100 truncate max-w-full">{name}</div>
+    </div>
+  );
 
   // ===== ФИНАЛ =====
   if (stage === 'finished') {
@@ -233,8 +259,25 @@ export default function DuelApp({ duelId }: { duelId: string }) {
         </div>
       </div>
 
+      {/* Интро VS: аватарки влетают, VS между ними, всё плавно тает */}
+      {introShowing && (
+        <div
+          className="flex-1 flex items-center justify-center gap-3 px-4 pointer-events-none"
+          style={{ animation: 'duel-fade-all 0.7s ease 3.3s forwards' }}
+        >
+          <Avatar src={myPhoto} name={myName || 'Ти'} side="left" />
+          <div
+            className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-orange-500 drop-shadow-[0_0_18px_rgba(251,146,60,0.8)]"
+            style={{ animation: 'duel-vs-pop 0.55s cubic-bezier(0.2, 1.4, 0.4, 1) 1.7s both', transform: 'rotate(-6deg)' }}
+          >
+            VS
+          </div>
+          <Avatar name={oppName} side="right" />
+        </div>
+      )}
+
       {/* Отсчёт */}
-      {stage === 'countdown' && (
+      {stage === 'countdown' && !introShowing && (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <div key={countdownN} className="text-8xl font-black text-amber-300" style={{ animation: 'num-pop 0.5s cubic-bezier(0.34,1.56,0.64,1)' }}>

@@ -366,6 +366,30 @@
   animation: energy-flow 2.2s linear infinite;
 }
 
+/* ---- Дуэль: интро VS ---- */
+@keyframes duel-in-left {
+  0% { opacity: 0; transform: translateX(-75vw) scale(0.5) rotate(-8deg); }
+  55% { opacity: 1; transform: translateX(14px) scale(1.08) rotate(2deg); }
+  100% { opacity: 1; transform: translateX(0) scale(1) rotate(0deg); }
+}
+@keyframes duel-in-right {
+  0% { opacity: 0; transform: translateX(75vw) scale(0.5) rotate(8deg); }
+  55% { opacity: 1; transform: translateX(-14px) scale(1.08) rotate(-2deg); }
+  100% { opacity: 1; transform: translateX(0) scale(1) rotate(0deg); }
+}
+@keyframes duel-vs-pop {
+  0% { opacity: 0; transform: scale(0) rotate(-200deg); }
+  55% { opacity: 1; transform: scale(1.35) rotate(10deg); }
+  100% { opacity: 1; transform: scale(1) rotate(-6deg); }
+}
+@keyframes duel-fade-all {
+  to { opacity: 0; transform: scale(1.2); filter: blur(6px); }
+}
+@keyframes duel-glow-pulse {
+  0%, 100% { box-shadow: 0 0 18px rgba(251,191,36,0.35); }
+  50% { box-shadow: 0 0 42px rgba(251,191,36,0.75); }
+}
+
 button { -webkit-tap-highlight-color: transparent; }
 
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
