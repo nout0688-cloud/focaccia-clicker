@@ -190,14 +190,49 @@ export default function DuelApp({ duelId }: { duelId: string }) {
     return () => clearInterval(iv);
   }, []);
 
-  // Завантаження сейву через CloudStorage + localStorage
+  // Завантаження сейву через CloudStorage + localStorage + серверний баланс
   useEffect(() => {
-    storage.get(SAVE_KEY).then((raw) => {
-      if (raw) {
-        try { setUserSave(JSON.parse(raw)); } catch { /* */ }
+    let active = true;
+    const loadBal = async () => {
+      let loadedSave: any = null;
+      try {
+        const raw = await storage.get(SAVE_KEY);
+        if (raw) loadedSave = JSON.parse(raw);
+      } catch { /* */ }
+
+      // Якщо сейв не знайдено або баланс 0, перевіряємо легкий ключ focaccia-balance
+      if (!loadedSave || (!loadedSave.focaccia && !loadedSave.diamonds)) {
+        try {
+          const balRaw = await storage.get('focaccia-balance');
+          if (balRaw) {
+            const b = JSON.parse(balRaw);
+            if (!loadedSave) loadedSave = {};
+            if (typeof b.f === 'number') loadedSave.focaccia = b.f;
+            if (typeof b.d === 'number') loadedSave.diamonds = b.d;
+          }
+        } catch { /* */ }
       }
-    });
-  }, []);
+
+      // Також запитуємо серверний баланс як надійне джерело правди
+      if (meId) {
+        try {
+          const res = await fetch(`${API}?action=get_balance&userId=${meId}`);
+          const sBal = await res.json();
+          if (sBal?.ok && active) {
+            if (!loadedSave) loadedSave = {};
+            if (typeof sBal.focaccia === 'number') loadedSave.focaccia = Math.max(Number(loadedSave.focaccia) || 0, sBal.focaccia);
+            if (typeof sBal.diamonds === 'number') loadedSave.diamonds = Math.max(Number(loadedSave.diamonds) || 0, sBal.diamonds);
+          }
+        } catch { /* */ }
+      }
+
+      if (loadedSave && active) {
+        setUserSave(loadedSave);
+      }
+    };
+    loadBal();
+    return () => { active = false; };
+  }, [meId]);
 
   // === Ескроу: перевірка балансу та списання ставки ===
   useEffect(() => {
@@ -205,39 +240,63 @@ export default function DuelApp({ duelId }: { duelId: string }) {
     const flagKey = `duel_escrow:${duelId}:${meId}`;
     if (localStorage.getItem(flagKey)) { escrowDone.current = true; return; }
     const curStake = snapRef.current?.stake || stake;
-    if (!curStake || !userSave) return;
+    if (!curStake) return;
 
-    const gem = (snapRef.current?.stakeCur || stakeCur) === 'gem';
-    const balance = gem ? Math.floor(userSave.diamonds || 0) : Math.floor(userSave.focaccia || 0);
+    const checkAndDeduct = async () => {
+      let activeSave = userSave;
+      const gem = (snapRef.current?.stakeCur || stakeCur) === 'gem';
+      let balance = gem ? Math.floor(Number(activeSave?.diamonds) || 0) : Math.floor(Number(activeSave?.focaccia) || 0);
 
-    // ПЕРЕВІРКА БАЛАНСУ: якщо у гравця недостатньо коштів на ставку!
-    if (balance < curStake) {
-      const sym = gem ? '💎' : '🫓';
-      setInsufficientFunds(`У тебе недостатньо ${gem ? 'алмазів 💎' : 'фокач 🫓'} для ставки!\nНа балансі: ${formatNum(balance)} ${sym}, а ставка: ${formatNum(curStake)} ${sym}.`);
+      // Якщо локального балансу не вистачає — перед відмовою робимо свіжий запит на сервер!
+      if (balance < curStake && meId) {
+        try {
+          const sRes = await fetch(`${API}?action=get_balance&userId=${meId}`);
+          const sData = await sRes.json();
+          if (sData?.ok) {
+            const sVal = gem ? Math.floor(Number(sData.diamonds) || 0) : Math.floor(Number(sData.focaccia) || 0);
+            if (sVal >= curStake) {
+              balance = sVal;
+              if (!activeSave) activeSave = {};
+              if (gem) activeSave.diamonds = sVal;
+              else activeSave.focaccia = sVal;
+              setUserSave({ ...activeSave });
+            }
+          }
+        } catch { /* */ }
+      }
+
+      // ПЕРЕВІРКА БАЛАНСУ: якщо у гравця дійсно недостатньо коштів на ставку!
+      if (balance < curStake) {
+        const sym = gem ? '💎' : '🫓';
+        setInsufficientFunds(`У тебе недостатньо ${gem ? 'алмазів 💎' : 'фокач 🫓'} для ставки!\nНа балансі: ${formatNum(balance)} ${sym}, а ставка: ${formatNum(curStake)} ${sym}.`);
+        fetch(API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'no_funds', duelId, userId: meId }),
+        }).catch(() => {});
+        return;
+      }
+
+      // Списання ставки з балансу
+      const nextSave = activeSave ? { ...activeSave } : {};
+      if (gem) nextSave.diamonds = Math.max(0, (Number(nextSave.diamonds) || 0) - curStake);
+      else nextSave.focaccia = Math.max(0, (Number(nextSave.focaccia) || 0) - curStake);
+
+      setUserSave(nextSave);
+      storage.set(SAVE_KEY, JSON.stringify(nextSave));
+      storage.set('focaccia-balance', JSON.stringify({ f: nextSave.focaccia || 0, d: nextSave.diamonds || 0, ts: Date.now() }));
+      localStorage.setItem(flagKey, '1');
+      escrowDone.current = true;
+      setMyPaid(curStake);
+
       fetch(API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'no_funds', duelId, userId: meId }),
+        body: JSON.stringify({ action: 'escrow', duelId, userId: meId, paid: curStake }),
       }).catch(() => {});
-      return;
-    }
+    };
 
-    // Списання ставки з балансу
-    const nextSave = { ...userSave };
-    if (gem) nextSave.diamonds = Math.max(0, (nextSave.diamonds || 0) - curStake);
-    else nextSave.focaccia = Math.max(0, (nextSave.focaccia || 0) - curStake);
-
-    setUserSave(nextSave);
-    storage.set(SAVE_KEY, JSON.stringify(nextSave));
-    localStorage.setItem(flagKey, '1');
-    escrowDone.current = true;
-    setMyPaid(curStake);
-
-    fetch(API, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'escrow', duelId, userId: meId, paid: curStake }),
-    }).catch(() => {});
+    checkAndDeduct();
   }, [stage, userSave, stake, stakeCur, duelId, meId]);
 
   // === Виплата банку при фініші: переможцю — весь банк, нічия — повернення ===
@@ -264,6 +323,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
             if (gem) s.diamonds = (s.diamonds || 0) + curPaid;
             else s.focaccia = (s.focaccia || 0) + curPaid;
             storage.set(SAVE_KEY, JSON.stringify(s));
+            storage.set('focaccia-balance', JSON.stringify({ f: s.focaccia || 0, d: s.diamonds || 0, ts: Date.now() }));
           }
           return;
         }
@@ -273,11 +333,13 @@ export default function DuelApp({ duelId }: { duelId: string }) {
           if (gem) s.diamonds = (s.diamonds || 0) + curPot;
           else s.focaccia = (s.focaccia || 0) + curPot;
           storage.set(SAVE_KEY, JSON.stringify(s));
+          storage.set('focaccia-balance', JSON.stringify({ f: s.focaccia || 0, d: s.diamonds || 0, ts: Date.now() }));
         } else if (winner === 'draw') {
           if (curPaid > 0) {
             if (gem) s.diamonds = (s.diamonds || 0) + curPaid;
             else s.focaccia = (s.focaccia || 0) + curPaid;
             storage.set(SAVE_KEY, JSON.stringify(s));
+            storage.set('focaccia-balance', JSON.stringify({ f: s.focaccia || 0, d: s.diamonds || 0, ts: Date.now() }));
           }
         }
       } catch { /* */ }

@@ -300,6 +300,31 @@ export default function App() {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  const reportSync = useCallback(() => {
+    if (!tgUser?.id) return;
+    const cur = stateRef.current;
+    fetch(`${API_BASE}/api/leaderboard`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: tgUser.id,
+        name: tgUser.first_name || 'Гравець',
+        username: tgUser.username || '',
+        total: Math.floor(cur.total),
+        prestige: cur.prestige,
+        clicks: Math.floor(cur.clicks),
+        focaccia: Math.floor(cur.focaccia),
+        diamonds: Math.floor(cur.diamonds),
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (typeof data?.karma === 'number') setKarma(data.karma);
+        if (data?.rank) setMyRank(data.rank);
+      })
+      .catch(() => { /* silent */ });
+  }, [tgUser]);
+
   /* ---- Init ---- */
   useEffect(() => {
     if (tg) { tg.ready(); tg.expand(); }
@@ -322,6 +347,7 @@ export default function App() {
       setState(s);
       setKarma(s.karma ?? 100);
       setLoading(false);
+      setTimeout(reportSync, 100);
 
       // Check for admin rewards or reset order
       const checkAdmin = (userState: SaveState) => {
@@ -345,6 +371,7 @@ export default function App() {
                 onConfirm: () => setConfirmModal(null),
               });
               haptic.error();
+              setTimeout(reportSync, 100);
             } else {
               if (data?.reward && data.reward > 0) {
                 setState((p) => {
@@ -353,6 +380,7 @@ export default function App() {
                   return next;
                 });
                 addToast('🎁 Нагорода!', `+${formatNum(data.reward)} фокач від адміна!`, '🎁');
+                setTimeout(reportSync, 100);
               }
               if (data?.diamonds && data.diamonds > 0) {
                 setState((p) => {
@@ -362,6 +390,7 @@ export default function App() {
                 });
                 addToast('💎 Нагорода за дуель!', `+${formatNum(data.diamonds)} 💎 отримано!`, '💎');
                 haptic.success();
+                setTimeout(reportSync, 100);
               }
               if (data?.rebirth && data.rebirth > 0) {
                 setState((p) => {
@@ -371,6 +400,7 @@ export default function App() {
                 });
                 addToast('🔄 Ребіртхи від адміна!', `+${data.rebirth} 🔄 до престижу!`, '🔄');
                 haptic.success();
+                setTimeout(reportSync, 100);
               }
               if (data?.deduct && data.deduct > 0) {
                 setState((p) => {
@@ -380,6 +410,7 @@ export default function App() {
                 });
                 addToast('⚖️ Коригування', `-${formatNum(data.deduct)} фокач списано адміністратором`, '⚠️');
                 haptic.warning();
+                setTimeout(reportSync, 100);
               }
             }
           })
@@ -837,33 +868,21 @@ export default function App() {
   useEffect(() => {
     if (loading) return;
     if (!tgUser?.id) return;
-    const report = () => {
-      const cur = stateRef.current;
-      fetch(`${API_BASE}/api/leaderboard`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: tgUser.id,
-          name: tgUser.first_name || 'Гравець',
-          username: tgUser.username || '',
-          total: Math.floor(cur.total),
-          prestige: cur.prestige,
-          clicks: Math.floor(cur.clicks),
-          focaccia: Math.floor(cur.focaccia),
-          diamonds: Math.floor(cur.diamonds),
-        }),
-      })
-        .then((r) => r.json())
-        .then((data) => {
-          if (typeof data?.karma === 'number') setKarma(data.karma);
-          if (data?.rank) setMyRank(data.rank);
-        })
-        .catch(() => { /* silent */ });
+    reportSync();
+    const iv = setInterval(reportSync, 30000);
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') reportSync();
     };
-    report();
-    const iv = setInterval(report, 60000);
-    return () => clearInterval(iv);
-  }, [loading]);
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('beforeunload', reportSync);
+    window.addEventListener('pagehide', reportSync);
+    return () => {
+      clearInterval(iv);
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('beforeunload', reportSync);
+      window.removeEventListener('pagehide', reportSync);
+    };
+  }, [loading, tgUser, reportSync]);
 
   /* ---- Game tick ---- */
   useEffect(() => {
@@ -1113,7 +1132,9 @@ export default function App() {
   useEffect(() => {
     if (loading) return;
     const iv = setInterval(() => {
-      storage.set(SAVE_KEY, JSON.stringify({ ...stateRef.current, lastSave: Date.now() }));
+      const cur = stateRef.current;
+      storage.set(SAVE_KEY, JSON.stringify({ ...cur, lastSave: Date.now() }));
+      storage.set('focaccia-balance', JSON.stringify({ f: cur.focaccia, d: cur.diamonds, ts: Date.now() }));
     }, 3000);
     return () => clearInterval(iv);
   }, [loading]);
