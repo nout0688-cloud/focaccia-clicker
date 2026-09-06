@@ -214,6 +214,7 @@ const CASINO_SYMBOLS = ['💎', '👵', '⭐', '🍅', '🫓', '🧄'];
 const CASINO_PAYOUTS: Record<string, number> = { '💎': 50, '👵': 15, '⭐': 8, '🍅': 4, '🫓': 2, '🧄': 1.5 };
 const CASINO_PAIR_MULT = 1.4;
 const CASINO_BETS = [100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000];
+const CASINO_BETS_GEM = [1, 2, 5, 10, 25, 50, 100];
 const randSymbol = () => CASINO_SYMBOLS[Math.floor(Math.random() * CASINO_SYMBOLS.length)];
 const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 // Колесо: 10 секторів, сума = 9.5 → повернення ~95%
@@ -262,7 +263,7 @@ export default function App() {
   /* Античит v5: R/C/B evidence + challenge */
   const [challenge, setChallenge] = useState<null | { caught: number; x: number; y: number; timeLeft: number; result: null | 'pending' | 'win' | 'fail' | 'denied' }>(null);
   const [karma, setKarma] = useState(100); // поведінковий рівень 0-100 (синхронізується з сервером)
-  const casinoMaxBet = karma < 50 ? 0 : karma < 75 ? 1000 : Infinity; // дотівська лестниця обмежень
+  const casinoMaxBet = karma < 50 ? 0 : karma < 75 ? (casinoCur === 'gem' ? 10 : 1000) : Infinity; // дотівська лестниця обмежень
   const tapRing = useRef<{ buf: Tap[]; head: number; count: number }>({ buf: new Array(360), head: 0, count: 0 });
   const lastRawTap = useRef(0); // performance.now()
   const challengeOpening = useRef(false); // guard от double-flag race
@@ -280,6 +281,7 @@ export default function App() {
   /* Казино */
   const [casinoGame, setCasinoGame] = useState<'slots' | 'dice' | 'wheel'>('slots');
   const [casinoBet, setCasinoBet] = useState(100);
+  const [casinoCur, setCasinoCur] = useState<'foc' | 'gem'>('foc');
   const [casinoCustomBet, setCasinoCustomBet] = useState('100');
   const [casinoReels, setCasinoReels] = useState<[string, string, string]>(['🫓', '👵', '💎']);
   const [casinoSpinning, setCasinoSpinning] = useState(false);
@@ -1205,6 +1207,18 @@ export default function App() {
 
   /* ---- Казино: система везіння + три ігри ---- */
 
+  // Валюта казино: фокачі або алмази
+  const casinoCurSym = casinoCur === 'gem' ? '💎' : '🫓';
+  const casinoBalance = casinoCur === 'gem' ? state.diamonds : Math.floor(state.focaccia);
+  const casinoTake = (b: number) => setState((p) =>
+    casinoCur === 'gem'
+      ? { ...p, diamonds: Math.max(0, p.diamonds - b) }
+      : { ...p, focaccia: Math.max(0, p.focaccia - b) },
+  );
+  const casinoGive = (cur: 'foc' | 'gem', a: number) => setState((p) =>
+    cur === 'gem' ? { ...p, diamonds: p.diamonds + a } : { ...p, focaccia: p.focaccia + a },
+  );
+
   // Після кожної гри: виграш гріє «везіння», програш охолоджує
   const updateLuck = (mult: number) => {
     setState((p) => ({ ...p, luck: Math.max(-8, Math.min(12, (p.luck || 0) + mult - 0.95)) }));
@@ -1212,13 +1226,13 @@ export default function App() {
 
   const creditWin = (mult: number, combo: string, jackpot: boolean) => {
     const winAmt = Math.floor(casinoBet * mult);
-    setState((p) => ({ ...p, focaccia: p.focaccia + winAmt }));
-    setCasinoMsg({ text: `Виграш +${formatNum(winAmt)} 🫓 (×${mult})`, win: true });
+    casinoGive(casinoCur, winAmt);
+    setCasinoMsg({ text: `Виграш +${formatNum(winAmt)} ${casinoCurSym} (×${mult})`, win: true });
     updateLuck(mult);
     if (jackpot || mult >= 5) {
       burstConfetti(['🫓', '💎', '⭐', '✨']);
       doFlash('golden');
-      addToast('🎰 ДЖЕКПОТ!', `${combo} — +${formatNum(winAmt)} 🫓!`, '💎');
+      addToast('🎰 ДЖЕКПОТ!', `${combo} — +${formatNum(winAmt)} ${casinoCurSym}!`, '💎');
       haptic.heavy();
     } else {
       haptic.success();
@@ -1234,16 +1248,16 @@ export default function App() {
   const spinCasino = () => {
     if (casinoSpinning) return;
     if (casinoBet > casinoMaxBet) {
-      addToast('🔒 Карма замала', `Максимальна ставка — ${formatNum(casinoMaxBet)} 🫓`, '❌');
+      addToast('🔒 Карма замала', `Максимальна ставка — ${formatNum(casinoMaxBet)} ${casinoCurSym}`, '❌');
       return;
     }
-    if (state.focaccia < casinoBet) {
-      addToast('🎰 Не вистачає фокач!', `Ставка ${formatNum(casinoBet)} 🫓 — зменш її`, '❌');
+    if (casinoBalance < casinoBet) {
+      addToast(`🎰 Не вистачає ${casinoCur === 'gem' ? 'алмазів' : 'фокач'}!`, `Ставка ${formatNum(casinoBet)} ${casinoCurSym} — зменш її`, '❌');
       return;
     }
     setCasinoSpinning(true);
     setCasinoMsg(null);
-    setState((p) => ({ ...p, focaccia: p.focaccia - casinoBet }));
+    casinoTake(casinoBet);
     haptic.medium();
 
     // Фінальні барабани — з урахуванням везіння (може кинути двічі)
@@ -1272,13 +1286,13 @@ export default function App() {
 
       if (finalMult > 0) {
         const winAmt = Math.floor(casinoBet * finalMult);
-        setState((p) => ({ ...p, focaccia: p.focaccia + winAmt }));
-        setCasinoMsg({ text: `Виграш +${formatNum(winAmt)} 🫓 (×${finalMult})`, win: true });
+        casinoGive(casinoCur, winAmt);
+        setCasinoMsg({ text: `Виграш +${formatNum(winAmt)} ${casinoCurSym} (×${finalMult})`, win: true });
         updateLuck(finalMult);
         if (finalMult >= 8) {
           burstConfetti(['🫓', '💎', '⭐', '✨']);
           doFlash('golden');
-          addToast('🎰 ДЖЕКПОТ!', `${final[0]}${final[1]}${final[2]} — +${formatNum(winAmt)} 🫓!`, '💎');
+          addToast('🎰 ДЖЕКПОТ!', `${final[0]}${final[1]}${final[2]} — +${formatNum(winAmt)} ${casinoCurSym}!`, '💎');
           haptic.heavy();
         } else {
           haptic.success();
@@ -1294,16 +1308,16 @@ export default function App() {
   const rollDice = () => {
     if (casinoSpinning) return;
     if (casinoBet > casinoMaxBet) {
-      addToast('🔒 Карма замала', `Максимальна ставка — ${formatNum(casinoMaxBet)} 🫓`, '❌');
+      addToast('🔒 Карма замала', `Максимальна ставка — ${formatNum(casinoMaxBet)} ${casinoCurSym}`, '❌');
       return;
     }
-    if (state.focaccia < casinoBet) {
-      addToast('🎲 Не вистачає фокач!', `Ставка ${formatNum(casinoBet)} 🫓 — зменш її`, '❌');
+    if (casinoBalance < casinoBet) {
+      addToast(`🎲 Не вистачає ${casinoCur === 'gem' ? 'алмазів' : 'фокач'}!`, `Ставка ${formatNum(casinoBet)} ${casinoCurSym} — зменш її`, '❌');
       return;
     }
     setCasinoSpinning(true);
     setCasinoMsg(null);
-    setState((p) => ({ ...p, focaccia: p.focaccia - casinoBet }));
+    casinoTake(casinoBet);
     haptic.medium();
 
     // генеруємо дуель: свій кістяк vs бабуся; рахуємо множник
@@ -1329,12 +1343,12 @@ export default function App() {
 
       if (mult === 1.9) {
         const winAmt = Math.floor(casinoBet * 1.9);
-        setState((p) => ({ ...p, focaccia: p.focaccia + winAmt }));
-        setCasinoMsg({ text: `Твої ${(DICE_FACES[result.mine - 1])} проти ${(DICE_FACES[result.house - 1])} — виграш +${formatNum(winAmt)} 🫓!`, win: true });
+        casinoGive(casinoCur, winAmt);
+        setCasinoMsg({ text: `Твої ${(DICE_FACES[result.mine - 1])} проти ${(DICE_FACES[result.house - 1])} — виграш +${formatNum(winAmt)} ${casinoCurSym}!`, win: true });
         updateLuck(1.9);
         haptic.success();
       } else if (mult === 1) {
-        setState((p) => ({ ...p, focaccia: p.focaccia + casinoBet }));
+        casinoGive(casinoCur, casinoBet); // ничья — ставка возвращается
         setCasinoMsg({ text: 'Нічия — ставка повернулась', win: false });
         updateLuck(1);
         haptic.light();
@@ -1358,7 +1372,7 @@ export default function App() {
     }
     setCasinoSpinning(true);
     setCasinoMsg(null);
-    setState((p) => ({ ...p, focaccia: p.focaccia - casinoBet }));
+    casinoTake(casinoBet);
     haptic.medium();
 
     // вибір сектора з урахуванням везіння
@@ -2358,8 +2372,8 @@ export default function App() {
             const digits = raw.replace(/\D/g, '').slice(0, 15);
             setCasinoCustomBet(digits);
             const n = parseInt(digits || '0', 10);
-            if (n >= 1) setCasinoBet(Math.min(n, Math.floor(state.focaccia), casinoMaxBet));
-            else setCasinoBet(1);
+            if (n >= 1) setCasinoBet(Math.min(n, casinoBalance, casinoMaxBet));
+            else setCasinoBet(casinoCur === 'gem' ? 1 : 100);
           };
           const casinoLocked = karma < 50;
           return (
@@ -2460,21 +2474,42 @@ export default function App() {
 
                 <button
                   onClick={doSpin}
-                  disabled={casinoSpinning || state.focaccia < casinoBet}
+                  disabled={casinoSpinning || casinoBalance < casinoBet}
                   className={cn(
                     'w-full py-3 rounded-xl font-black text-sm transition active:scale-95 shadow-lg',
-                    casinoSpinning || state.focaccia < casinoBet
+                    casinoSpinning || casinoBalance < casinoBet
                       ? 'bg-white/5 border border-amber-500/15 text-amber-500/40 cursor-not-allowed'
                       : 'bg-gradient-to-r from-rose-600 via-red-500 to-amber-500 text-white shadow-red-500/30 animate-pulse',
                   )}
                 >
-                  {casinoSpinning ? '🎲 ГРАЄМО…' : `${spinLabel} — ${formatNum(casinoBet)} 🫓`}
+                  {casinoSpinning ? '🎲 ГРАЄМО…' : `${spinLabel} — ${formatNum(casinoBet)} ${casinoCurSym}`}
                 </button>
+              </div>
+
+              {/* Валюта ставки */}
+              <div className="flex gap-1.5">
+                {([['foc', '🫓', 'Фокачі'], ['gem', '💎', 'Алмази']] as const).map(([id, icon, label]) => (
+                  <button
+                    key={id}
+                    onClick={() => { setCasinoCur(id); setCasinoBet(id === 'gem' ? 1 : 100); haptic.light(); }}
+                    className={cn(
+                      'flex-1 py-2 rounded-xl text-[11px] font-black transition-all',
+                      casinoCur === id
+                        ? 'glass-card text-amber-200 border border-amber-500/30 shadow-lg'
+                        : 'text-amber-500/50',
+                    )}
+                  >
+                    {icon} {label}
+                  </button>
+                ))}
               </div>
 
               {/* Ставки */}
               <div>
-                <div className="text-[10px] uppercase font-bold text-amber-500/30 mb-1.5 tracking-widest">Ставка</div>
+                <div className="flex justify-between items-center mb-1.5">
+                  <div className="text-[10px] uppercase font-bold text-amber-500/30 tracking-widest">Ставка</div>
+                  <div className="text-[10px] font-bold text-amber-300/50 tabular-nums">Баланс: {formatNum(casinoBalance)} {casinoCurSym}</div>
+                </div>
                 <div className="flex gap-1.5 mb-1.5">
                   <input
                     value={casinoCustomBet}
@@ -2483,11 +2518,11 @@ export default function App() {
                     placeholder="Своя ставка…"
                     className="flex-1 min-w-0 glass-card rounded-lg px-3 py-2.5 text-[13px] font-black text-amber-200 tabular-nums placeholder:text-amber-500/30 placeholder:font-bold outline-none border border-amber-500/15 focus:border-amber-400/60 transition-colors"
                   />
-                  <div className="glass-card rounded-lg px-3 py-2.5 text-[13px] font-black text-amber-400/60">🫓</div>
+                  <div className="glass-card rounded-lg px-3 py-2.5 text-[13px] font-black text-amber-400/60">{casinoCurSym}</div>
                 </div>
                 <div className="grid grid-cols-4 gap-1.5">
-                  {CASINO_BETS.map((b) => {
-                    const can = state.focaccia >= b && b <= casinoMaxBet;
+                  {(casinoCur === 'gem' ? CASINO_BETS_GEM : CASINO_BETS).map((b) => {
+                    const can = casinoBalance >= b && b <= casinoMaxBet;
                     return (
                       <button
                         key={b}
