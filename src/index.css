@@ -366,19 +366,16 @@
   animation: energy-flow 2.2s linear infinite;
 }
 
-/* ---- Дуэль: интро VS (лёгкие перелёты, без тяжёлых фильтров) ---- */
-@keyframes duel-in-left {
-  0% { opacity: 0; transform: translateX(-140px); }
-  100% { opacity: 1; transform: translateX(0); }
-}
-@keyframes duel-in-right {
-  0% { opacity: 0; transform: translateX(140px); }
-  100% { opacity: 1; transform: translateX(0); }
+/* ---- Дуэль: интро VS (резкое появление с пружиной) ---- */
+@keyframes duel-pop-in {
+  0% { opacity: 0; transform: scale(0.5); }
+  60% { opacity: 1; transform: scale(1.12); }
+  100% { opacity: 1; transform: scale(1); }
 }
 @keyframes duel-vs-pop {
-  0% { opacity: 0; transform: scale(0.4); }
-  70% { opacity: 1; transform: scale(1.15); }
-  100% { opacity: 1; transform: scale(1); }
+  0% { opacity: 0; transform: scale(0.4) rotate(-15deg); }
+  70% { opacity: 1; transform: scale(1.2) rotate(4deg); }
+  100% { opacity: 1; transform: scale(1) rotate(0deg); }
 }
 @keyframes duel-fade-all {
   to { opacity: 0; transform: scale(1.06); }

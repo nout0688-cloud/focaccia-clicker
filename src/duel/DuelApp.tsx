@@ -288,7 +288,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
         >
           {/* твой аватар — левый центр */}
           <div className="absolute" style={{ left: '22%', top: '46%', transform: 'translate(-50%, -50%)' }}>
-            <div style={{ animation: introPhase === 'p1' ? 'duel-in-left 0.65s cubic-bezier(0.2, 1.2, 0.4, 1) both' : undefined }}>
+            <div style={{ animation: introPhase === 'p1' ? 'duel-pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both' : undefined }}>
               <Avatar src={myPhoto} name={myName || 'Ти'} u={myU} side="left" />
             </div>
           </div>
@@ -308,7 +308,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
           {/* аватар соперника — правый центр */}
           {(introPhase === 'p2' || introPhase === 'vs' || introPhase === 'fade') && (
             <div className="absolute" style={{ left: '78%', top: '46%', transform: 'translate(-50%, -50%)' }}>
-              <div style={{ animation: introPhase === 'p2' ? 'duel-in-right 0.65s cubic-bezier(0.2, 1.2, 0.4, 1) both' : undefined }}>
+              <div style={{ animation: introPhase === 'p2' ? 'duel-pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both' : undefined }}>
                 <Avatar name={oppName || 'Соперник'} u={oppU} side="right" />
               </div>
             </div>
