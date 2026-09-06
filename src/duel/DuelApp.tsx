@@ -30,11 +30,13 @@ export default function DuelApp({ duelId }: { duelId: string }) {
   const tg = (window as unknown as { Telegram?: { WebApp?: any } }).Telegram?.WebApp;
   const meId = String(tg?.initDataUnsafe?.user?.id || '');
   const myName = String(tg?.initDataUnsafe?.user?.first_name || 'Гравець');
+  const myU = String(tg?.initDataUnsafe?.user?.username || '');
 
   const [stage, setStage] = useState('…');
   const [base, setBase] = useState(0);
   const [oppScore, setOppScore] = useState(0);
   const [oppName, setOppName] = useState('Соперник');
+  const [oppU, setOppU] = useState('');
   const [pending, setPending] = useState(0);
   const [offset, setOffset] = useState(0);
   const [pausedLeft, setPausedLeft] = useState(0);
@@ -87,6 +89,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
         if (data.opp) {
           setOppScore(data.opp.score);
           setOppName(data.opp.name || 'Соперник');
+          setOppU(data.opp.u || '');
         }
         // recovered: серверный счёт + всё, что ещё не отправлено
         setPending(pendingRef.current);
@@ -174,11 +177,12 @@ export default function DuelApp({ duelId }: { duelId: string }) {
   // аватарка: фото Telegram если есть, иначе кружок с инициалом
   const myPhoto = (tg?.initDataUnsafe?.user as { photo_url?: string } | undefined)?.photo_url;
   const initial = (n: string) => (n.trim()[0] || '?').toUpperCase();
-  const Avatar = ({ src, name, side }: { src?: string; name: string; side: 'left' | 'right' }) => (
+  const Avatar = ({ src, name, u, side }: { src?: string; name: string; u?: string; side: 'left' | 'right' }) => (
     <div
       className="flex flex-col items-center gap-2 w-32"
       style={{
-        animation: `${side === 'left' ? 'duel-in-left' : 'duel-in-right'} 0.65s cubic-bezier(0.2, 1.2, 0.4, 1) both`,
+        animation: `${side === 'left' ? 'duel-in-left' : 'duel-in-right'} 0.65s cubic-bezier(0.22, 1, 0.36, 1) both`,
+        willChange: 'transform, opacity',
       }}
     >
       <div
@@ -191,7 +195,8 @@ export default function DuelApp({ duelId }: { duelId: string }) {
           <span className="text-3xl font-black text-amber-300">{initial(name)}</span>
         )}
       </div>
-      <div className="glass rounded-xl px-2.5 py-1 text-[12px] font-black text-amber-100 truncate max-w-full">{name}</div>
+      <div className="bg-black/50 rounded-xl px-2.5 py-1 text-[12px] font-black text-amber-100 truncate max-w-full">{name}</div>
+      {u && <div className="bg-black/40 rounded-lg px-2 py-0.5 text-[10px] font-bold text-amber-300/80 truncate max-w-full -mt-0.5">@{u}</div>}
     </div>
   );
 
@@ -284,7 +289,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
           {/* твой аватар — левый центр */}
           <div className="absolute" style={{ left: '22%', top: '46%', transform: 'translate(-50%, -50%)' }}>
             <div style={{ animation: introPhase === 'p1' ? 'duel-in-left 0.65s cubic-bezier(0.2, 1.2, 0.4, 1) both' : undefined }}>
-              <Avatar src={myPhoto} name={myName || 'Ти'} side="left" />
+              <Avatar src={myPhoto} name={myName || 'Ти'} u={myU} side="left" />
             </div>
           </div>
 
@@ -304,7 +309,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
           {(introPhase === 'p2' || introPhase === 'vs' || introPhase === 'fade') && (
             <div className="absolute" style={{ left: '78%', top: '46%', transform: 'translate(-50%, -50%)' }}>
               <div style={{ animation: introPhase === 'p2' ? 'duel-in-right 0.65s cubic-bezier(0.2, 1.2, 0.4, 1) both' : undefined }}>
-                <Avatar name={oppName || 'Соперник'} side="right" />
+                <Avatar name={oppName || 'Соперник'} u={oppU} side="right" />
               </div>
             </div>
           )}
