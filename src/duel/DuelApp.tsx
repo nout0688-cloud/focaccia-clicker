@@ -59,12 +59,13 @@ export default function DuelApp({ duelId }: { duelId: string }) {
   // цикл синхронизации с сервером (1 раз в ~900мс)
   useEffect(() => {
     if (!duelId || !meId) return;
+    let iv: ReturnType<typeof setInterval> | undefined;
     const tick = async () => {
       if (inFlight.current) return;
       inFlight.current = true;
       const delta = pendingRef.current;
-      pendingRef.current = 0;
-      setPending(0);
+      // отправляем ровно накопленное, НЕ обнуляя: тапы во время запроса остаются
+      pendingRef.current = Math.max(0, pendingRef.current - delta);
       try {
         const res = await fetch(API, {
           method: 'POST',
@@ -87,17 +88,20 @@ export default function DuelApp({ duelId }: { duelId: string }) {
           setOppScore(data.opp.score);
           setOppName(data.opp.name || 'Соперник');
         }
+        // recovered: серверный счёт + всё, что ещё не отправлено
+        setPending(pendingRef.current);
         setStage(data.stage);
         setPausedLeft(data.pausedLeft || 0);
-        setWinner(data.winner ?? null);
-        setReason(data.reason ?? null);
-      } catch { /* сеть мигнула — следующий тик */ } finally {
+        if (data.winner !== undefined) setWinner(data.winner);
+        if (data.reason !== undefined) setReason(data.reason);
+        if (data.stage === 'finished' && iv) clearInterval(iv); // финиш — опрос остановлен
+      } catch { /* сеть мигнула — счёт остался локально */ } finally {
         inFlight.current = false;
       }
     };
     tick();
-    const iv = setInterval(tick, 900);
-    return () => clearInterval(iv);
+    iv = setInterval(tick, 900);
+    return () => { if (iv) clearInterval(iv); };
   }, [duelId, meId]);
 
   // локальный тик: перерисовка таймера/отсчёта 10 раз в секунду
