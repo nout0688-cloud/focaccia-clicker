@@ -251,17 +251,21 @@ export default function App() {
   const [leadersLoading, setLeadersLoading] = useState(false);
   const [myRank, setMyRank] = useState<number | null>(null);
 
-  /* Античит: режим «фокачі пригорають» + випробування */
-  const [suspected, setSuspected] = useState(false);
+  /* Античит v5: R/C/B evidence + challenge */
   const [challenge, setChallenge] = useState<null | { caught: number; x: number; y: number; timeLeft: number; result: null | 'pending' | 'win' | 'fail' | 'denied' }>(null);
-  const rawTaps = useRef<{ t: number; x: number; y: number }[]>([]); // ВСІ дотики до булки, навіть без енергії
+  const [karma, setKarma] = useState(100); // поведінковий рівень 0-100 (синхронізується з сервером)
+  const casinoMaxBet = karma < 50 ? 0 : karma < 75 ? 1000 : Infinity; // дотівська лестниця обмежень
+  const tapRing = useRef<{ buf: { t: number; x: number; y: number }[]; head: number; count: number }>({ buf: new Array(360), head: 0, count: 0 });
   const lastRawTap = useRef(0);
   const activeNoBreakMs = useRef(0); // час гри без жодної паузи ≥ 20с
   const fastStreakMs = useRef(0); // безперервна серія дотиків швидше 8/с
-  const susWindows = useRef(0);
-  const untrustedClicks = useRef(0);
-  const [karma, setKarma] = useState(100); // поведінковий рівень 0-100 (синхронізується з сервером)
-  const casinoMaxBet = karma < 50 ? 0 : karma < 75 ? 1000 : Infinity; // дотівська лестниця обмежень
+  const bLongSession = useRef(false);  // 90+ хв без пауз — слабкий сигнал у B
+  const bFastStreak = useRef(false);   // 3+ хв швидше 8/с — слабкий сигнал у B
+  const suspicion = useRef(0);         // сглажений suspicion 0..100
+  const recentEvidence = useRef<number[]>([]); // останні 5 значень evidence
+  const extremeSpeedBoost = useRef(0); // імпульс за 22+/с, забувається ×0.75
+  const suspicionCooldownUntil = useRef(0); // після пройденого challenge
+  const syntheticTaps = useRef<number[]>([]); // ts скриптових подій (isTrusted=false)
 
   /* Казино */
   const [casinoGame, setCasinoGame] = useState<'slots' | 'dice' | 'wheel'>('slots');
@@ -464,12 +468,225 @@ export default function App() {
     setTimeout(() => setMilestone((m) => (m && m.id === id ? null : m)), 950);
   }, []);
 
-  /* ---- Антиавтокликер ---- */
-  const enterSuspicion = () => {
-    if (suspected) return;
-    setSuspected(true);
-    susWindows.current = 0;
-    rawTaps.current = [];
+  /* ---- TapSentinel v5 — Behavioral Anti-Cheat: R/C/B evidence ---- */
+  // Кольцевой буфер сырых тапов — без shift на каждый тап
+  const pushTap = (tap: { t: number; x: number; y: number }) => {
+    const ring = tapRing.current;
+    ring.buf[ring.head] = tap;
+    ring.head = (ring.head + 1) % 360;
+    ring.count = Math.min(ring.count + 1, 360);
+  };
+  const getTaps = (n: number): { t: number; x: number; y: number }[] => {
+    const ring = tapRing.current;
+    const count = Math.min(ring.count, n);
+    const out: { t: number; x: number; y: number }[] = [];
+    for (let i = count - 1; i >= 0; i--) out.push(ring.buf[(ring.head - 1 - i + 720) % 360]);
+    return out;
+  };
+
+  // R — ритм-скор 0..100 для заданного окна (формула: скорость 30%, регулярность 20%,
+  // кучкование 15%, структура шума 25%, пауза 10%)
+  const rhythmScore = (taps: { t: number; x: number; y: number }[]): number => {
+    if (taps.length < 10) return 0;
+    const ivs: number[] = [];
+    for (let i = 1; i < taps.length; i++) ivs.push(taps[i].t - taps[i - 1].t);
+    const mean = ivs.reduce((a, b) => a + b, 0) / ivs.length;
+    const sd = Math.sqrt(ivs.reduce((a, b) => a + (b - mean) ** 2, 0) / ivs.length);
+    const cv = sd / mean;
+    const sorted = [...ivs].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    const tol = Math.max(8, median * 0.15);
+    const clusterFrac = ivs.filter((iv) => Math.abs(iv - median) <= tol).length / ivs.length;
+    const hasPause = ivs.some((iv) => iv > 2500);
+
+    // Однородность локальных темпов: независимый шум джиттера vs дрейф человека.
+    // ratio = subCv/cv: у бота ≈ 0.3, у человека ≥ 0.5. 0.35 → 100, 0.90 → 0.
+    const subSize = Math.max(5, Math.min(10, Math.floor(ivs.length / 4)));
+    const subMeans: number[] = [];
+    for (let s = 0; s + subSize <= ivs.length; s += subSize) {
+      const sub = ivs.slice(s, s + subSize);
+      subMeans.push(sub.reduce((a, b) => a + b, 0) / sub.length);
+    }
+    let noiseStructure = 0;
+    if (subMeans.length >= 2 && cv > 0.0001) {
+      const smMean = subMeans.reduce((a, b) => a + b, 0) / subMeans.length;
+      const smSd = Math.sqrt(subMeans.reduce((a, b) => a + (b - smMean) ** 2, 0) / subMeans.length);
+      const ratio = smSd / smMean / cv;
+      // 0.32 (независимый шум бота) → 100, 0.50 (дрейф человека) → 0. Откалибровано симуляциями.
+      noiseStructure = Math.max(0, Math.min(100, ((0.50 - ratio) / (0.50 - 0.32)) * 100));
+    }
+
+    const speedScore = mean >= 100 ? 0 : mean >= 70 ? 15 : mean >= 55 ? 30 : mean >= 45 ? 50 : mean >= 35 ? 70 : mean >= 25 ? 85 : 100;
+    const regularityScore = cv >= 0.25 ? 0 : cv >= 0.18 ? 20 : cv >= 0.12 ? 40 : cv >= 0.08 ? 60 : cv >= 0.05 ? 80 : 100;
+    const clusterScore = clusterFrac < 0.55 ? 0 : clusterFrac < 0.70 ? 30 : clusterFrac < 0.80 ? 55 : clusterFrac < 0.90 ? 75 : 100;
+    const pauseScore = hasPause ? 0 : 20;
+
+    return Math.round(0.30 * speedScore + 0.20 * regularityScore + 0.15 * clusterScore + 0.25 * noiseStructure + 0.10 * pauseScore);
+  };
+
+  // C — координаты 0..100: статистика движения, а не «точка стоит»
+  const coordScore = (taps: { t: number; x: number; y: number }[]): number => {
+    if (taps.length < 60) return 0;
+    const xs = taps.map((t) => t.x);
+    const ys = taps.map((t) => t.y);
+    // repeatScore: доля тапов в ≤8px от ПРЕДЫДУЩЕГО (палец прыгает — бот ползёт/стоит)
+    let repeated = 0;
+    for (let i = 1; i < taps.length; i++) {
+      if (Math.abs(xs[i] - xs[i - 1]) <= 8 && Math.abs(ys[i] - ys[i - 1]) <= 8) repeated++;
+    }
+    const repeatedPointFraction = repeated / (taps.length - 1);
+    const repeatScore = repeatedPointFraction > 0.90 ? 100 : repeatedPointFraction > 0.75 ? 70 : repeatedPointFraction > 0.55 ? 40 : 0;
+
+    // movementScore: дисперсия длины шага (у бота шаг почти константный)
+    const steps: number[] = [];
+    for (let i = 1; i < taps.length; i++) steps.push(Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]));
+    const stMean = steps.reduce((a, b) => a + b, 0) / steps.length;
+    const stVar = steps.reduce((a, b) => a + (b - stMean) ** 2, 0) / steps.length;
+    const movementScore = stVar < 4 && taps.length > 100 ? 80 : 0;
+
+    // directionScore: убогая палитра направлений или тряска на месте
+    const dirs = new Set<number>();
+    let flips = 0, lastSign = 0;
+    for (let i = 1; i < taps.length; i++) {
+      const dx = xs[i] - xs[i - 1], dy = ys[i] - ys[i - 1];
+      if (Math.hypot(dx, dy) < 0.5) continue;
+      dirs.add(Math.floor(((Math.atan2(dy, dx) + Math.PI) / (Math.PI / 4))) % 8);
+      const s = Math.sign(dx);
+      if (s !== 0) { if (lastSign !== 0 && s !== lastSign) flips++; lastSign = s; }
+    }
+    const directionScore = (dirs.size <= 2 && steps.length > 20) || (flips > 60 && stMean < 6) ? 70 : 0;
+
+    // pathScore: точка «ползёт» плавно при заметном общем смещении
+    const bbox = (Math.max(...xs) - Math.min(...xs)) + (Math.max(...ys) - Math.min(...ys));
+    const pathScore = stMean < 4 && bbox > 15 ? 60 : 0;
+
+    return Math.round(0.35 * repeatScore + 0.25 * movementScore + 0.20 * directionScore + 0.20 * pathScore);
+  };
+
+  // B — поведение 0..100: слабые сессионные факторы + скрипты
+  const behaviourScore = (): number => {
+    let b = 0;
+    if (syntheticTaps.current.filter((ts) => Date.now() - ts < 60000).length >= 8) b += 60; // скриптовые события
+    if (bLongSession.current) b += 10;   // 90+ мин без пауз
+    if (bFastStreak.current) b += 10;    // 3+ мин быстрее 8/с
+    const big = getTaps(300);
+    if (big.length >= 300) {
+      const span = big[big.length - 1].t - big[0].t;
+      if (span > 8 * 60 * 1000) b += 10; // темп не менялся 8+ минут реального времени
+    }
+    return Math.min(100, b);
+  };
+
+  // H — «человечность» 0..100: естественность снижает suspicion
+  const humanScore = (taps: { t: number; x: number; y: number }[]): number => {
+    if (taps.length < 40) return 0;
+    const ivs: number[] = [];
+    for (let i = 1; i < taps.length; i++) ivs.push(taps[i].t - taps[i - 1].t);
+    const mean = ivs.reduce((a, b) => a + b, 0) / ivs.length;
+    const sd = Math.sqrt(ivs.reduce((a, b) => a + (b - mean) ** 2, 0) / ivs.length);
+    const cv = sd / mean;
+
+    // tempoDrift: дрейф средних темпов на подокнах
+    const subSize = Math.max(10, Math.min(25, Math.floor(ivs.length / 8)));
+    const subMeans: number[] = [];
+    for (let s = 0; s + subSize <= ivs.length; s += subSize) {
+      const sub = ivs.slice(s, s + subSize);
+      subMeans.push(sub.reduce((a, b) => a + b, 0) / sub.length);
+    }
+    let tempoDrift = 30;
+    if (subMeans.length >= 2) {
+      const smMean = subMeans.reduce((a, b) => a + b, 0) / subMeans.length;
+      const smSd = Math.sqrt(subMeans.reduce((a, b) => a + (b - smMean) ** 2, 0) / subMeans.length);
+      tempoDrift = Math.min(100, (smMean > 0 ? smSd / smMean : 0) * 250);
+    }
+    const intervalVariation = Math.min(100, cv * 400);
+
+    // pauseNaturalness: естественные паузы разной длины
+    const pauses = ivs.filter((iv) => iv > 800);
+    const pauseNaturalness = pauses.length === 0 ? 0 : pauses.length === 1 ? 60 : Math.min(100, 40 + pauses.length * 10);
+
+    // pathVariation: разброс точек (мобайл), десктоп — нейтрально
+    const xs = taps.map((t) => t.x);
+    const ys = taps.map((t) => t.y);
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    const stdX = Math.sqrt(xs.reduce((a, b) => a + (b - mx) ** 2, 0) / xs.length);
+    const stdY = Math.sqrt(ys.reduce((a, b) => a + (b - my) ** 2, 0) / ys.length);
+    const platform = tg?.platform || 'unknown';
+    const pathVariation = platform === 'ios' || platform === 'android' ? Math.min(100, (stdX + stdY) * 4) : 50;
+
+    // sessionVariation: если окно растянуто по времени — были перерывы
+    const span = taps[taps.length - 1].t - taps[0].t;
+    const sessionVariation = span > 15 * 60000 ? 100 : span > 8 * 60000 ? 60 : 20;
+
+    return Math.round(0.30 * tempoDrift + 0.20 * intervalVariation + 0.15 * pauseNaturalness + 0.20 * pathVariation + 0.15 * sessionVariation);
+  };
+
+  // Полный анализ: мульти-масштабы R → C, B, H → evidence → suspicion → challenge
+  const analyzeIntegrity = () => {
+    const tAll = getTaps(360);
+    const t300 = tAll.slice(-300);
+    const t100 = tAll.slice(-100);
+    const t40 = tAll.slice(-40);
+    const t10 = tAll.slice(-10);
+
+    // Мульти-масштабы: вес только у тех, где хватает данных
+    let rSum = 0, wSum = 0;
+    const scales = [
+      { w: 0.15, taps: t10, need: 10 },
+      { w: 0.30, taps: t40, need: 40 },
+      { w: 0.30, taps: t100, need: 100 },
+      { w: 0.25, taps: t300, need: 300 },
+    ];
+    for (const s of scales) {
+      if (s.taps.length >= s.need) { rSum += s.w * rhythmScore(s.taps); wSum += s.w; }
+    }
+    const R = wSum > 0 ? rSum / wSum : 0;
+    const C = coordScore(t300);
+    const B = behaviourScore();
+    const H = humanScore(t40.length >= 40 ? t40 : []);
+
+    // Импульс за экстремальную скорость (22+/с на коротком окне), быстро забывается
+    if (t10.length >= 10) {
+      const iv10: number[] = [];
+      for (let i = 1; i < t10.length; i++) iv10.push(t10[i].t - t10[i - 1].t);
+      const m10 = iv10.reduce((a, b) => a + b, 0) / iv10.length;
+      if (m10 < 45) extremeSpeedBoost.current = Math.min(25, extremeSpeedBoost.current + 12);
+    }
+
+    const evidenceRaw = 0.50 * R + 0.25 * C + 0.25 * B - 0.35 * H + extremeSpeedBoost.current;
+    const evidence = Math.max(0, Math.min(100, evidenceRaw));
+
+    // Временное сглаживание + забывание
+    suspicion.current = suspicion.current * 0.90 + evidence * 0.10;
+    recentEvidence.current.push(evidence);
+    if (recentEvidence.current.length > 5) recentEvidence.current.shift();
+    extremeSpeedBoost.current *= 0.75;
+
+    // Триггер: несколько независимых подтверждений, устойчивых во времени.
+    // Пороги откалиброваны симуляциями: человек evidence 4-5 (никогда),
+    // боты 11-25 → триггер за 6-31с. Гипотезы до проверки на реальных записях.
+    const strongWindows = recentEvidence.current.filter((v) => v >= 12).length;
+    const veryStrong = recentEvidence.current.filter((v) => v >= 20).length;
+    const independentSignals = (R >= 60 ? 1 : 0) + (C >= 45 ? 1 : 0) + (B >= 45 ? 1 : 0);
+    const inCooldown = Date.now() < suspicionCooldownUntil.current;
+    if (
+      !inCooldown &&
+      challenge === null &&
+      suspicion.current >= 16 &&
+      strongWindows >= 4 &&
+      veryStrong >= 2 &&
+      independentSignals >= 1
+    ) {
+      triggerChallenge();
+    }
+  };
+
+  const triggerChallenge = () => {
+    if (challenge !== null) return;
+    setChallenge({ caught: 0, x: 20 + Math.random() * 55, y: 30 + Math.random() * 32, timeLeft: 5, result: null });
+    addToast('🚫 Авто-клікер не смачний!', 'Фокачі пригорають… Доведи бабусі, що ти не робот!', '👵');
+    haptic.error();
     if (tgUser?.id) {
       fetch(`${API_BASE}/api/leaderboard`, {
         method: 'POST',
@@ -482,107 +699,29 @@ export default function App() {
     }
   };
 
-  // Аналізуємо ПОТОК ДОТИКІВ (pointerdown), а не зареєстровані кліки:
-  // енергія квантує кліки під перезарядку — це давало хибні спрацювання.
-  // Людина: варіативність у ЧАСІ (локальні темпи плавають), у ПРОСТОРІ (розкид точок),
-  // стрибки між дотиками, втома/паузи. Бот із джитером та «рухомою точкою» ловиться на
-  // однорідність локальних темпів, малий крок траєкторії та відсутність втоми.
-  const evaluateRhythm = () => {
-    const taps = rawTaps.current;
-    if (taps.length < 41) return;
-    const win = taps.slice(-40);
-    const ivs: number[] = [];
-    for (let i = 1; i < win.length; i++) ivs.push(win[i].t - win[i - 1].t);
-    const mean = ivs.reduce((a, b) => a + b, 0) / ivs.length;
-    const sd = Math.sqrt(ivs.reduce((a, b) => a + (b - mean) ** 2, 0) / ivs.length);
-    const cv = sd / mean;
-    const sorted = [...ivs].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)];
-    const tol = Math.max(8, median * 0.15);
-    const clusterFrac = ivs.filter((iv) => Math.abs(iv - median) <= tol).length / ivs.length;
-    const hasPause = ivs.some((iv) => iv > 2500);
-
-    // Однорідність локальних темпів: середня швидкість кожних 10 дотиків.
-    // Джиттер бота — незалежний шум, тому його локальні темпи майже ідентичні.
-    // У людини темп «пливе» між десятками: 60 → 150 → 90 мс.
-    const subMeans: number[] = [];
-    for (let s = 0; s < 4; s++) {
-      const sub = ivs.slice(s * 10, s * 10 + 10);
-      subMeans.push(sub.reduce((a, b) => a + b, 0) / sub.length);
-    }
-    const smMean = subMeans.reduce((a, b) => a + b, 0) / subMeans.length;
-    const smSd = Math.sqrt(subMeans.reduce((a, b) => a + (b - smMean) ** 2, 0) / subMeans.length);
-    const subCv = smMean > 0 ? smSd / smMean : 1;
-
-    // Позиція: сигма розкиду + плавність траєкторії між дотиками
-    const xs = win.map((t) => t.x);
-    const ys = win.map((t) => t.y);
-    const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
-    const my = ys.reduce((a, b) => a + b, 0) / ys.length;
-    const stdX = Math.sqrt(xs.reduce((a, b) => a + (b - mx) ** 2, 0) / xs.length);
-    const stdY = Math.sqrt(ys.reduce((a, b) => a + (b - my) ** 2, 0) / ys.length);
-    const posLoose = stdX + stdY;
-    let stepSum = 0;
-    for (let i = 1; i < win.length; i++) stepSum += Math.hypot(win[i].x - win[i - 1].x, win[i].y - win[i - 1].y);
-    const stepAvg = stepSum / (win.length - 1);
-    const bbox = (Math.max(...xs) - Math.min(...xs)) + (Math.max(...ys) - Math.min(...ys));
-    const smoothPath = stepAvg < 4 && bbox > 15; // точка «повзе», а не стрибає
-
-    let score = 0;
-    if (mean < 45) score += 4;          // 22+ дотиків/с — фізично неможливо
-    else if (mean < 70) score += 2;     // 14+/с стабільно
-    if (cv < 0.08) score += 2;          // майже метроном
-    else if (cv < 0.2) score += 1;
-    if (clusterFrac > 0.8) score += 2;  // інтервали купкуються біля медіани
-    // Головний сигнал: незалежний шум. У бота subCv ≈ 0.3×cv (джиттер незалежний),
-    // у людини темп дрейфує → subCv ≥ 0.5×cv. Відношення < 0.35 = шумова машина.
-    if (cv >= 0.08 && mean < 400 && subCv / cv < 0.35) score += 3;
-    if (!hasPause) score += 1;          // людина робить мікропаузи — бот ніколи
-
-    // На мобільних палець не бʼє двічі в одну точку і не «повзе» плавно.
-    // (На десктопі миша легітимно стоїть на місці, тому там не перевіряємо.)
-    const platform = tg?.platform || 'unknown';
-    if (platform === 'ios' || platform === 'android') {
-      if (posLoose < 5) score += 2;
-      else if (posLoose < 16) score += 1;
-      if (smoothPath) score += 1;
-    }
-
-    // Порог 7 відкалібровано симуляціями: людина 1-3% вікон, боти 84-100%.
-    const botLike = score >= 7;
-    susWindows.current = botLike ? susWindows.current + 1 : Math.max(0, susWindows.current - 1);
-    if (susWindows.current >= 2) enterSuspicion();
-  };
-
-  // Кожен фізичний дотик до булки — сире джерело для аналізу
+  // Кожен фізичний дотик до булки
   const markRawTap = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (!e.nativeEvent.isTrusted) return;
+    if (!e.nativeEvent.isTrusted) {
+      // скриптові події — окремий потік для B, миттєвого тригера немає
+      syntheticTaps.current.push(Date.now());
+      if (syntheticTaps.current.length > 40) syntheticTaps.current.shift();
+      return;
+    }
     const rect = e.currentTarget.getBoundingClientRect();
     const now = Date.now();
     const prev = lastRawTap.current;
     lastRawTap.current = now;
 
-    // Антисесія: гра без жодної паузи ≥ 20с довше 90 хвилин — так може тільки бот.
-    // Людина баєриться, відволікається, п'є чай.
+    // Історія поведінки (слабкі сигнали для B, не тригери)
     if (prev && now - prev < 20000) activeNoBreakMs.current += now - prev;
     else activeNoBreakMs.current = 0;
-    if (activeNoBreakMs.current > 90 * 60 * 1000) {
-      activeNoBreakMs.current = 0;
-      enterSuspicion();
-    }
-
-    // Антивтома: серія дотиків швидше 8/с без жодного проміжку ≥ 125мс,
-    // довша за ~3 хвилини. Людина на такому темпі видихає за десятки секунд.
+    if (activeNoBreakMs.current > 90 * 60 * 1000) bLongSession.current = true;
     if (prev && now - prev < 125) fastStreakMs.current += now - prev;
     else fastStreakMs.current = 0;
-    if (fastStreakMs.current > 3 * 60 * 1000) {
-      fastStreakMs.current = 0;
-      enterSuspicion();
-    }
+    if (fastStreakMs.current > 3 * 60 * 1000) bFastStreak.current = true;
 
-    rawTaps.current.push({ t: now, x: e.clientX - rect.left, y: e.clientY - rect.top });
-    if (rawTaps.current.length > 61) rawTaps.current.shift();
-    if (!suspected) evaluateRhythm();
+    pushTap({ t: now, x: e.clientX - rect.left, y: e.clientY - rect.top });
+    analyzeIntegrity();
   };
 
   /* ---- Leaderboard: report my stats + load top players ---- */
@@ -900,7 +1039,7 @@ export default function App() {
     }
   }, [loading, state.total, state.clicks, cps, state.buildings, state.maxCombo, state.goldenCaught, state.prestige, state.diamonds, state.bossesDefeated, state.pestsSquashed, state.achievements, addToast]);
 
-  /* ---- Випробування античиту: таймер + авто-відкриття при підозрі ---- */
+  /* ---- Випробування TapSentinel v5: таймер + авто-відкриття при підозрі ---- */
   const challengeActive = !!challenge && challenge.result === null;
   useEffect(() => {
     if (!challengeActive) return;
@@ -914,29 +1053,30 @@ export default function App() {
     return () => clearInterval(iv);
   }, [challengeActive]);
 
+  // Challenge провалено → карма −5 на сервері
   useEffect(() => {
-    if (!suspected || loading) return;
-    const shadow = karma < 25; // «Тінь бабусі» — випробування не діє
-    const open = () => setChallenge((c) => (c ? c : { caught: 0, x: 20 + Math.random() * 55, y: 30 + Math.random() * 32, timeLeft: 5, result: null }));
-    const t = setTimeout(() => {
-      if (shadow) {
-        addToast('🔴 Тінь бабусі!', 'Карма замала — випробування не діє. Грай чесно, карма відновиться.', '🔴');
-      } else {
-        open();
-        addToast('🚫 Авто-клікер не смачний!', 'Фокачі пригорають… Доведи бабусі, що ти не робот!', '👵');
-      }
-      haptic.error();
-    }, 1500);
+    if (challenge?.result !== 'fail') return;
+    if (tgUser?.id) {
+      fetch(`${API_BASE}/api/leaderboard`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: tgUser.id, event: 'fail' }),
+      })
+        .then((r) => r.json())
+        .then((data) => { if (typeof data?.karma === 'number') setKarma(data.karma); })
+        .catch(() => {});
+    }
+    addToast('💀 Випробування провалено!', '−5 карми. Бабуся спостерігає…', '💔');
+  }, [challenge?.result, tgUser]);
+
+  useEffect(() => {
+    if (loading || karma >= 25) return;
+    // «Тінь бабусі» — нагадування при глибоко посадженій кармі
     const iv = setInterval(() => {
-      if (shadow) {
-        addToast('🔴 Тінь бабусі…', 'Грай чесно — карма поступово відновиться', '⏳');
-      } else {
-        open();
-        addToast('👵 Фокачі все ще пригорають…', 'Пройди випробування, щоб зняти підозру!', '🚫');
-      }
+      addToast('🔴 Тінь бабусі…', `Карма ${karma}/100 — грай чесно, обмеження знімуться`, '⏳');
     }, 90000);
-    return () => { clearTimeout(t); clearInterval(iv); };
-  }, [suspected, loading, karma, addToast]);
+    return () => clearInterval(iv);
+  }, [loading, karma, addToast]);
 
   const catchChallengeTarget = (e: React.MouseEvent) => {
     if (!e.nativeEvent.isTrusted) return;
@@ -944,11 +1084,12 @@ export default function App() {
     haptic.light();
     const caught = challenge.caught + 1;
     if (caught >= 3) {
-      susWindows.current = 0;
-      rawTaps.current = [];
       setChallenge((c) => (c ? { ...c, caught, result: 'pending' } : c));
       const finishLocal = () => {
-        setSuspected(false);
+        // Cooldown: suspicion обнуляється, підвищена чутливість вимкнена на 7 хв
+        suspicion.current = 0;
+        recentEvidence.current = [];
+        suspicionCooldownUntil.current = Date.now() + 7 * 60 * 1000;
         setChallenge((c) => (c ? { ...c, result: 'win' } : c));
         addToast('✅ Бабуся повірила тобі!', 'Підозру знято, фокачі більше не пригорають!', '🫓');
         haptic.success();
@@ -1170,9 +1311,9 @@ export default function App() {
   /* ---- Actions ---- */
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (!e.nativeEvent.isTrusted) {
-      // Кліки, згенеровані скриптом, не винагороджуємо і рахуємо як підозру
-      untrustedClicks.current++;
-      if (untrustedClicks.current >= 10) { untrustedClicks.current = 0; enterSuspicion(); }
+      // Скриптовые клики не вознаграждаются и копят сигнал B (через поведение)
+      syntheticTaps.current.push(Date.now());
+      if (syntheticTaps.current.length > 40) syntheticTaps.current.shift();
       return;
     }
     if (state.energy <= 0) return;
@@ -1180,7 +1321,7 @@ export default function App() {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const now = Date.now();
-    const burning = suspected || karma < 25; // «фокачі пригорають» — підозра або Тінь бабусі
+    const burning = karma < 25; // «фокачі пригорають» — Тінь бабусі
     const newCombo = burning ? combo : (now - lastClick.current < 1200 ? combo + 1 : 1);
     lastClick.current = now;
     setCombo(newCombo);
@@ -2439,6 +2580,7 @@ export default function App() {
             {/* Статус акаунта — спідометр античиту */}
             <div className="glass-card rounded-2xl p-4">
               <div className="text-[11px] font-bold text-amber-400/50 mb-1 text-center tracking-widest">🛡 СТАТУС АКАУНТА</div>
+              <div className="text-center text-[9px] font-bold text-emerald-300/60 mb-1 tracking-wide">ЗАХИЩЕНО TAPSENTINEL v5 — BEHAVIORAL ANTI-CHEAT</div>
               <svg viewBox="0 0 200 112" className="w-44 mx-auto">
                 <path d="M 20 100 A 80 80 0 0 1 87.5 21" stroke="#34d399" strokeWidth="14" fill="none" strokeLinecap="round" />
                 <path d="M 87.5 21 A 80 80 0 0 1 164.7 53" stroke="#fbbf24" strokeWidth="14" fill="none" />
@@ -2450,13 +2592,13 @@ export default function App() {
               </svg>
               <div
                 className="text-center text-[13px] font-black mt-1"
-                style={{ color: suspected ? '#fca5a5' : karma < 25 ? '#fca5a5' : karma < 50 ? '#fcd34d' : karma < 75 ? '#fdba74' : '#6ee7b7' }}
+                style={{ color: karma < 25 ? '#fca5a5' : karma < 50 ? '#fcd34d' : karma < 75 ? '#fdba74' : '#6ee7b7' }}
               >
-                {suspected ? '⚠️ Підозра активна' : karma < 25 ? '🔴 Тінь бабусі' : karma < 50 ? '⚠️ Обмежений режим' : karma < 75 ? '🟡 Під підозрою' : 'Акаунт чистий ✅'}
+                {challenge !== null ? '⚠️ Перевірка триває' : karma < 25 ? '🔴 Тінь бабусі' : karma < 50 ? '⚠️ Обмежений режим' : karma < 75 ? '🟡 Під підозрою' : 'Акаунт чистий ✅'}
               </div>
-              {(karma < 75 || suspected) && (
+              {(karma < 75 || Date.now() < suspicionCooldownUntil.current) && (
                 <div className="mt-2 space-y-0.5 text-[10px] text-amber-300/60 bg-black/30 rounded-xl p-2 border border-amber-500/10">
-                  {suspected && <div>🚫 Фокачі пригорають — кліки дають ×0.05</div>}
+                  {karma < 25 && <div>🚫 Фокачі пригорають — кліки дають ×0.05</div>}
                   {karma < 75 && <div>🔒 Ставки в казино — максимум 1K</div>}
                   {karma < 50 && <div>🔒 Казино закрите, офлайн-дохід −50%</div>}
                   {karma < 25 && <div>🔒 Лідерборд заморожено, нагороди від адміна не видаються</div>}
@@ -2484,6 +2626,7 @@ export default function App() {
               </button>
             </div>
 
+            <div className="text-center text-[9px] text-amber-500/20 pb-1 tracking-wider">🛡 ЗАХИЩЕНО: TAPSENTINEL v5 — BEHAVIORAL ANTI-CHEAT</div>
             <div className="text-center text-[9px] text-amber-500/20 pb-2 tracking-wider">ФОКАЧА КЛІКЕР v1.1</div>
           </div>
         )}
