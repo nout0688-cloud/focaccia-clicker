@@ -517,7 +517,9 @@ export default function App() {
       subMeans.push(sub.reduce((a, b) => a + b, 0) / sub.length);
     }
     let noiseStructure = 0;
-    if (subMeans.length >= 2 && cv > 0.0001) {
+    if (cv < 0.05) {
+      noiseStructure = 100; // идеальный метроном — максимальная структура
+    } else if (subMeans.length >= 2) {
       const smMean = subMeans.reduce((a, b) => a + b, 0) / subMeans.length;
       const smSd = Math.sqrt(subMeans.reduce((a, b) => a + (b - smMean) ** 2, 0) / subMeans.length);
       const ratio = smSd / smMean / cv;
@@ -533,12 +535,18 @@ export default function App() {
     return Math.round(0.30 * speedScore + 0.20 * regularityScore + 0.15 * clusterScore + 0.25 * noiseStructure + 0.10 * pauseScore);
   };
 
-  // C — координаты 0..100: статистика движения. repeat1 ловит A→A→A, repeat2 —
-  // возвраты к точке 2–5 тапов назад (A→B→A→B). Оба паттерна = бот.
+  // C — координаты 0..100: статистика движения. repeat ловит A→A→A и A→B→A→B,
+  // но только при наличии вариативности ритма (метроном ловится через R).
   const coordScore = (taps: Tap[]): number => {
     if (taps.length < 60) return 0;
     const xs = taps.map((t) => t.x);
     const ys = taps.map((t) => t.y);
+    // cv этого окна: метроном (cv < 0.08) обрабатывается в R, здесь repeat = 0
+    const ivsC: number[] = [];
+    for (let i = 1; i < taps.length; i++) ivsC.push(taps[i].t - taps[i - 1].t);
+    const cMean = ivsC.reduce((a, b) => a + b, 0) / ivsC.length;
+    const cSd = Math.sqrt(ivsC.reduce((a, b) => a + (b - cMean) ** 2, 0) / ivsC.length);
+    const cvHere = cMean > 0 ? cSd / cMean : 1;
     const close = (i: number, j: number) => Math.abs(xs[i] - xs[j]) <= 8 && Math.abs(ys[i] - ys[j]) <= 8;
     let rep1 = 0, rep2 = 0;
     for (let i = 1; i < taps.length; i++) {
@@ -550,14 +558,13 @@ export default function App() {
     const frac1 = rep1 / (taps.length - 1);
     const frac2 = rep2 / (taps.length - 1);
     const patternFraction = Math.max(frac1, frac2);
-    const repeatScore = patternFraction > 0.90 ? 100 : patternFraction > 0.75 ? 70 : patternFraction > 0.55 ? 40 : 0;
+    let repeatScore = cvHere < 0.08 ? 0 : patternFraction > 0.90 ? 100 : patternFraction > 0.75 ? 70 : patternFraction > 0.55 ? 40 : 0;
 
     // movementScore: дисперсия длины шага (у бота шаг почти константный)
     const steps: number[] = [];
     for (let i = 1; i < taps.length; i++) steps.push(Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]));
     const stMean = steps.reduce((a, b) => a + b, 0) / steps.length;
     const stVar = steps.reduce((a, b) => a + (b - stMean) ** 2, 0) / steps.length;
-    const movementScore = stVar < 4 && taps.length > 100 ? 80 : 0;
 
     // directionScore: убогая палитра направлений или тряска на месте
     const dirs = new Set<number>();
@@ -569,11 +576,37 @@ export default function App() {
       const s = Math.sign(dx);
       if (s !== 0) { if (lastSign !== 0 && s !== lastSign) flips++; lastSign = s; }
     }
-    const directionScore = (dirs.size <= 2 && steps.length > 20) || (flips > 60 && stMean < 6) ? 70 : 0;
-
     // pathScore: точка «ползёт» плавно при заметном общем смещении
     const bbox = (Math.max(...xs) - Math.min(...xs)) + (Math.max(...ys) - Math.min(...ys));
-    const pathScore = stMean < 4 && bbox > 15 ? 60 : 0;
+
+    // Клетки 16px: 2 пальца человека занимают 3-6 клеток (якоря раздельно + разброс),
+    // фиксированный бот — 1, плавная траектория бота — 10+. Стабильно к дрейфу пальцев.
+    const cells = new Set<string>();
+    for (let i = 0; i < taps.length; i++) {
+      cells.add(`${Math.round(xs[i] / 16)}:${Math.round(ys[i] / 16)}`);
+    }
+    const cellCount = cells.size;
+    // Бимодальность: у двух пальцев позиции — 2 раздельные группы (провал ≥ 40% bbox),
+    // у дрожащего бота — сплошная клякса (макс gaps между соседними позициями мал).
+    const sortedXs = [...xs].sort((a, b) => a - b);
+    const sortedYs = [...ys].sort((a, b) => a - b);
+    let gapX = 0, gapY = 0;
+    for (let i = 1; i < sortedXs.length; i++) gapX = Math.max(gapX, sortedXs[i] - sortedXs[i - 1]);
+    for (let i = 1; i < sortedYs.length; i++) gapY = Math.max(gapY, sortedYs[i] - sortedYs[i - 1]);
+    const bboxX = sortedXs[sortedXs.length - 1] - sortedXs[0];
+    const bboxY = sortedYs[sortedYs.length - 1] - sortedYs[0];
+    const multiFinger = cellCount <= 6 && bbox > 8 && ((bboxX > 0 && gapX > bboxX * 0.4) || (bboxY > 0 && gapY > bboxY * 0.4));
+
+    let movementScore = stVar < 4 && taps.length > 100 ? 80 : 0;
+    let directionScore = (dirs.size <= 2 && steps.length > 20) || (flips > 60 && stMean < 6) ? 70 : 0;
+    let pathScore = stMean < 4 && bbox > 15 ? 60 : 0;
+    if (multiFinger) {
+      // Человеческие пальцы: C ограничиваем — двухпальцевый тап не должен триггерить
+      repeatScore = Math.min(repeatScore, 40);
+      movementScore = Math.min(movementScore, 20);
+      directionScore = Math.min(directionScore, 20);
+      pathScore = Math.min(pathScore, 20);
+    }
 
     return Math.round(0.35 * repeatScore + 0.25 * movementScore + 0.20 * directionScore + 0.20 * pathScore);
   };
@@ -688,13 +721,24 @@ export default function App() {
     extremeSpeedBoost.current *= 0.75;
 
     // Триггер: ratio вместо count (не зависит от длины буфера) + ≥2 независимых сигнала.
+    // Метроном (R ≥ 60 при cv < 0.08) — самостоятельный двойной сигнал: так тапает только машина.
     // Пороги откалиброваны симуляциями (гипотезы до реальных записей):
-    // человек evidence 5-6 (никогда), джиттер-боты 18-26 → триггер за 10-13с.
+    // человек evidence 5-6, indep ≤ 1 (никогда); джиттер-боты → триггер за 10-50с.
     const recent = recentEvidence.current;
     const enoughHistory = recent.length >= 5;
     const strongRatio = recent.length === 0 ? 0 : recent.filter((v) => v >= 12).length / recent.length;
     const veryStrongRatio = recent.length === 0 ? 0 : recent.filter((v) => v >= 20).length / recent.length;
-    const independentSignals = (R >= 40 ? 1 : 0) + (C >= 45 ? 1 : 0) + (B >= 45 ? 1 : 0);
+
+    let cv40 = 1;
+    if (t40.length >= 20) {
+      const ivs40: number[] = [];
+      for (let i = 1; i < t40.length; i++) ivs40.push(t40[i].t - t40[i - 1].t);
+      const m40 = ivs40.reduce((a, b) => a + b, 0) / ivs40.length;
+      const s40 = Math.sqrt(ivs40.reduce((a, b) => a + (b - m40) ** 2, 0) / ivs40.length);
+      cv40 = m40 > 0 ? s40 / m40 : 1;
+    }
+    const metronome = R >= 60 && cv40 < 0.08;
+    const independentSignals = (R >= 40 ? 1 : 0) + (C >= 45 ? 1 : 0) + (B >= 45 ? 1 : 0) + (metronome ? 1 : 0);
     const inCooldown = Date.now() < suspicionCooldownUntil.current;
     if (
       !inCooldown &&

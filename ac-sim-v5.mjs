@@ -21,7 +21,9 @@ function rhythmScore(taps) {
     subMeans.push(sub.reduce((a, b) => a + b, 0) / sub.length);
   }
   let noiseStructure = 0;
-  if (subMeans.length >= 2 && cv > 0.0001) {
+  if (cv < 0.05) {
+    noiseStructure = 100;
+  } else if (subMeans.length >= 2) {
     const smMean = subMeans.reduce((a, b) => a + b, 0) / subMeans.length;
     const smSd = Math.sqrt(subMeans.reduce((a, b) => a + (b - smMean) ** 2, 0) / subMeans.length);
     const ratio = smSd / smMean / cv;
@@ -38,6 +40,11 @@ function coordScore(taps) {
   if (taps.length < 60) return 0;
   const xs = taps.map((t) => t.x);
   const ys = taps.map((t) => t.y);
+  const ivsC = [];
+  for (let i = 1; i < taps.length; i++) ivsC.push(taps[i].t - taps[i - 1].t);
+  const cMean = ivsC.reduce((a, b) => a + b, 0) / ivsC.length;
+  const cSd = Math.sqrt(ivsC.reduce((a, b) => a + (b - cMean) ** 2, 0) / ivsC.length);
+  const cvHere = cMean > 0 ? cSd / cMean : 1;
   const close = (i, j) => Math.abs(xs[i] - xs[j]) <= 8 && Math.abs(ys[i] - ys[j]) <= 8;
   let rep1 = 0, rep2 = 0;
   for (let i = 1; i < taps.length; i++) {
@@ -49,12 +56,10 @@ function coordScore(taps) {
   const frac1 = rep1 / (taps.length - 1);
   const frac2 = rep2 / (taps.length - 1);
   const patternFraction = Math.max(frac1, frac2); // AAAA и ABAB оба ловятся
-  const repeatScore = patternFraction > 0.90 ? 100 : patternFraction > 0.75 ? 70 : patternFraction > 0.55 ? 40 : 0;
   const steps = [];
   for (let i = 1; i < taps.length; i++) steps.push(Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]));
   const stMean = steps.reduce((a, b) => a + b, 0) / steps.length;
   const stVar = steps.reduce((a, b) => a + (b - stMean) ** 2, 0) / steps.length;
-  const movementScore = stVar < 4 && taps.length > 100 ? 80 : 0;
   const dirs = new Set();
   let flips = 0, lastSign = 0;
   for (let i = 1; i < taps.length; i++) {
@@ -64,9 +69,33 @@ function coordScore(taps) {
     const s = Math.sign(dx);
     if (s !== 0) { if (lastSign !== 0 && s !== lastSign) flips++; lastSign = s; }
   }
-  const directionScore = (dirs.size <= 2 && steps.length > 20) || (flips > 60 && stMean < 6) ? 70 : 0;
   const bbox = (Math.max(...xs) - Math.min(...xs)) + (Math.max(...ys) - Math.min(...ys));
-  const pathScore = stMean < 4 && bbox > 15 ? 60 : 0;
+
+  // Клетки 16px (как в App.tsx): 2 пальца = 3-6 клеток, фикс-бот = 1, траектория = 10+
+  const cells = new Set();
+  for (let i = 0; i < taps.length; i++) {
+    cells.add(`${Math.round(xs[i] / 16)}:${Math.round(ys[i] / 16)}`);
+  }
+  const cellCount = cells.size;
+  const sortedXs = [...xs].sort((a, b) => a - b);
+  const sortedYs = [...ys].sort((a, b) => a - b);
+  let gapX = 0, gapY = 0;
+  for (let i = 1; i < sortedXs.length; i++) gapX = Math.max(gapX, sortedXs[i] - sortedXs[i - 1]);
+  for (let i = 1; i < sortedYs.length; i++) gapY = Math.max(gapY, sortedYs[i] - sortedYs[i - 1]);
+  const bboxX = sortedXs[sortedXs.length - 1] - sortedXs[0];
+  const bboxY = sortedYs[sortedYs.length - 1] - sortedYs[0];
+  const multiFinger = cellCount <= 6 && bbox > 8 && ((bboxX > 0 && gapX > bboxX * 0.4) || (bboxY > 0 && gapY > bboxY * 0.4));
+
+  let repeatScore = cvHere < 0.08 ? 0 : patternFraction > 0.90 ? 100 : patternFraction > 0.75 ? 70 : patternFraction > 0.55 ? 40 : 0;
+  let movementScore = stVar < 4 && taps.length > 100 ? 80 : 0;
+  let directionScore = (dirs.size <= 2 && steps.length > 20) || (flips > 60 && stMean < 6) ? 70 : 0;
+  let pathScore = stMean < 4 && bbox > 15 ? 60 : 0;
+  if (multiFinger) {
+    repeatScore = Math.min(repeatScore, 40);
+    movementScore = Math.min(movementScore, 20);
+    directionScore = Math.min(directionScore, 20);
+    pathScore = Math.min(pathScore, 20);
+  }
   return Math.round(0.35 * repeatScore + 0.25 * movementScore + 0.20 * directionScore + 0.20 * pathScore);
 }
 
@@ -169,6 +198,32 @@ function perfectBotStream(n) {
   return out;
 }
 
+// Двухпальцевый тап: пальцы РАЗДЕЛЕНЫ, у каждого СВОЙ тайминговый джиттер ±15%
+// (в реальности ни один человек не тапает с идеально постоянным периодом)
+function twoFingerStream(n, perFingerRate) {
+  const out = [];
+  let pt = 0, wall = 0;
+  const fingerPeriod = 1000 / perFingerRate;
+  let nextA = fingerPeriod, nextB = fingerPeriod / 2;
+  let ax = -18, ay = -12, bx = 20, by = 15; // якоря разделены ~45px
+  while (out.length < n) {
+    if (nextA <= nextB) {
+      pt = nextA; wall = nextA;
+      ax += gauss() * 2; ay += gauss() * 2;
+      if (Math.random() < 0.1) { ax += gauss() * 10; ay += gauss() * 8; }
+      out.push({ t: pt, wall, x: 105 + ax, y: 210 + ay });
+      nextA += fingerPeriod + r(-fingerPeriod * 0.15, fingerPeriod * 0.15);
+    } else {
+      pt = nextB; wall = nextB;
+      bx += gauss() * 2; by += gauss() * 2;
+      if (Math.random() < 0.1) { bx += gauss() * 10; by += gauss() * 8; }
+      out.push({ t: pt, wall, x: 105 + bx, y: 210 + by });
+      nextB += fingerPeriod + r(-fingerPeriod * 0.15, fingerPeriod * 0.15);
+    }
+  }
+  return out;
+}
+
 // ==== Триггер-прогон ====
 function runTrigger(stream, platform, label, maxTaps = 3000) {
   const taps = stream.slice(0, maxTaps);
@@ -217,7 +272,17 @@ function runTrigger(stream, platform, label, maxTaps = 3000) {
     const enoughHistory = recent.length >= 5;
     const strongRatio = recent.filter((v) => v >= 12).length / recent.length;
     const veryStrongRatio = recent.filter((v) => v >= 20).length / recent.length;
-    const indep = (R >= 40 ? 1 : 0) + (C >= 45 ? 1 : 0) + (B >= 45 ? 1 : 0);
+
+    let cv40 = 1;
+    if (t40.length >= 20) {
+      const ivs40 = [];
+      for (let k = 1; k < t40.length; k++) ivs40.push(t40[k].t - t40[k - 1].t);
+      const m40 = ivs40.reduce((a, b) => a + b, 0) / ivs40.length;
+      const s40 = Math.sqrt(ivs40.reduce((a, b) => a + (b - m40) ** 2, 0) / ivs40.length);
+      cv40 = m40 > 0 ? s40 / m40 : 1;
+    }
+    const metronome = R >= 60 && cv40 < 0.08;
+    const indep = (R >= 40 ? 1 : 0) + (C >= 45 ? 1 : 0) + (B >= 45 ? 1 : 0) + (metronome ? 1 : 0);
     if (
       enoughHistory && suspicion >= 16 && strongRatio >= 0.60 &&
       veryStrongRatio >= 0.35 && indep >= 2
@@ -237,6 +302,10 @@ runTrigger(humanStream(3000, 330), 'ios', 'человек 3/с (10 мин)');
 runTrigger(humanStream(3000, 200), 'ios', 'человек 5/с');
 runTrigger(humanStream(3000, 145), 'ios', 'человек 7/с');
 runTrigger(humanStream(3000, 110), 'ios', 'человек 9/с');
+console.log('---');
+runTrigger(twoFingerStream(3000, 4), 'ios', 'двумя пальцами 8/с (4+4)');
+runTrigger(twoFingerStream(3000, 6), 'ios', 'двумя пальцами 12/с (6+6)');
+runTrigger(twoFingerStream(3000, 3), 'ios', 'двумя пальцами 6/с (3+3)');
 console.log('---');
 runTrigger(userBotStream(3000, 125, 35, 2.5), 'android', 'ЭКСПЛОЙТ юзера 8/с (движущаяся точка)');
 runTrigger(userBotStream(3000, 200, 60, 3), 'android', 'джиттер-бот 5/с');
