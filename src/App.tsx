@@ -372,6 +372,15 @@ export default function App() {
                 addToast('🔄 Ребіртхи від адміна!', `+${data.rebirth} 🔄 до престижу!`, '🔄');
                 haptic.success();
               }
+              if (data?.deduct && data.deduct > 0) {
+                setState((p) => {
+                  const next = { ...p, focaccia: Math.max(0, p.focaccia - data.deduct) };
+                  stateRef.current = next;
+                  return next;
+                });
+                addToast('⚖️ Коригування', `-${formatNum(data.deduct)} фокач списано адміністратором`, '⚠️');
+                haptic.warning();
+              }
             }
           })
           .catch(() => { /* silent fail */ });

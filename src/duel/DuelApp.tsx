@@ -242,7 +242,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
 
   // === Виплата банку при фініші: переможцю — весь банк, нічия — повернення ===
   useEffect(() => {
-    if (stage !== 'finished' || settled.current) return;
+    if ((stage !== 'finished' && stage !== 'cancelled') || settled.current) return;
     const flagKey = `duel_settled:${duelId}:${meId}`;
     if (localStorage.getItem(flagKey)) return;
     localStorage.setItem(flagKey, '1');
@@ -254,11 +254,22 @@ export default function DuelApp({ duelId }: { duelId: string }) {
         const s = JSON.parse(raw);
         const st = snapRef.current;
         const curStake = (st && st.stake) ? st.stake : stake;
-        const curPot = (st && st.pot && st.pot > 0) ? st.pot : (curStake * 2);
-        const curPaid = (st && st.myPaid && st.myPaid > 0) ? st.myPaid : (myPaid > 0 ? myPaid : curStake);
+        const curPaid = (st && st.myPaid && st.myPaid > 0) ? st.myPaid : (myPaid > 0 ? myPaid : (escrowDone.current ? curStake : 0));
         const gem = (st?.stakeCur || stakeCur) === 'gem';
 
+        // ДУЕЛЬ СКАСОВАНО АБО НЕДОСТАТНЬО КОШТІВ: ЖОДНИХ ВИПЛАТ БАНКУ!
+        // Тільки повернення власної списаної ставки (якщо вона була списана).
+        if (stage === 'cancelled' || reason === 'no_funds' || !winner || winner === 'null') {
+          if (curPaid > 0) {
+            if (gem) s.diamonds = (s.diamonds || 0) + curPaid;
+            else s.focaccia = (s.focaccia || 0) + curPaid;
+            storage.set(SAVE_KEY, JSON.stringify(s));
+          }
+          return;
+        }
+
         if (winner === meId) {
+          const curPot = (st && st.pot && st.pot > 0) ? st.pot : (curStake * 2);
           if (gem) s.diamonds = (s.diamonds || 0) + curPot;
           else s.focaccia = (s.focaccia || 0) + curPot;
           storage.set(SAVE_KEY, JSON.stringify(s));
@@ -271,7 +282,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
         }
       } catch { /* */ }
     });
-  }, [stage, duelId, meId, winner, pot, stake, myPaid, stakeCur]);
+  }, [stage, duelId, meId, winner, pot, stake, myPaid, stakeCur, reason]);
 
   useEffect(() => {
     if (stage !== 'countdown' || !startTs || introStartedFor.current === duelId) return;
@@ -349,6 +360,37 @@ export default function DuelApp({ duelId }: { duelId: string }) {
 
   // аватарка: фото Telegram если есть, иначе кружок с инициалом
   const myPhoto = (tg?.initDataUnsafe?.user as { photo_url?: string } | undefined)?.photo_url;
+
+  // ===== СКАСОВАНО (НЕ ВИСТАЧИЛО КОШТІВ / ТАЙМАУТ) =====
+  if (stage === 'cancelled') {
+    const isNoFunds = reason === 'no_funds';
+    const curPaid = myPaid > 0 ? myPaid : (escrowDone.current ? stake : 0);
+    return (
+      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6">
+        <div className="text-center w-full max-w-xs">
+          <div className="text-7xl mb-3">{isNoFunds ? '💸' : '❌'}</div>
+          <h2 className="text-2xl font-black text-amber-200 mb-2">
+            {isNoFunds ? 'НЕДОСТАТНЬО КОШТІВ' : 'ДУЕЛЬ СКАСОВАНО'}
+          </h2>
+          <p className="text-amber-300/80 text-sm mb-4">
+            {isNoFunds
+              ? 'У одного з гравців недостатньо коштів для ставки. Дуель скасовано, жодних виплат не здійснено!'
+              : reason === 'timeout'
+              ? 'Час очікування вичерпано.'
+              : 'Дуель було скасовано.'}
+          </p>
+          {curPaid > 0 && (
+            <div className="glass-card rounded-2xl p-3 mb-4 text-emerald-300 text-xs font-bold">
+              ✅ Твою ставку {formatNum(curPaid)} {stakeCur === 'gem' ? '💎' : '🫓'} повернуто на баланс
+            </div>
+          )}
+          <button onClick={closeApp} className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25">
+            Вийти
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // ===== ФИНАЛ =====
   if (stage === 'finished') {
