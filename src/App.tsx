@@ -102,6 +102,7 @@ interface SaveState {
   pestsSquashed: number;
   luck?: number; // везіння в казино: мінус — не щастило, плюс — щастило
   karma?: number; // поведінковий рівень 0-100: чим менше — тим більше обмежень
+  lang?: 'uk' | 'ru'; // мова інтерфейсу
   lastReset: number;
   lastSave: number;
 }
@@ -186,6 +187,7 @@ const defaultState = (): SaveState => ({
   pestsSquashed: 0,
   luck: 0,
   karma: 100,
+  lang: 'uk',
   lastReset: 0,
   lastSave: Date.now(),
 });
@@ -308,6 +310,7 @@ export default function App() {
   const suspicionCooldownUntil = useRef(0); // після пройденого challenge
   const syntheticTaps = useRef<number[]>([]); // ts скриптових подій (isTrusted=false)
   const [karmaInfo, setKarmaInfo] = useState(false); // меню «що це?» біля спідометра
+  const [lang, setLang] = useState<'uk' | 'ru'>('uk'); // мова інтерфейсу
 
   /* Казино */
   const [casinoGame, setCasinoGame] = useState<'slots' | 'dice' | 'wheel'>('slots');
@@ -387,6 +390,7 @@ export default function App() {
       }
       setState(s);
       setKarma(s.karma ?? 100);
+      setLang(s.lang ?? 'uk');
       setLoading(false);
       stateRef.current = s;
       saveNow(s);
@@ -2933,6 +2937,56 @@ export default function App() {
                 </div>
               )}
               <div className="text-center text-[9px] text-amber-500/30 mt-0.5">Античит стежить за ритмом кліків — грай чесно і стрілка буде в зелені</div>
+            </div>
+
+            {/* Мова інтерфейсу — sliding pill тумблер */}
+            <div className="glass-card rounded-2xl p-4">
+              <div className="text-[11px] font-bold text-amber-400/50 mb-3 text-center tracking-widest">🌐 МОВА / ЯЗЫК</div>
+              <div className="relative flex bg-black/40 rounded-2xl p-1 border border-amber-500/15">
+                {/* sliding pill */}
+                <div
+                  className="absolute top-1 bottom-1 rounded-xl bg-gradient-to-r from-amber-500/30 to-amber-400/20 border border-amber-400/40 shadow-lg shadow-amber-500/10"
+                  style={{
+                    left: lang === 'uk' ? '4px' : 'calc(50% + 2px)',
+                    width: 'calc(50% - 6px)',
+                    transition: 'left 0.4s cubic-bezier(0.65, 0, 0.35, 1)',
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    if (lang === 'uk') return;
+                    setLang('uk');
+                    const next = { ...stateRef.current, lang: 'uk' as const };
+                    stateRef.current = next;
+                    setState(next);
+                    saveNow(next);
+                    haptic.light();
+                  }}
+                  className="relative z-10 flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl transition-all duration-300"
+                >
+                  <span className="text-xl">🇺🇦</span>
+                  <span className={cn('text-[13px] font-black transition-colors duration-300', lang === 'uk' ? 'text-amber-200' : 'text-amber-500/40')}>
+                    Українська
+                  </span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (lang === 'ru') return;
+                    setLang('ru');
+                    const next = { ...stateRef.current, lang: 'ru' as const };
+                    stateRef.current = next;
+                    setState(next);
+                    saveNow(next);
+                    haptic.light();
+                  }}
+                  className="relative z-10 flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl transition-all duration-300"
+                >
+                  <span className="text-xl">🇷🇺</span>
+                  <span className={cn('text-[13px] font-black transition-colors duration-300', lang === 'ru' ? 'text-amber-200' : 'text-amber-500/40')}>
+                    Русский
+                  </span>
+                </button>
+              </div>
             </div>
 
             <div className="glass-card rounded-2xl p-4">
