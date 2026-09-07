@@ -295,7 +295,6 @@ export default function App() {
   /* Античит v5: R/C/B evidence + challenge */
   const [challenge, setChallenge] = useState<null | { caught: number; x: number; y: number; timeLeft: number; result: null | 'pending' | 'win' | 'fail' | 'denied' }>(null);
   const [karma, setKarma] = useState(100); // поведінковий рівень 0-100 (синхронізується з сервером)
-  const casinoMaxBet = karma < 50 ? 0 : karma < 75 ? (casinoCur === 'gem' ? 10 : 1000) : Infinity; // дотівська лестниця обмежень
   const tapRing = useRef<{ buf: Tap[]; head: number; count: number }>({ buf: new Array(360), head: 0, count: 0 });
   const lastRawTap = useRef(0); // performance.now()
   const challengeOpening = useRef(false); // guard от double-flag race
@@ -314,6 +313,7 @@ export default function App() {
   const [casinoGame, setCasinoGame] = useState<'slots' | 'dice' | 'wheel'>('slots');
   const [casinoBet, setCasinoBet] = useState(100);
   const [casinoCur, setCasinoCur] = useState<'foc' | 'gem'>('foc');
+  const casinoMaxBet = karma < 50 ? 0 : karma < 75 ? (casinoCur === 'gem' ? 10 : 1000) : Infinity; // дотівська лестниця обмежень
   const [casinoCustomBet, setCasinoCustomBet] = useState('100');
   const [casinoReels, setCasinoReels] = useState<[string, string, string]>(['🫓', '👵', '💎']);
   const [casinoSpinning, setCasinoSpinning] = useState(false);
