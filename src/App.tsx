@@ -586,6 +586,34 @@ export default function App() {
     return () => clearInterval(adminIv);
   }, []);
 
+  /* Sync Telegram WebApp BackButton with fullscreen modals */
+  useEffect(() => {
+    if (!tg?.BackButton) return;
+    if (profileModalOpen || viewingProfile !== null) {
+      try {
+        tg.BackButton.show();
+        const handleBack = () => {
+          if (showcasePickerSlot !== null) {
+            setShowcasePickerSlot(null);
+          } else if (profileModalOpen) {
+            setProfileModalOpen(false);
+          } else if (viewingProfile !== null) {
+            setViewingProfile(null);
+          }
+        };
+        tg.BackButton.onClick(handleBack);
+        return () => {
+          tg.BackButton.offClick(handleBack);
+          tg.BackButton.hide();
+        };
+      } catch (_) { /* ignore */ }
+    } else {
+      try {
+        tg.BackButton.hide();
+      } catch (_) { /* ignore */ }
+    }
+  }, [profileModalOpen, viewingProfile, showcasePickerSlot]);
+
   /* ---- Derived ---- */
   const prestigeMult = 1 + state.prestige * 0.1;
 
@@ -2570,360 +2598,415 @@ export default function App() {
         </div>
       )}
 
-      {/* ===== PROFILE MODAL ===== */}
+      {/* ===== FULLSCREEN PROFILE / ACCOUNT EDITOR ===== */}
       {profileModalOpen && (
-        <div
-          className="fixed inset-0 z-[65] bg-black/85 backdrop-blur-md flex items-center justify-center p-3"
-          onClick={() => setProfileModalOpen(false)}
-        >
-          <div
-            className="glass border border-amber-500/30 rounded-3xl p-4 max-w-sm w-full max-h-[88vh] flex flex-col overflow-hidden shadow-[0_0_60px_rgba(251,191,36,0.2)]"
-            style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-amber-500/20 shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">👨‍🍳</span>
-                <h3 className="font-black text-amber-100 text-sm tracking-wide">{t.profileTitle}</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setProfileModalOpen(false); haptic.light(); }}
-                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-amber-200/80 flex items-center justify-center text-xs font-bold active:scale-95 transition-all cursor-pointer"
-              >
-                ✕
-              </button>
+        <div className="fixed inset-0 z-[65] bg-[#0c0905] text-amber-100 flex flex-col overflow-hidden select-none safe-top safe-bottom animate-fade-in">
+          {/* Top Bar Header */}
+          <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-4 py-3 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => { setProfileModalOpen(false); haptic.light(); }}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm"
+            >
+              <span>←</span>
+              <span>{lang === 'uk' ? 'Назад' : 'Назад'}</span>
+            </button>
+
+            <div className="flex items-center gap-1.5 font-black text-amber-100 text-sm">
+              <span>👨‍🍳</span>
+              <span>{t.profileTitle}</span>
             </div>
 
-            {/* Profile Hero Card */}
-            <div className="flex flex-col items-center pt-4 pb-3 shrink-0">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 text-xs font-black font-mono shadow-sm">
+              <span>💎</span>
+              <span className="tabular-nums">{formatNum(state.diamonds)}</span>
+            </div>
+          </div>
+
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 max-w-lg mx-auto w-full pb-10">
+            {/* HERO PROFILE CARD */}
+            <div className="glass rounded-3xl p-5 border border-amber-500/30 shadow-[0_0_50px_rgba(251,191,36,0.12)] relative overflow-hidden flex flex-col items-center text-center">
+              {/* Subtle radiant background glow */}
+              <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-48 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
+
+              {/* Avatar Frame Container */}
               <div className={cn(
-                'w-20 h-20 rounded-full overflow-hidden flex items-center justify-center relative shadow-xl transition-all',
+                'w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden flex items-center justify-center relative shadow-2xl transition-all',
                 getAvatarFrame(state.cosmetics?.equippedFrame).frameClass
               )}>
                 {tgUser?.photo_url ? (
                   <img src={tgUser.photo_url} alt="Avatar" className="w-full h-full object-cover" />
                 ) : (
-                  <span className="text-3xl font-black text-amber-200">
+                  <span className="text-4xl font-black text-amber-200">
                     {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
                   </span>
                 )}
                 {getAvatarFrame(state.cosmetics?.equippedFrame).cost > 0 && (
-                  <div className="absolute -bottom-1 -right-1 text-xs bg-black/80 rounded-full px-1.5 py-0.5 border border-amber-500/30">
+                  <div className="absolute -bottom-1 -right-1 text-xs bg-black/85 rounded-full px-2 py-0.5 border border-amber-500/40 shadow">
                     {getAvatarFrame(state.cosmetics?.equippedFrame).emoji}
                   </div>
                 )}
               </div>
 
-              {/* Nickname & Username */}
-              <div className={cn('text-base font-black mt-2 text-center truncate max-w-[90%]', getNameColorStyle(state.cosmetics?.equippedNameColor).colorClass)}>
+              {/* Player Name */}
+              <div className={cn(
+                'text-xl sm:text-2xl font-black mt-3 text-center truncate max-w-full tracking-wide',
+                getNameColorStyle(state.cosmetics?.equippedNameColor).colorClass
+              )}>
                 {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
               </div>
-              {tgUser?.username && (
-                <div className="text-xs text-amber-200/50 font-mono mt-0.5">
-                  @{tgUser.username}
-                </div>
-              )}
 
-              {/* Diamonds Balance Pill */}
-              <div className="flex items-center gap-1.5 mt-2 bg-cyan-500/15 border border-cyan-500/30 px-3 py-1 rounded-full text-xs font-black text-cyan-300 shadow-sm">
-                <span>💎</span>
-                <span className="font-mono tabular-nums">{formatNum(state.diamonds)}</span>
+              {/* Username & ID */}
+              <div className="flex items-center gap-2 mt-1">
+                {tgUser?.username ? (
+                  <span className="text-xs text-amber-200/60 font-mono">@{tgUser.username}</span>
+                ) : null}
+                <span className="text-[10px] text-amber-500/50 font-mono">ID: {tgUser?.id || '—'}</span>
+              </div>
+
+              {/* Active Style Pill */}
+              <div className="mt-2.5 px-3 py-1 rounded-full bg-black/40 border border-amber-500/25 text-[11px] text-amber-300/80 flex items-center gap-1.5 shadow-sm">
+                <span>{getAvatarFrame(state.cosmetics?.equippedFrame).emoji}</span>
+                <span>{getAvatarFrame(state.cosmetics?.equippedFrame).name[lang]}</span>
+                <span className="text-amber-500/40">•</span>
+                <span>{getNameColorStyle(state.cosmetics?.equippedNameColor).name[lang]}</span>
+              </div>
+
+              {/* 3 Key Badges */}
+              <div className="grid grid-cols-3 gap-2 w-full mt-4 pt-3 border-t border-amber-500/20">
+                <div className="bg-black/30 rounded-2xl p-2 text-center border border-amber-500/15">
+                  <div className="text-base">🫓</div>
+                  <div className="text-xs font-black text-amber-200 tabular-nums mt-0.5">{formatNum(state.total)}</div>
+                  <div className="text-[9px] text-amber-500/60 font-medium">{t.statEaten}</div>
+                </div>
+                <div className="bg-black/30 rounded-2xl p-2 text-center border border-amber-500/15">
+                  <div className="text-base">🔄</div>
+                  <div className="text-xs font-black text-fuchsia-200 tabular-nums mt-0.5">{state.prestige}</div>
+                  <div className="text-[9px] text-fuchsia-400/60 font-medium">{t.statRebirths}</div>
+                </div>
+                <div className="bg-black/30 rounded-2xl p-2 text-center border border-amber-500/15">
+                  <div className="text-base">💎</div>
+                  <div className="text-xs font-black text-cyan-200 tabular-nums mt-0.5">{formatNum(state.diamonds)}</div>
+                  <div className="text-[9px] text-cyan-400/60 font-medium">{t.statDiamonds}</div>
+                </div>
               </div>
             </div>
 
-            {/* Main Tabs */}
-            <div className="grid grid-cols-2 gap-1.5 p-1 bg-black/40 rounded-2xl border border-amber-500/20 shrink-0 mb-3">
+            {/* SEGMENTED NAVIGATION TABS */}
+            <div className="grid grid-cols-2 gap-2 p-1.5 bg-black/60 rounded-2xl border border-amber-500/25 sticky top-[57px] z-20 backdrop-blur-md shadow-lg">
               <button
                 type="button"
                 onClick={() => { setProfileTab('overview'); haptic.selection(); }}
                 className={cn(
-                  'py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5',
+                  'py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer',
                   profileTab === 'overview'
-                    ? 'bg-amber-500/25 border border-amber-400/60 text-amber-200 shadow-sm'
+                    ? 'bg-amber-500/25 border border-amber-400/60 text-amber-200 shadow-md shadow-amber-500/15'
                     : 'text-amber-400/60 hover:text-amber-200'
                 )}
               >
-                <span>🏆</span>
+                <span className="text-base">🏆</span>
                 <span>{t.tabOverview}</span>
               </button>
               <button
                 type="button"
                 onClick={() => { setProfileTab('shop'); haptic.selection(); }}
                 className={cn(
-                  'py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5',
+                  'py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer',
                   profileTab === 'shop'
-                    ? 'bg-gradient-to-r from-cyan-500/30 to-fuchsia-500/30 border border-cyan-400/60 text-cyan-200 shadow-sm'
+                    ? 'bg-gradient-to-r from-cyan-500/30 to-fuchsia-500/30 border border-cyan-400/60 text-cyan-200 shadow-md shadow-cyan-500/15'
                     : 'text-cyan-400/60 hover:text-cyan-200'
                 )}
               >
-                <span>💎</span>
+                <span className="text-base">💎</span>
                 <span>{t.profileCosmeticsTitle}</span>
               </button>
             </div>
 
-            {/* Content Body */}
-            <div className="flex-1 overflow-y-auto pr-0.5 space-y-3">
-              {/* TAB 1: OVERVIEW & SHOWCASE */}
-              {profileTab === 'overview' && (
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="text-xs font-black text-amber-200 flex items-center gap-1">
-                        <span>✨</span>
-                        <span>{t.profileShowcaseTitle}</span>
-                      </div>
-                      <div className="text-[10px] text-amber-500/50">
-                        {t.profileShowcaseSubtitle}
-                      </div>
+            {/* TAB 1: OVERVIEW & SHOWCASE */}
+            {profileTab === 'overview' && (
+              <div className="space-y-4 animate-fade-in">
+                {/* Showcase Section */}
+                <div className="glass rounded-3xl p-4 border border-amber-500/20 shadow-md space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-black text-amber-200 flex items-center gap-1.5">
+                      <span>✨</span>
+                      <span>{t.profileShowcaseTitle}</span>
                     </div>
-
-                    <div className="space-y-2 mt-2">
-                      {(state.cosmetics?.showcase || ['clicks', 'total', 'diamonds']).slice(0, 3).map((metricId, slotIdx) => {
-                        const metric = getShowcaseMetric(metricId);
-                        return (
-                          <div
-                            key={slotIdx}
-                            className="glass-card rounded-2xl p-2.5 flex items-center justify-between gap-2.5 border border-amber-500/20 shadow-sm"
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-9 h-9 rounded-xl bg-black/40 border border-amber-500/20 flex items-center justify-center text-xl shrink-0">
-                                {metric.emoji}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="text-[10px] text-amber-500/70 font-bold uppercase tracking-wide truncate">
-                                  {metric.name[lang]}
-                                </div>
-                                <div className="text-sm font-black text-amber-100 tabular-nums truncate">
-                                  {metric.getValue(state)}
-                                </div>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => { setShowcasePickerSlot(slotIdx); haptic.light(); }}
-                              className="shrink-0 px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 text-[11px] font-bold active:scale-95 transition-all flex items-center gap-1"
-                            >
-                              <span>✏️</span>
-                              <span>{t.profileEditSlot}</span>
-                            </button>
-                          </div>
-                        );
-                      })}
+                    <div className="text-[11px] text-amber-500/60">
+                      {t.profileShowcaseSubtitle}
                     </div>
                   </div>
 
-                  {/* Active Style Preview banner */}
-                  <div className="glass-card rounded-2xl p-3 border border-amber-500/15 text-center">
-                    <div className="text-[10px] text-amber-500/50 uppercase font-bold tracking-wider mb-1">
-                      {lang === 'uk' ? 'Поточний стиль' : 'Текущий стиль'}
-                    </div>
-                    <div className="text-xs text-amber-200/90 font-medium">
-                      {getAvatarFrame(state.cosmetics?.equippedFrame).emoji} {getAvatarFrame(state.cosmetics?.equippedFrame).name[lang]} • {getNameColorStyle(state.cosmetics?.equippedNameColor).name[lang]}
-                    </div>
+                  <div className="space-y-2.5">
+                    {(state.cosmetics?.showcase || ['clicks', 'total', 'diamonds']).slice(0, 3).map((metricId, slotIdx) => {
+                      const metric = getShowcaseMetric(metricId);
+                      return (
+                        <div
+                          key={slotIdx}
+                          className="glass-card rounded-2xl p-3 flex items-center justify-between gap-3 border border-amber-500/20 shadow-sm hover:border-amber-500/35 transition-all"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-11 h-11 rounded-2xl bg-black/50 border border-amber-500/25 flex items-center justify-center text-2xl shrink-0 shadow-inner">
+                              {metric.emoji}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-[10px] text-amber-500/80 font-bold uppercase tracking-wider truncate">
+                                {metric.name[lang]}
+                              </div>
+                              <div className="text-base font-black text-amber-100 tabular-nums truncate mt-0.5">
+                                {metric.getValue(state)}
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => { setShowcasePickerSlot(slotIdx); haptic.light(); }}
+                            className="shrink-0 px-3.5 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 text-xs font-black active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                          >
+                            <span>✏️</span>
+                            <span>{t.profileEditSlot}</span>
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              )}
 
-              {/* TAB 2: COSMETIC SHOP */}
-              {profileTab === 'shop' && (
-                <div className="space-y-3">
-                  {/* Shop Subtabs */}
-                  <div className="flex gap-2 border-b border-amber-500/15 pb-2">
-                    <button
-                      type="button"
-                      onClick={() => { setCosmeticShopTab('frames'); haptic.selection(); }}
-                      className={cn(
-                        'flex-1 py-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1',
-                        cosmeticShopTab === 'frames'
-                          ? 'bg-cyan-500/20 border border-cyan-400/50 text-cyan-200'
-                          : 'glass-card text-amber-300/50'
-                      )}
-                    >
-                      <span>🖼️</span>
-                      <span>{t.tabFrames}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setCosmeticShopTab('colors'); haptic.selection(); }}
-                      className={cn(
-                        'flex-1 py-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1',
-                        cosmeticShopTab === 'colors'
-                          ? 'bg-fuchsia-500/20 border border-fuchsia-400/50 text-fuchsia-200'
-                          : 'glass-card text-amber-300/50'
-                      )}
-                    >
-                      <span>🎨</span>
-                      <span>{t.tabColors}</span>
-                    </button>
+                {/* All Stats Grid */}
+                <div className="glass rounded-3xl p-4 border border-amber-500/20 shadow-md">
+                  <div className="text-sm font-black text-amber-200 mb-3 flex items-center gap-1.5">
+                    <span>📊</span>
+                    <span>{lang === 'uk' ? 'Повна статистика пекарні' : 'Полная статистика пекарни'}</span>
                   </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { emoji: '🫓', val: formatNum(state.total), label: t.statEaten },
+                      { emoji: '🔄', val: String(state.prestige), label: t.statRebirths },
+                      { emoji: '💎', val: formatNum(state.diamonds), label: t.statDiamonds },
+                      { emoji: '⚔️', val: String(state.bossesDefeated), label: t.statBosses },
+                      { emoji: '🪲', val: String(state.pestsSquashed), label: t.statPests },
+                      { emoji: '👆', val: state.clicks.toLocaleString(), label: t.statClicks },
+                      { emoji: '⭐', val: String(state.goldenCaught), label: t.statGolden },
+                      { emoji: '🏪', val: String(Object.values(state.buildings).reduce((a, b) => a + b, 0)), label: t.statBuildings },
+                      { emoji: '🏆', val: `${state.achievements.length}/20`, label: t.tabAchievements },
+                    ].map((st, sIdx) => (
+                      <div key={sIdx} className="glass-card rounded-2xl p-2.5 text-center border border-amber-500/15 flex flex-col items-center justify-center">
+                        <div className="text-lg">{st.emoji}</div>
+                        <div className="font-black text-amber-100 text-xs tabular-nums mt-0.5 truncate max-w-full">{st.val}</div>
+                        <div className="text-[9px] text-amber-500/60 font-medium truncate max-w-full">{st.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
 
-                  {/* Frames Subtab */}
-                  {cosmeticShopTab === 'frames' && (
-                    <div className="space-y-2">
-                      {AVATAR_FRAMES.map((f) => {
-                        const isEquipped = (state.cosmetics?.equippedFrame || 'frame_default') === f.id;
-                        const isOwned = (state.cosmetics?.ownedFrames || ['frame_default']).includes(f.id);
-                        const canBuy = state.diamonds >= f.cost;
+            {/* TAB 2: COSMETIC SHOP */}
+            {profileTab === 'shop' && (
+              <div className="space-y-4 animate-fade-in">
+                {/* Shop Subtabs */}
+                <div className="flex gap-2 bg-black/40 p-1.5 rounded-2xl border border-amber-500/20">
+                  <button
+                    type="button"
+                    onClick={() => { setCosmeticShopTab('frames'); haptic.selection(); }}
+                    className={cn(
+                      'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                      cosmeticShopTab === 'frames'
+                        ? 'bg-cyan-500/25 border border-cyan-400/60 text-cyan-200 shadow-sm'
+                        : 'text-amber-300/60 hover:text-amber-200'
+                    )}
+                  >
+                    <span>🖼️</span>
+                    <span>{t.tabFrames}</span>
+                    <span className="text-[10px] opacity-70">({AVATAR_FRAMES.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setCosmeticShopTab('colors'); haptic.selection(); }}
+                    className={cn(
+                      'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                      cosmeticShopTab === 'colors'
+                        ? 'bg-fuchsia-500/25 border border-fuchsia-400/60 text-fuchsia-200 shadow-sm'
+                        : 'text-amber-300/60 hover:text-amber-200'
+                    )}
+                  >
+                    <span>🎨</span>
+                    <span>{t.tabColors}</span>
+                    <span className="text-[10px] opacity-70">({NAME_COLOR_STYLES.length})</span>
+                  </button>
+                </div>
 
-                        return (
-                          <div
-                            key={f.id}
-                            className={cn(
-                              'glass-card rounded-2xl p-2.5 flex items-center justify-between gap-3 border transition-all',
-                              isEquipped
-                                ? 'border-emerald-400/60 bg-emerald-950/20'
-                                : 'border-amber-500/20'
-                            )}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              {/* Avatar Preview */}
-                              <div className={cn(
-                                'w-11 h-11 rounded-full overflow-hidden shrink-0 flex items-center justify-center relative shadow-md',
-                                f.frameClass
-                              )}>
-                                {tgUser?.photo_url ? (
-                                  <img src={tgUser.photo_url} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                  <span className="text-sm font-black text-amber-200">
-                                    {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
-                                  </span>
-                                )}
-                              </div>
+                {/* Frames List */}
+                {cosmeticShopTab === 'frames' && (
+                  <div className="space-y-2.5">
+                    {AVATAR_FRAMES.map((f) => {
+                      const isEquipped = (state.cosmetics?.equippedFrame || 'frame_default') === f.id;
+                      const isOwned = (state.cosmetics?.ownedFrames || ['frame_default']).includes(f.id);
+                      const canBuy = state.diamonds >= f.cost;
 
-                              <div className="min-w-0">
-                                <div className="text-xs font-black text-amber-100 flex items-center gap-1 truncate">
-                                  <span>{f.emoji}</span>
-                                  <span className="truncate">{f.name[lang]}</span>
-                                </div>
-                                <div className="text-[10px] text-amber-400/60 truncate">
-                                  {f.desc[lang]}
-                                </div>
-                                <div className="text-[10px] font-black mt-0.5">
-                                  {f.cost === 0 ? (
-                                    <span className="text-emerald-300">{lang === 'uk' ? 'Безкоштовно' : 'Бесплатно'}</span>
-                                  ) : (
-                                    <span className="text-cyan-300 font-mono">💎 {f.cost}</span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Action Button */}
-                            <div className="shrink-0">
-                              {isEquipped ? (
-                                <div className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-black">
-                                  ✓ {t.btnEquipped}
-                                </div>
-                              ) : isOwned ? (
-                                <button
-                                  type="button"
-                                  onClick={() => equipCosmetic('frame', f.id)}
-                                  className="px-3 py-1.5 rounded-xl bg-amber-500/25 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 text-[11px] font-black active:scale-95 transition-all cursor-pointer"
-                                >
-                                  {t.btnEquip}
-                                </button>
+                      return (
+                        <div
+                          key={f.id}
+                          className={cn(
+                            'glass-card rounded-2xl p-3 flex items-center justify-between gap-3 border transition-all',
+                            isEquipped
+                              ? 'border-emerald-400/60 bg-emerald-950/25 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
+                              : 'border-amber-500/20 hover:border-amber-500/35'
+                          )}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            {/* Avatar Preview with this frame */}
+                            <div className={cn(
+                              'w-13 h-13 rounded-full overflow-hidden shrink-0 flex items-center justify-center relative shadow-lg',
+                              f.frameClass
+                            )}>
+                              {tgUser?.photo_url ? (
+                                <img src={tgUser.photo_url} alt="" className="w-full h-full object-cover" />
                               ) : (
-                                <button
-                                  type="button"
-                                  disabled={!canBuy}
-                                  onClick={() => buyCosmetic('frame', f.id, f.cost)}
-                                  className={cn(
-                                    'px-2.5 py-1.5 rounded-xl text-[11px] font-black active:scale-95 transition-all flex items-center gap-1',
-                                    canBuy
-                                      ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white shadow-md shadow-cyan-500/20 cursor-pointer'
-                                      : 'bg-white/5 border border-cyan-500/20 text-cyan-400/40 cursor-not-allowed'
-                                  )}
-                                >
-                                  <span>💎</span>
-                                  <span>{f.cost}</span>
-                                </button>
+                                <span className="text-base font-black text-amber-200">
+                                  {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
+                                </span>
                               )}
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
 
-                  {/* Colors Subtab */}
-                  {cosmeticShopTab === 'colors' && (
-                    <div className="space-y-2">
-                      {NAME_COLOR_STYLES.map((c) => {
-                        const isEquipped = (state.cosmetics?.equippedNameColor || 'name_default') === c.id;
-                        const isOwned = (state.cosmetics?.ownedNameColors || ['name_default']).includes(c.id);
-                        const canBuy = state.diamonds >= c.cost;
-
-                        return (
-                          <div
-                            key={c.id}
-                            className={cn(
-                              'glass-card rounded-2xl p-2.5 flex items-center justify-between gap-3 border transition-all',
-                              isEquipped
-                                ? 'border-emerald-400/60 bg-emerald-950/20'
-                                : 'border-amber-500/20'
-                            )}
-                          >
-                            <div className="min-w-0 flex-1">
-                              <div className={cn('text-sm truncate font-bold', c.colorClass)}>
-                                {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
+                            <div className="min-w-0">
+                              <div className="text-xs sm:text-sm font-black text-amber-100 flex items-center gap-1.5 truncate">
+                                <span>{f.emoji}</span>
+                                <span className="truncate">{f.name[lang]}</span>
                               </div>
-                              <div className="text-[10px] text-amber-500/80 font-bold mt-0.5">
-                                {c.name[lang]}
+                              <div className="text-[11px] text-amber-400/70 truncate mt-0.5">
+                                {f.desc[lang]}
                               </div>
-                              <div className="text-[9px] text-amber-400/50 truncate">
-                                {c.desc[lang]}
-                              </div>
-                              <div className="text-[10px] font-black mt-0.5">
-                                {c.cost === 0 ? (
-                                  <span className="text-emerald-300">{lang === 'uk' ? 'Безкоштовно' : 'Бесплатно'}</span>
+                              <div className="text-xs font-black mt-1">
+                                {f.cost === 0 ? (
+                                  <span className="text-emerald-300 font-bold">{lang === 'uk' ? 'Безкоштовно' : 'Бесплатно'}</span>
+                                ) : isOwned ? (
+                                  <span className="text-emerald-400/80 font-medium text-[11px]">{lang === 'uk' ? 'Придбано' : 'Куплено'}</span>
                                 ) : (
-                                  <span className="text-cyan-300 font-mono">💎 {c.cost}</span>
+                                  <span className="text-cyan-300 font-mono">💎 {f.cost}</span>
                                 )}
                               </div>
                             </div>
+                          </div>
 
-                            {/* Action Button */}
-                            <div className="shrink-0">
-                              {isEquipped ? (
-                                <div className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-black">
-                                  ✓ {t.btnEquipped}
-                                </div>
+                          {/* Action Button */}
+                          <div className="shrink-0">
+                            {isEquipped ? (
+                              <div className="px-3.5 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-black flex items-center gap-1">
+                                <span>✓</span>
+                                <span>{t.btnEquipped}</span>
+                              </div>
+                            ) : isOwned ? (
+                              <button
+                                type="button"
+                                onClick={() => equipCosmetic('frame', f.id)}
+                                className="px-4 py-2 rounded-xl bg-amber-500/25 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 text-xs font-black active:scale-95 transition-all cursor-pointer shadow-sm"
+                              >
+                                {t.btnEquip}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={!canBuy}
+                                onClick={() => buyCosmetic('frame', f.id, f.cost)}
+                                className={cn(
+                                  'px-3.5 py-2 rounded-xl text-xs font-black active:scale-95 transition-all flex items-center gap-1.5 shadow-md',
+                                  canBuy
+                                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white shadow-cyan-500/25 cursor-pointer'
+                                    : 'bg-white/5 border border-cyan-500/20 text-cyan-400/40 cursor-not-allowed'
+                                )}
+                              >
+                                <span>💎</span>
+                                <span>{f.cost}</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Colors List */}
+                {cosmeticShopTab === 'colors' && (
+                  <div className="space-y-2.5">
+                    {NAME_COLOR_STYLES.map((c) => {
+                      const isEquipped = (state.cosmetics?.equippedNameColor || 'name_default') === c.id;
+                      const isOwned = (state.cosmetics?.ownedNameColors || ['name_default']).includes(c.id);
+                      const canBuy = state.diamonds >= c.cost;
+
+                      return (
+                        <div
+                          key={c.id}
+                          className={cn(
+                            'glass-card rounded-2xl p-3 flex items-center justify-between gap-3 border transition-all',
+                            isEquipped
+                              ? 'border-emerald-400/60 bg-emerald-950/25 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
+                              : 'border-amber-500/20 hover:border-amber-500/35'
+                          )}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className={cn('text-base font-black truncate tracking-wide', c.colorClass)}>
+                              {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
+                            </div>
+                            <div className="text-[11px] text-amber-500/90 font-bold mt-0.5">
+                              {c.name[lang]}
+                            </div>
+                            <div className="text-[10px] text-amber-400/60 truncate mt-0.5">
+                              {c.desc[lang]}
+                            </div>
+                            <div className="text-xs font-black mt-1">
+                              {c.cost === 0 ? (
+                                <span className="text-emerald-300 font-bold">{lang === 'uk' ? 'Безкоштовно' : 'Бесплатно'}</span>
                               ) : isOwned ? (
-                                <button
-                                  type="button"
-                                  onClick={() => equipCosmetic('color', c.id)}
-                                  className="px-3 py-1.5 rounded-xl bg-amber-500/25 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 text-[11px] font-black active:scale-95 transition-all cursor-pointer"
-                                >
-                                  {t.btnEquip}
-                                </button>
+                                <span className="text-emerald-400/80 font-medium text-[11px]">{lang === 'uk' ? 'Придбано' : 'Куплено'}</span>
                               ) : (
-                                <button
-                                  type="button"
-                                  disabled={!canBuy}
-                                  onClick={() => buyCosmetic('color', c.id, c.cost)}
-                                  className={cn(
-                                    'px-2.5 py-1.5 rounded-xl text-[11px] font-black active:scale-95 transition-all flex items-center gap-1',
-                                    canBuy
-                                      ? 'bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:from-fuchsia-400 hover:to-pink-400 text-white shadow-md shadow-fuchsia-500/20 cursor-pointer'
-                                      : 'bg-white/5 border border-fuchsia-500/20 text-fuchsia-400/40 cursor-not-allowed'
-                                  )}
-                                >
-                                  <span>💎</span>
-                                  <span>{c.cost}</span>
-                                </button>
+                                <span className="text-cyan-300 font-mono">💎 {c.cost}</span>
                               )}
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+
+                          {/* Action Button */}
+                          <div className="shrink-0">
+                            {isEquipped ? (
+                              <div className="px-3.5 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-black flex items-center gap-1">
+                                <span>✓</span>
+                                <span>{t.btnEquipped}</span>
+                              </div>
+                            ) : isOwned ? (
+                              <button
+                                type="button"
+                                onClick={() => equipCosmetic('color', c.id)}
+                                className="px-4 py-2 rounded-xl bg-amber-500/25 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 text-xs font-black active:scale-95 transition-all cursor-pointer shadow-sm"
+                              >
+                                {t.btnEquip}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={!canBuy}
+                                onClick={() => buyCosmetic('color', c.id, c.cost)}
+                                className={cn(
+                                  'px-3.5 py-2 rounded-xl text-xs font-black active:scale-95 transition-all flex items-center gap-1.5 shadow-md',
+                                  canBuy
+                                    ? 'bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:from-fuchsia-400 hover:to-pink-400 text-white shadow-fuchsia-500/25 cursor-pointer'
+                                    : 'bg-white/5 border border-fuchsia-500/20 text-fuchsia-400/40 cursor-not-allowed'
+                                )}
+                              >
+                                <span>💎</span>
+                                <span>{c.cost}</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -2935,25 +3018,25 @@ export default function App() {
           onClick={() => setShowcasePickerSlot(null)}
         >
           <div
-            className="glass border border-amber-500/40 rounded-3xl p-4 max-w-xs w-full max-h-[80vh] flex flex-col overflow-hidden shadow-[0_0_60px_rgba(251,191,36,0.3)]"
+            className="glass border border-amber-500/40 rounded-3xl p-5 max-w-md w-full max-h-[82vh] flex flex-col overflow-hidden shadow-[0_0_60px_rgba(251,191,36,0.3)]"
             style={{ animation: 'modal-enter 0.25s cubic-bezier(0.34,1.56,0.64,1)' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between pb-2.5 border-b border-amber-500/20 shrink-0">
-              <div className="text-xs font-black text-amber-100 flex items-center gap-1">
+            <div className="flex items-center justify-between pb-3 border-b border-amber-500/20 shrink-0">
+              <div className="text-sm font-black text-amber-100 flex items-center gap-2">
                 <span>🎯</span>
                 <span>{t.selectMetricTitle}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setShowcasePickerSlot(null)}
-                className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-amber-200/80 flex items-center justify-center text-xs font-bold"
+                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-amber-200/80 flex items-center justify-center text-xs font-bold cursor-pointer transition-all active:scale-95"
               >
                 ✕
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-1.5 pt-3 pr-0.5">
+            <div className="flex-1 overflow-y-auto space-y-2 pt-3 pr-0.5">
               {SHOWCASE_METRICS.map((m) => {
                 const isSelected = state.cosmetics?.showcase?.[showcasePickerSlot] === m.id;
                 return (
@@ -2962,23 +3045,23 @@ export default function App() {
                     type="button"
                     onClick={() => changeShowcaseMetric(showcasePickerSlot, m.id)}
                     className={cn(
-                      'w-full rounded-xl p-2.5 text-left flex items-center justify-between gap-2 transition-all active:scale-95 border',
+                      'w-full rounded-2xl p-3 text-left flex items-center justify-between gap-3 transition-all active:scale-98 border cursor-pointer',
                       isSelected
-                        ? 'bg-amber-500/30 border-amber-400 text-amber-100 shadow-md shadow-amber-500/20'
-                        : 'glass-card border-amber-500/15 text-amber-200/80 hover:bg-white/10'
+                        ? 'bg-amber-500/30 border-amber-400 text-amber-100 shadow-md shadow-amber-500/20 ring-1 ring-amber-400/50'
+                        : 'glass-card border-amber-500/15 text-amber-200/85 hover:bg-white/10'
                     )}
                   >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className="text-xl shrink-0">{m.emoji}</span>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="text-2xl shrink-0">{m.emoji}</span>
                       <div className="min-w-0">
-                        <div className="text-xs font-bold truncate">{m.name[lang]}</div>
-                        <div className="text-[10px] text-amber-400/60 font-mono tabular-nums">
+                        <div className="text-xs font-black truncate">{m.name[lang]}</div>
+                        <div className="text-[11px] text-amber-400/70 font-mono tabular-nums mt-0.5">
                           {m.getValue(state)}
                         </div>
                       </div>
                     </div>
                     {isSelected && (
-                      <span className="text-amber-300 font-black text-xs shrink-0">✓</span>
+                      <span className="text-amber-300 font-black text-sm shrink-0 px-2">✓</span>
                     )}
                   </button>
                 );
@@ -2988,209 +3071,201 @@ export default function App() {
         </div>
       )}
 
-      {/* ===== VIEWING OTHER PLAYER'S PROFILE MODAL ===== */}
+      {/* ===== VIEWING OTHER PLAYER'S PROFILE (FULLSCREEN) ===== */}
       {viewingProfile !== null && (
-        <div
-          className="fixed inset-0 z-[65] bg-black/85 backdrop-blur-md flex items-center justify-center p-3"
-          onClick={() => setViewingProfile(null)}
-        >
-          <div
-            className="glass border border-amber-500/30 rounded-3xl p-4 max-w-sm w-full max-h-[88vh] flex flex-col overflow-hidden shadow-[0_0_60px_rgba(251,191,36,0.25)]"
-            style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-amber-500/20 shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">👤</span>
-                <div>
-                  <h3 className="font-black text-amber-100 text-sm tracking-wide">
-                    {lang === 'uk' ? 'Акаунт гравця' : 'Аккаунт игрока'}
-                  </h3>
-                  <div className="text-[10px] text-amber-500/50">
-                    ID: {viewingProfile.id}
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setViewingProfile(null); haptic.light(); }}
-                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-amber-200/80 flex items-center justify-center text-xs font-bold active:scale-95 transition-all cursor-pointer"
-              >
-                ✕
-              </button>
+        <div className="fixed inset-0 z-[65] bg-[#0c0905] text-amber-100 flex flex-col overflow-hidden select-none safe-top safe-bottom animate-fade-in">
+          {/* Header */}
+          <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-4 py-3 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => { setViewingProfile(null); haptic.light(); }}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm"
+            >
+              <span>←</span>
+              <span>{lang === 'uk' ? 'Назад' : 'Назад'}</span>
+            </button>
+
+            <div className="flex items-center gap-1.5 font-black text-amber-100 text-sm">
+              <span>👤</span>
+              <span>{lang === 'uk' ? 'Акаунт гравця' : 'Аккаунт игрока'}</span>
             </div>
 
-            {/* Scrollable Content */}
-            <div className="flex-1 overflow-y-auto pr-0.5 space-y-3 pt-3">
-              {/* Hero: Avatar with Frame, Name, Username */}
-              <div className="flex flex-col items-center">
-                <div className={cn(
-                  'w-20 h-20 rounded-full overflow-hidden flex items-center justify-center relative shadow-xl transition-all',
-                  getAvatarFrame(viewingProfile.frame).frameClass
-                )}>
-                  {viewingProfile.avatar ? (
-                    <img src={viewingProfile.avatar} alt="Avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-3xl font-black text-amber-200">
-                      {(viewingProfile.name?.[0] || '👨‍🍳').toUpperCase()}
-                    </span>
-                  )}
-                  {getAvatarFrame(viewingProfile.frame).cost > 0 && (
-                    <div className="absolute -bottom-1 -right-1 text-xs bg-black/80 rounded-full px-1.5 py-0.5 border border-amber-500/30 shadow">
-                      {getAvatarFrame(viewingProfile.frame).emoji}
-                    </div>
-                  )}
-                </div>
+            <div className="text-[11px] text-amber-500/60 font-mono">
+              ID: {viewingProfile.id}
+            </div>
+          </div>
 
-                {/* Nickname */}
-                <div className={cn('text-base font-black mt-2 text-center truncate max-w-[90%]', getNameColorStyle(viewingProfile.color).colorClass)}>
-                  {viewingProfile.name}
-                </div>
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 max-w-lg mx-auto w-full pb-10">
+            {/* Hero Card */}
+            <div className="glass rounded-3xl p-5 border border-amber-500/30 shadow-[0_0_50px_rgba(251,191,36,0.12)] relative overflow-hidden flex flex-col items-center text-center">
+              <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-48 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
 
-                {/* Username with Telegram link */}
-                {viewingProfile.username ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const url = `https://t.me/${viewingProfile.username}`;
-                      if (tg?.openTelegramLink) tg.openTelegramLink(url);
-                      else window.open(url, '_blank');
-                      haptic.light();
-                    }}
-                    className="text-xs text-cyan-400 hover:text-cyan-300 font-mono mt-0.5 flex items-center gap-1 bg-cyan-950/30 px-2.5 py-0.5 rounded-full border border-cyan-500/20 active:scale-95 transition-all cursor-pointer"
-                  >
-                    <span>✈️</span>
-                    <span>@{viewingProfile.username}</span>
-                  </button>
+              <div className={cn(
+                'w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden flex items-center justify-center relative shadow-2xl transition-all',
+                getAvatarFrame(viewingProfile.frame).frameClass
+              )}>
+                {viewingProfile.avatar ? (
+                  <img src={viewingProfile.avatar} alt="Avatar" className="w-full h-full object-cover" />
                 ) : (
-                  <div className="text-xs text-amber-200/40 font-mono mt-0.5">
-                    ID: {viewingProfile.id}
-                  </div>
+                  <span className="text-4xl font-black text-amber-200">
+                    {(viewingProfile.name?.[0] || '👨‍🍳').toUpperCase()}
+                  </span>
                 )}
-
-                {/* Online Status */}
-                {viewingProfile.online ? (
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold mt-2 shadow-sm">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>{lang === 'uk' ? 'В мережі (грає зараз)' : 'В сети (играет сейчас)'}</span>
-                  </div>
-                ) : (
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/5 text-amber-400/50 text-[10px] font-medium mt-2">
-                    <span>⚪</span>
-                    <span>{lang === 'uk' ? 'Був нещодавно' : 'Был недавно'}</span>
+                {getAvatarFrame(viewingProfile.frame).cost > 0 && (
+                  <div className="absolute -bottom-1 -right-1 text-xs bg-black/85 rounded-full px-2 py-0.5 border border-amber-500/40 shadow">
+                    {getAvatarFrame(viewingProfile.frame).emoji}
                   </div>
                 )}
               </div>
 
-              {/* Showcase (Вітрина рекордів) */}
-              <div>
-                <div className="text-xs font-black text-amber-200 flex items-center gap-1 mb-1.5 px-1">
-                  <span>✨</span>
-                  <span>{t.profileShowcaseTitle}</span>
+              {/* Name */}
+              <div className={cn(
+                'text-xl sm:text-2xl font-black mt-3 text-center truncate max-w-full tracking-wide',
+                getNameColorStyle(viewingProfile.color).colorClass
+              )}>
+                {viewingProfile.name || (lang === 'uk' ? 'Гравець' : 'Игрок')}
+              </div>
+
+              {/* Username with TG link */}
+              {viewingProfile.username ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `https://t.me/${viewingProfile.username}`;
+                    if (tg?.openTelegramLink) tg.openTelegramLink(url);
+                    else window.open(url, '_blank');
+                    haptic.light();
+                  }}
+                  className="mt-1 text-xs text-cyan-400 hover:text-cyan-300 font-mono flex items-center gap-1 bg-cyan-950/40 px-3 py-1 rounded-full border border-cyan-500/30 active:scale-95 transition-all cursor-pointer shadow-sm"
+                >
+                  <span>✈️</span>
+                  <span>@{viewingProfile.username}</span>
+                </button>
+              ) : null}
+
+              {/* Online status */}
+              {viewingProfile.online ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 text-xs font-bold mt-2.5 shadow-sm">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>{lang === 'uk' ? 'В мережі (грає зараз)' : 'В сети (играет сейчас)'}</span>
                 </div>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/5 text-amber-400/50 text-xs font-medium mt-2.5">
+                  <span>⚪</span>
+                  <span>{lang === 'uk' ? 'Був нещодавно' : 'Был недавно'}</span>
+                </div>
+              )}
 
-                <div className="space-y-1.5">
-                  {(viewingProfile.showcase || ['clicks', 'total', 'diamonds']).slice(0, 3).map((metricId, slotIdx) => {
-                    const metric = getShowcaseMetric(metricId);
-                    let val: string | number = '—';
-                    if (metric.id === 'clicks') val = (viewingProfile.clicks || 0).toLocaleString();
-                    else if (metric.id === 'total') val = formatNum(viewingProfile.total);
-                    else if (metric.id === 'prestige') val = (viewingProfile.prestige || 0).toLocaleString();
-                    else if (metric.id === 'diamonds') val = (viewingProfile.diamonds || 0).toLocaleString();
-                    else if (metric.id === 'bosses') val = (viewingProfile.bosses || 0).toLocaleString();
-                    else if (metric.id === 'achievements') val = `${viewingProfile.achievements || 0}/20`;
-                    else {
-                      val = metric.getValue({
-                        clicks: viewingProfile.clicks || 0,
-                        total: viewingProfile.total || 0,
-                        prestige: viewingProfile.prestige || 0,
-                        diamonds: viewingProfile.diamonds || 0,
-                        bossesDefeated: viewingProfile.bosses || 0,
-                        achievements: Array(viewingProfile.achievements || 0),
-                      });
-                    }
+              {/* Style pill */}
+              <div className="mt-3 px-3 py-1 rounded-full bg-black/40 border border-amber-500/25 text-[11px] text-amber-300/80 flex items-center gap-1.5 shadow-sm">
+                <span>{getAvatarFrame(viewingProfile.frame).emoji}</span>
+                <span>{getAvatarFrame(viewingProfile.frame).name[lang]}</span>
+                <span className="text-amber-500/40">•</span>
+                <span>{getNameColorStyle(viewingProfile.color).name[lang]}</span>
+              </div>
+            </div>
 
-                    return (
-                      <div
-                        key={slotIdx}
-                        className="glass-card rounded-xl p-2.5 flex items-center justify-between gap-2.5 border border-amber-500/20 shadow-sm"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="w-8 h-8 rounded-lg bg-black/40 border border-amber-500/20 flex items-center justify-center text-lg shrink-0">
-                            {metric.emoji}
+            {/* Showcase (Вітрина рекордів) */}
+            <div className="glass rounded-3xl p-4 border border-amber-500/20 shadow-md space-y-3">
+              <div className="text-sm font-black text-amber-200 flex items-center gap-1.5">
+                <span>✨</span>
+                <span>{t.profileShowcaseTitle}</span>
+              </div>
+
+              <div className="space-y-2.5">
+                {(viewingProfile.showcase || ['clicks', 'total', 'diamonds']).slice(0, 3).map((metricId, slotIdx) => {
+                  const metric = getShowcaseMetric(metricId);
+                  let val: string | number = '—';
+                  if (metric.id === 'clicks') val = (viewingProfile.clicks || 0).toLocaleString();
+                  else if (metric.id === 'total') val = formatNum(viewingProfile.total);
+                  else if (metric.id === 'prestige') val = (viewingProfile.prestige || 0).toLocaleString();
+                  else if (metric.id === 'diamonds') val = (viewingProfile.diamonds || 0).toLocaleString();
+                  else if (metric.id === 'bosses') val = (viewingProfile.bosses || 0).toLocaleString();
+                  else if (metric.id === 'achievements') val = `${viewingProfile.achievements || 0}/20`;
+                  else {
+                    val = metric.getValue({
+                      clicks: viewingProfile.clicks || 0,
+                      total: viewingProfile.total || 0,
+                      prestige: viewingProfile.prestige || 0,
+                      diamonds: viewingProfile.diamonds || 0,
+                      bossesDefeated: viewingProfile.bosses || 0,
+                      achievements: Array(viewingProfile.achievements || 0),
+                    });
+                  }
+
+                  return (
+                    <div
+                      key={slotIdx}
+                      className="glass-card rounded-2xl p-3 flex items-center justify-between gap-3 border border-amber-500/20 shadow-sm"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-11 h-11 rounded-2xl bg-black/50 border border-amber-500/25 flex items-center justify-center text-2xl shrink-0 shadow-inner">
+                          {metric.emoji}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] text-amber-500/80 font-bold uppercase tracking-wider truncate">
+                            {metric.name[lang]}
                           </div>
-                          <div className="min-w-0">
-                            <div className="text-[10px] text-amber-500/70 font-bold uppercase tracking-wide truncate">
-                              {metric.name[lang]}
-                            </div>
-                            <div className="text-xs font-black text-amber-100 tabular-nums truncate">
-                              {val}
-                            </div>
+                          <div className="text-base font-black text-amber-100 tabular-nums truncate mt-0.5">
+                            {val}
                           </div>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })}
               </div>
-
-              {/* Full Statistics Grid */}
-              <div>
-                <div className="text-xs font-black text-amber-200 mb-1.5 px-1 flex items-center gap-1">
-                  <span>📊</span>
-                  <span>{lang === 'uk' ? 'Повна статистика' : 'Полная статистика'}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  <div className="glass-card rounded-xl p-2 text-center border border-amber-500/15">
-                    <div className="text-base">🫓</div>
-                    <div className="font-black text-amber-200 text-xs tabular-nums mt-0.5">{formatNum(viewingProfile.total)}</div>
-                    <div className="text-[8px] text-amber-500/50">{t.statEaten}</div>
-                  </div>
-                  <div className="glass-card rounded-xl p-2 text-center border border-amber-500/15">
-                    <div className="text-base">🔄</div>
-                    <div className="font-black text-fuchsia-200 text-xs tabular-nums mt-0.5">{viewingProfile.prestige}</div>
-                    <div className="text-[8px] text-fuchsia-400/50">{t.statRebirths}</div>
-                  </div>
-                  <div className="glass-card rounded-xl p-2 text-center border border-amber-500/15">
-                    <div className="text-base">💎</div>
-                    <div className="font-black text-cyan-200 text-xs tabular-nums mt-0.5">{formatNum(viewingProfile.diamonds || 0)}</div>
-                    <div className="text-[8px] text-cyan-400/50">{t.statDiamonds}</div>
-                  </div>
-                  <div className="glass-card rounded-xl p-2 text-center border border-amber-500/15">
-                    <div className="text-base">🖱️</div>
-                    <div className="font-black text-amber-300 text-xs tabular-nums mt-0.5">{formatNum(viewingProfile.clicks || 0)}</div>
-                    <div className="text-[8px] text-amber-500/50">{t.statClicks}</div>
-                  </div>
-                  <div className="glass-card rounded-xl p-2 text-center border border-amber-500/15">
-                    <div className="text-base">⚔️</div>
-                    <div className="font-black text-red-300 text-xs tabular-nums mt-0.5">{viewingProfile.bosses || 0}</div>
-                    <div className="text-[8px] text-red-400/50">{t.statBosses}</div>
-                  </div>
-                  <div className="glass-card rounded-xl p-2 text-center border border-amber-500/15">
-                    <div className="text-base">🏆</div>
-                    <div className="font-black text-yellow-300 text-xs tabular-nums mt-0.5">{viewingProfile.achievements || 0}/20</div>
-                    <div className="text-[8px] text-amber-500/50">{lang === 'uk' ? 'Досягнень' : 'Достижений'}</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Equipped Cosmetics Badge */}
-              <div className="glass-card rounded-xl p-2.5 border border-amber-500/15 text-center text-[10px] text-amber-400/70">
-                <span>{getAvatarFrame(viewingProfile.frame).emoji} {getAvatarFrame(viewingProfile.frame).name[lang]}</span>
-                <span className="mx-1 text-amber-500/30">•</span>
-                <span>{getNameColorStyle(viewingProfile.color).name[lang]}</span>
-              </div>
-
-              {/* Close Button */}
-              <button
-                type="button"
-                onClick={() => { setViewingProfile(null); haptic.light(); }}
-                className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-black text-xs active:scale-95 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
-              >
-                {t.confirmOk}
-              </button>
             </div>
+
+            {/* Full Statistics Grid */}
+            <div className="glass rounded-3xl p-4 border border-amber-500/20 shadow-md">
+              <div className="text-sm font-black text-amber-200 mb-3 flex items-center gap-1.5">
+                <span>📊</span>
+                <span>{lang === 'uk' ? 'Повна статистика гравця' : 'Полная статистика игрока'}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="glass-card rounded-2xl p-2.5 text-center border border-amber-500/15">
+                  <div className="text-lg">🫓</div>
+                  <div className="font-black text-amber-200 text-xs tabular-nums mt-0.5 truncate">{formatNum(viewingProfile.total)}</div>
+                  <div className="text-[9px] text-amber-500/60 font-medium truncate">{t.statEaten}</div>
+                </div>
+                <div className="glass-card rounded-2xl p-2.5 text-center border border-amber-500/15">
+                  <div className="text-lg">🔄</div>
+                  <div className="font-black text-fuchsia-200 text-xs tabular-nums mt-0.5 truncate">{viewingProfile.prestige}</div>
+                  <div className="text-[9px] text-fuchsia-400/60 font-medium truncate">{t.statRebirths}</div>
+                </div>
+                <div className="glass-card rounded-2xl p-2.5 text-center border border-amber-500/15">
+                  <div className="text-lg">💎</div>
+                  <div className="font-black text-cyan-200 text-xs tabular-nums mt-0.5 truncate">{formatNum(viewingProfile.diamonds || 0)}</div>
+                  <div className="text-[9px] text-cyan-400/60 font-medium truncate">{t.statDiamonds}</div>
+                </div>
+                <div className="glass-card rounded-2xl p-2.5 text-center border border-amber-500/15">
+                  <div className="text-lg">🖱️</div>
+                  <div className="font-black text-amber-300 text-xs tabular-nums mt-0.5 truncate">{formatNum(viewingProfile.clicks || 0)}</div>
+                  <div className="text-[9px] text-amber-500/60 font-medium truncate">{t.statClicks}</div>
+                </div>
+                <div className="glass-card rounded-2xl p-2.5 text-center border border-amber-500/15">
+                  <div className="text-lg">⚔️</div>
+                  <div className="font-black text-red-300 text-xs tabular-nums mt-0.5 truncate">{viewingProfile.bosses || 0}</div>
+                  <div className="text-[9px] text-red-400/60 font-medium truncate">{t.statBosses}</div>
+                </div>
+                <div className="glass-card rounded-2xl p-2.5 text-center border border-amber-500/15">
+                  <div className="text-lg">🏆</div>
+                  <div className="font-black text-yellow-300 text-xs tabular-nums mt-0.5 truncate">{viewingProfile.achievements || 0}/20</div>
+                  <div className="text-[9px] text-amber-500/60 font-medium truncate">{lang === 'uk' ? 'Досягнень' : 'Достижений'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Back Button */}
+            <button
+              type="button"
+              onClick={() => { setViewingProfile(null); haptic.light(); }}
+              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-black text-sm active:scale-95 transition-all shadow-lg shadow-amber-500/25 cursor-pointer"
+            >
+              {lang === 'uk' ? '← Повернутися' : '← Вернуться'}
+            </button>
           </div>
         </div>
       )}
