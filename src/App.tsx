@@ -46,6 +46,64 @@ const tgUser = (tg?.initDataUnsafe?.user || undefined) as {
   photo_url?: string;
 } | undefined;
 const API_BASE = 'https://focaccia-bot.vercel.app';
+const ADMIN_ID = 1975429762;
+
+const isDevUser = (id?: number | string | null): boolean => {
+  if (id === undefined || id === null) return false;
+  return String(id) === String(ADMIN_ID);
+};
+
+const DevBadge = ({ className, size = 'md' }: { className?: string; size?: 'sm' | 'md' | 'lg' }) => {
+  if (size === 'sm') {
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-gradient-to-r from-red-600 via-amber-500 to-orange-500 text-white font-black text-[9px] tracking-wider uppercase shadow-[0_0_10px_rgba(239,68,68,0.45)] border border-amber-300/60 select-none shrink-0',
+          className
+        )}
+        title="Офіційний розробник / Developer"
+      >
+        <span className="text-[10px] leading-none">⚡</span>
+        <span className="font-mono leading-none">DEV</span>
+      </span>
+    );
+  }
+
+  if (size === 'lg') {
+    return (
+      <div
+        className={cn(
+          'inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-gradient-to-r from-red-950/80 via-amber-950/80 to-orange-950/80 border border-amber-400/60 shadow-[0_0_20px_rgba(245,158,11,0.3)] select-none',
+          className
+        )}
+      >
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+        </span>
+        <span className="text-xs">⚡</span>
+        <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-200 to-orange-300 font-black text-[11px] tracking-widest uppercase font-mono">
+          DEVELOPER
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-gradient-to-r from-red-600/30 via-amber-500/30 to-orange-500/30 border border-amber-400/60 shadow-[0_0_14px_rgba(245,158,11,0.35)] select-none shrink-0',
+        className
+      )}
+      title="Офіційний розробник / Developer"
+    >
+      <span className="text-xs animate-pulse">⚡</span>
+      <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-amber-300 to-orange-300 font-black text-[10px] tracking-wider uppercase font-mono">
+        DEV
+      </span>
+    </span>
+  );
+};
 
 /* ---- Storage: Smart conflict resolver (localStorage + CloudStorage) ---- */
 const storage = {
@@ -295,6 +353,7 @@ interface LeaderRow {
   frame?: string;
   color?: string;
   avatar?: string;
+  isDev?: boolean;
 }
 
 // TapSentinel v5.1: сырой тап — performance.now() для ритма, Date.now() для сессий
@@ -2649,13 +2708,23 @@ export default function App() {
                 )}
               </div>
 
-              {/* Player Name */}
-              <div className={cn(
-                'text-xl sm:text-2xl font-black mt-3 text-center truncate max-w-full tracking-wide',
-                getNameColorStyle(state.cosmetics?.equippedNameColor).colorClass
-              )}>
-                {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
+              {/* Player Name & DEV Badge */}
+              <div className="flex items-center justify-center gap-2 mt-3 flex-wrap max-w-full">
+                <span className={cn(
+                  'text-xl sm:text-2xl font-black text-center truncate max-w-full tracking-wide',
+                  getNameColorStyle(state.cosmetics?.equippedNameColor).colorClass
+                )}>
+                  {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
+                </span>
+                {isDevUser(tgUser?.id) && <DevBadge size="md" />}
               </div>
+
+              {/* Developer Official Status */}
+              {isDevUser(tgUser?.id) && (
+                <div className="mt-1.5">
+                  <DevBadge size="lg" />
+                </div>
+              )}
 
               {/* Username & ID */}
               <div className="flex items-center gap-2 mt-1">
@@ -3119,13 +3188,23 @@ export default function App() {
                 )}
               </div>
 
-              {/* Name */}
-              <div className={cn(
-                'text-xl sm:text-2xl font-black mt-3 text-center truncate max-w-full tracking-wide',
-                getNameColorStyle(viewingProfile.color).colorClass
-              )}>
-                {viewingProfile.name || (lang === 'uk' ? 'Гравець' : 'Игрок')}
+              {/* Name & DEV Badge */}
+              <div className="flex items-center justify-center gap-2 mt-3 flex-wrap max-w-full">
+                <span className={cn(
+                  'text-xl sm:text-2xl font-black text-center truncate max-w-full tracking-wide',
+                  getNameColorStyle(viewingProfile.color).colorClass
+                )}>
+                  {viewingProfile.name || (lang === 'uk' ? 'Гравець' : 'Игрок')}
+                </span>
+                {isDevUser(viewingProfile.id) && <DevBadge size="md" />}
               </div>
+
+              {/* Developer Official Status */}
+              {isDevUser(viewingProfile.id) && (
+                <div className="mt-1.5">
+                  <DevBadge size="lg" />
+                </div>
+              )}
 
               {/* Username with TG link */}
               {viewingProfile.username ? (
@@ -4364,11 +4443,12 @@ export default function App() {
 
                   {/* Player Details */}
                   <div className="min-w-0 flex-1">
-                    <div className="font-bold text-[13px] truncate flex items-center gap-1">
+                    <div className="font-bold text-[13px] truncate flex items-center gap-1.5">
                       {pl.online && (
                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" title="Онлайн" />
                       )}
                       <span className={cn('truncate', rowColor.colorClass)}>{pl.name}</span>
+                      {(pl.isDev || isDevUser(pl.id)) && <DevBadge size="sm" />}
                       {isMe && (
                         <span className="shrink-0 text-[9px] bg-gradient-to-r from-amber-500/30 to-amber-600/30 border border-amber-400/40 text-amber-200 px-1.5 py-0.2 rounded-full font-black">
                           {t.itsYou}
@@ -4472,8 +4552,11 @@ export default function App() {
                   )}
                 </div>
                 <div className="min-w-0">
-                  <div className={cn('text-sm truncate font-bold', getNameColorStyle(state.cosmetics?.equippedNameColor).colorClass)}>
-                    {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span className={cn('text-sm truncate font-bold', getNameColorStyle(state.cosmetics?.equippedNameColor).colorClass)}>
+                      {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
+                    </span>
+                    {isDevUser(tgUser?.id) && <DevBadge size="sm" />}
                   </div>
                   {tgUser?.username ? (
                     <div className="text-[11px] text-amber-200/50 font-mono truncate">
