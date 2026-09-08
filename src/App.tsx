@@ -467,7 +467,10 @@ export default function App() {
                   saveNow(next);
                   return next;
                 });
-                addToast(curT.toastDiamondReward, formatTemplate(curT.toastDiamondRewardDesc, formatNum(data.diamonds)), '💎');
+                const isDuel = data?.gemSource === 'duel';
+                const toastTitle = isDuel ? curT.toastDuelReward : curT.toastDiamondReward;
+                const toastDesc = isDuel ? curT.toastDuelRewardDesc : curT.toastDiamondRewardDesc;
+                addToast(toastTitle, formatTemplate(toastDesc, formatNum(data.diamonds)), '💎');
                 haptic.success();
                 setTimeout(reportSync, 100);
               }
