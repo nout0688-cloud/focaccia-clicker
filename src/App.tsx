@@ -310,6 +310,16 @@ export default function App() {
   const [myRank, setMyRank] = useState<number | null>(null);
   const [leaderCategory, setLeaderCategory] = useState<LeaderCategory>('focaccia');
 
+  /* Hold-to-buy (затискання для швидкої покупки з прискоренням) */
+  const [holdingBuyId, setHoldingBuyId] = useState<string | null>(null);
+  const [holdingBuyCount, setHoldingBuyCount] = useState(0);
+  const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const holdInitialTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const holdStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const isHoldingRef = useRef(false);
+  const wasHoldingRef = useRef(false);
+  const holdCountRef = useRef(0);
+
   /* Античит v5: R/C/B evidence + challenge */
   const [challenge, setChallenge] = useState<null | { caught: number; x: number; y: number; timeLeft: number; result: null | 'pending' | 'win' | 'fail' | 'denied' }>(null);
   const [karma, setKarma] = useState(100); // поведінковий рівень 0-100 (синхронізується з сервером)
@@ -1816,12 +1826,13 @@ export default function App() {
     haptic.success();
   };
 
-  const buyBuilding = (id: string) => {
+  const buyBuilding = (id: string, isRepeat = false): boolean => {
     const b = BUILDINGS.find((x) => x.id === id);
-    if (!b) return;
+    if (!b) return false;
     const cur = stateRef.current;
+    if ((b.requireRebirth || 0) > cur.prestige) return false;
     const cost = buildingCost(b, cur.buildings[id] || 0);
-    if (cur.focaccia < cost) return;
+    if (cur.focaccia < cost) return false;
     const next: SaveState = {
       ...cur,
       focaccia: cur.focaccia - cost,
@@ -1829,10 +1840,18 @@ export default function App() {
     };
     stateRef.current = next;
     setState(next);
-    saveNow(next);
     setLastBoughtId(id);
-    setTimeout(() => setLastBoughtId((prev) => (prev === id ? null : prev)), 400);
-    haptic.medium();
+
+    if (!isRepeat) {
+      saveNow(next);
+      setTimeout(() => setLastBoughtId((prev) => (prev === id ? null : prev)), 400);
+      haptic.medium();
+    } else {
+      if (holdCountRef.current % 3 === 0) {
+        haptic.light();
+      }
+    }
+    return true;
   };
 
   const buyUpgrade = (id: string) => {
@@ -1873,18 +1892,20 @@ export default function App() {
     haptic.success();
   };
 
-  const buyDiamondBuilding = (id: string) => {
+  const buyDiamondBuilding = (id: string, isRepeat = false): boolean => {
     const b = DIAMOND_BUILDINGS.find((x) => x.id === id);
-    if (!b) return;
+    if (!b) return false;
     const cur = stateRef.current;
-    if ((b.requireRebirth || 0) > cur.prestige) return;
+    if ((b.requireRebirth || 0) > cur.prestige) return false;
     const owned = cur.diamondBuildings?.[id] || 0;
     const cost = diamondBuildingCost(b, owned);
     const curT = TRANSLATIONS[langRef.current];
     const dbText = getDiamondBuildingText(b.id, langRef.current);
     if (cur.diamonds < cost) {
-      addToast(curT.toastNotEnoughDiamonds, formatTemplate(curT.toastNeedDiamonds, cost), '❌');
-      return;
+      if (!isRepeat) {
+        addToast(curT.toastNotEnoughDiamonds, formatTemplate(curT.toastNeedDiamonds, cost), '❌');
+      }
+      return false;
     }
     const next: SaveState = {
       ...cur,
@@ -1896,12 +1917,132 @@ export default function App() {
     };
     stateRef.current = next;
     setState(next);
-    saveNow(next);
     setLastBoughtId(id);
-    setTimeout(() => setLastBoughtId((prev) => (prev === id ? null : prev)), 400);
-    addToast(curT.toastBuilt, `${dbText.name} (${owned + 1})`, b.emoji);
-    haptic.success();
+
+    if (!isRepeat) {
+      saveNow(next);
+      setTimeout(() => setLastBoughtId((prev) => (prev === id ? null : prev)), 400);
+      addToast(curT.toastBuilt, `${dbText.name} (${owned + 1})`, b.emoji);
+      haptic.success();
+    } else {
+      if (holdCountRef.current % 2 === 0) {
+        haptic.light();
+      }
+    }
+    return true;
   };
+
+  /* Hold-to-buy controllers (контролери затискання з наростаючим прискоренням) */
+  const stopHoldBuy = useCallback(() => {
+    if (holdInitialTimerRef.current) {
+      clearTimeout(holdInitialTimerRef.current);
+      holdInitialTimerRef.current = null;
+    }
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    if (isHoldingRef.current) {
+      wasHoldingRef.current = true;
+      setTimeout(() => { wasHoldingRef.current = false; }, 150);
+      saveNow();
+      haptic.medium();
+    }
+    isHoldingRef.current = false;
+    setHoldingBuyId(null);
+    setHoldingBuyCount(0);
+    holdStartPosRef.current = null;
+    holdCountRef.current = 0;
+  }, [saveNow]);
+
+  const handlePointerDownBuy = useCallback((id: string, type: 'building' | 'diamond', e: React.PointerEvent) => {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+
+    if (holdInitialTimerRef.current) clearTimeout(holdInitialTimerRef.current);
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+
+    holdStartPosRef.current = { x: e.clientX, y: e.clientY };
+    holdCountRef.current = 0;
+    isHoldingRef.current = false;
+
+    const buyFn = type === 'building' ? buyBuilding : buyDiamondBuilding;
+
+    // 260ms поріг затискання без значного руху пальця
+    holdInitialTimerRef.current = setTimeout(() => {
+      isHoldingRef.current = true;
+      setHoldingBuyId(id);
+
+      // Перша покупка в режимі затискання
+      const initialOk = buyFn(id, true);
+      if (!initialOk) {
+        stopHoldBuy();
+        return;
+      }
+      holdCountRef.current = 1;
+      setHoldingBuyCount(1);
+      haptic.medium();
+
+      // Рекурсивний таймер з експоненціальним прискоренням від 220мс до 25мс
+      const runLoop = () => {
+        const count = holdCountRef.current;
+        const delay = Math.max(25, Math.floor(220 * Math.pow(0.84, count)));
+
+        holdTimerRef.current = setTimeout(() => {
+          if (!isHoldingRef.current) return;
+          const ok = buyFn(id, true);
+          if (!ok) {
+            stopHoldBuy();
+            return;
+          }
+          holdCountRef.current += 1;
+          setHoldingBuyCount(holdCountRef.current);
+          runLoop();
+        }, delay);
+      };
+
+      runLoop();
+    }, 260);
+  }, [saveNow, stopHoldBuy]);
+
+  const handlePointerMoveBuy = useCallback((e: React.PointerEvent) => {
+    if (holdStartPosRef.current) {
+      const dist = Math.hypot(e.clientX - holdStartPosRef.current.x, e.clientY - holdStartPosRef.current.y);
+      if (dist > 10) {
+        // Якщо палець посунувся більше ніж на 10px (прокрутка списку) — скасовуємо затискання
+        stopHoldBuy();
+      }
+    }
+  }, [stopHoldBuy]);
+
+  const handleClickBuilding = useCallback((id: string) => {
+    if (wasHoldingRef.current || isHoldingRef.current) {
+      return;
+    }
+    buyBuilding(id, false);
+  }, []);
+
+  const handleClickDiamondBuilding = useCallback((id: string) => {
+    if (wasHoldingRef.current || isHoldingRef.current) {
+      return;
+    }
+    buyDiamondBuilding(id, false);
+  }, []);
+
+  useEffect(() => {
+    const handleGlobalPointerUp = () => {
+      if (isHoldingRef.current || holdInitialTimerRef.current) {
+        stopHoldBuy();
+      }
+    };
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    window.addEventListener('pointercancel', handleGlobalPointerUp);
+    return () => {
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('pointercancel', handleGlobalPointerUp);
+      if (holdInitialTimerRef.current) clearTimeout(holdInitialTimerRef.current);
+      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    };
+  }, [stopHoldBuy]);
 
   const catchGolden = () => {
     setGolden(null);
@@ -2590,28 +2731,45 @@ export default function App() {
                   </div>
                 );
 
+                const isHolding = holdingBuyId === b.id;
+
                 return (
                   <div key={b.id} style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }} className={cn(
                     'rounded-xl transition-all animate-card',
                     isBroken ? 'border border-red-500/50 bg-red-950/30 p-2.5' : '',
                   )}>
-                    <button onClick={() => buyBuilding(b.id)} disabled={!can}
+                    <button
+                      onClick={() => handleClickBuilding(b.id)}
+                      onPointerDown={(e) => can && handlePointerDownBuy(b.id, 'building', e)}
+                      onPointerUp={stopHoldBuy}
+                      onPointerLeave={stopHoldBuy}
+                      onPointerCancel={stopHoldBuy}
+                      onPointerMove={handlePointerMoveBuy}
+                      onContextMenu={(e) => e.preventDefault()}
+                      disabled={!can}
+                      style={{ touchAction: 'pan-y' }}
                       className={cn(
-                        'relative overflow-hidden w-full text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all active:scale-[0.98]',
-                        can ? 'glass-card glass-card-hover border-amber-500/20' : 'glass-card opacity-40',
-                        isJustBought && 'animate-purchase-pop ring-2 ring-amber-400/60 shadow-[0_0_15px_rgba(251,191,36,0.25)]',
+                        'relative overflow-hidden w-full text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all select-none',
+                        can ? 'glass-card glass-card-hover border-amber-500/20 active:scale-[0.98]' : 'glass-card opacity-40',
+                        isJustBought && !isHolding && 'animate-purchase-pop ring-2 ring-amber-400/60 shadow-[0_0_15px_rgba(251,191,36,0.25)]',
+                        isHolding && 'ring-2 ring-amber-400 scale-[0.98] bg-amber-500/15 shadow-[0_0_24px_rgba(251,191,36,0.45)]',
                       )}>
                       <div className={cn(
                         'relative w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 transition-transform select-none',
                         can ? 'bg-gradient-to-br from-amber-500/20 to-amber-700/10 border border-amber-500/25 shadow-inner' : 'bg-black/20',
                         isJustBought && 'animate-icon-bounce',
+                        isHolding && 'scale-105',
                       )}>
                         {b.emoji}
-                        {isJustBought && (
+                        {isHolding ? (
+                          <span className="pointer-events-none absolute -top-2.5 text-[11px] font-black text-amber-200 bg-amber-950/80 px-1 py-0.2 rounded-full border border-amber-400/60 animate-pulse drop-shadow shadow-[0_0_8px_rgba(251,191,36,0.6)]">
+                            +{holdingBuyCount}
+                          </span>
+                        ) : isJustBought ? (
                           <span className="pointer-events-none absolute -top-2 text-[11px] font-black text-amber-300 animate-plus-one drop-shadow">
                             +1
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-bold text-amber-100/90 text-[13px] flex justify-between items-center">
@@ -2619,7 +2777,8 @@ export default function App() {
                           <span className={cn(
                             'tabular-nums ml-2 text-xs font-bold px-1.5 py-0.5 rounded-md transition-all',
                             owned > 0 ? 'bg-amber-500/15 text-amber-300 border border-amber-500/25' : 'text-amber-400/40',
-                            isJustBought && 'animate-badge-pop text-amber-200 bg-amber-400/30',
+                            isJustBought && !isHolding && 'animate-badge-pop text-amber-200 bg-amber-400/30',
+                            isHolding && 'text-amber-200 bg-amber-400/40 border border-amber-400/60 shadow-[0_0_10px_rgba(251,191,36,0.4)]',
                           )}>
                             {owned}
                           </span>
@@ -2799,31 +2958,43 @@ export default function App() {
                       );
                     }
 
-                    const isJustBought = lastBoughtId === b.id;
+                    const isHolding = holdingBuyId === b.id;
 
                     return (
                       <button
                         key={b.id}
-                        onClick={() => buyDiamondBuilding(b.id)}
+                        onClick={() => handleClickDiamondBuilding(b.id)}
+                        onPointerDown={(e) => can && handlePointerDownBuy(b.id, 'diamond', e)}
+                        onPointerUp={stopHoldBuy}
+                        onPointerLeave={stopHoldBuy}
+                        onPointerCancel={stopHoldBuy}
+                        onPointerMove={handlePointerMoveBuy}
+                        onContextMenu={(e) => e.preventDefault()}
                         disabled={!can}
-                        style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
+                        style={{ animationDelay: `${Math.min(i, 12) * 35}ms`, touchAction: 'pan-y' }}
                         className={cn(
-                          'relative overflow-hidden w-full text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all active:scale-[0.98] animate-card',
-                          can ? 'glass-card border-cyan-500/35 glass-card-hover shadow-[0_0_12px_rgba(6,182,212,0.12)]' : 'glass-card opacity-40',
-                          isJustBought && 'animate-purchase-pop ring-2 ring-cyan-400/80 shadow-[0_0_20px_rgba(6,182,212,0.4)]',
+                          'relative overflow-hidden w-full text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all select-none animate-card',
+                          can ? 'glass-card border-cyan-500/35 glass-card-hover shadow-[0_0_12px_rgba(6,182,212,0.12)] active:scale-[0.98]' : 'glass-card opacity-40',
+                          isJustBought && !isHolding && 'animate-purchase-pop ring-2 ring-cyan-400/80 shadow-[0_0_20px_rgba(6,182,212,0.4)]',
+                          isHolding && 'ring-2 ring-cyan-400 scale-[0.98] bg-cyan-500/15 shadow-[0_0_24px_rgba(6,182,212,0.55)]',
                         )}
                       >
                         <div className={cn(
                           'relative w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 transition-transform select-none',
                           can ? 'bg-gradient-to-br from-cyan-500/25 to-blue-600/15 border border-cyan-400/30 shadow-inner' : 'bg-black/30',
                           isJustBought && 'animate-icon-bounce',
+                          isHolding && 'scale-105',
                         )}>
                           {b.emoji}
-                          {isJustBought && (
+                          {isHolding ? (
+                            <span className="pointer-events-none absolute -top-2.5 text-[11px] font-black text-cyan-200 bg-cyan-950/80 px-1 py-0.2 rounded-full border border-cyan-400/60 animate-pulse drop-shadow shadow-[0_0_8px_rgba(6,182,212,0.6)]">
+                              +{holdingBuyCount}
+                            </span>
+                          ) : isJustBought ? (
                             <span className="pointer-events-none absolute -top-2 text-[11px] font-black text-cyan-200 animate-plus-one drop-shadow">
                               +1
                             </span>
-                          )}
+                          ) : null}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-cyan-100/90 text-[13px] flex justify-between items-center">
@@ -2831,7 +3002,8 @@ export default function App() {
                             <span className={cn(
                               'tabular-nums ml-2 text-xs font-bold px-1.5 py-0.5 rounded-md transition-all',
                               owned > 0 ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/30' : 'text-cyan-400/40',
-                              isJustBought && 'animate-badge-pop text-white bg-cyan-400/40',
+                              isJustBought && !isHolding && 'animate-badge-pop text-white bg-cyan-400/40',
+                              isHolding && 'text-white bg-cyan-400/50 border border-cyan-400/70 shadow-[0_0_10px_rgba(6,182,212,0.5)]',
                             )}>
                               {owned}
                             </span>
