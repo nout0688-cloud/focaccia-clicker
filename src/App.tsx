@@ -288,6 +288,7 @@ export default function App() {
   };
   const [shopTab, setShopTab] = useState<ShopTab>('buildings');
   const [vipSubTab, setVipSubTab] = useState<'buildings' | 'upgrades'>('buildings');
+  const [lastBoughtId, setLastBoughtId] = useState<string | null>(null);
   const [phrase, setPhrase] = useState(PHRASES_I18N.uk[0]);
   const [golden, setGolden] = useState<{ x: number; y: number } | null>(null);
   const [frenzy, setFrenzy] = useState(0);
@@ -1807,6 +1808,8 @@ export default function App() {
     stateRef.current = next;
     setState(next);
     saveNow(next);
+    setLastBoughtId(id);
+    setTimeout(() => setLastBoughtId((prev) => (prev === id ? null : prev)), 400);
     haptic.medium();
   };
 
@@ -1872,6 +1875,8 @@ export default function App() {
     stateRef.current = next;
     setState(next);
     saveNow(next);
+    setLastBoughtId(id);
+    setTimeout(() => setLastBoughtId((prev) => (prev === id ? null : prev)), 400);
     addToast(curT.toastBuilt, `${dbText.name} (${owned + 1})`, b.emoji);
     haptic.success();
   };
@@ -2464,16 +2469,24 @@ export default function App() {
               {shopTab === 'buildings' && (<>
                 <div
                   onClick={() => { setShopTab('vip'); setVipSubTab('buildings'); }}
-                  className="glass-card cursor-pointer border border-cyan-500/30 bg-gradient-to-r from-cyan-950/40 via-blue-950/20 to-amber-950/30 p-2.5 rounded-xl flex items-center justify-between mb-1 active:scale-[0.98] transition-all"
+                  className="relative overflow-hidden glass-card cursor-pointer border border-cyan-500/40 bg-gradient-to-r from-cyan-950/50 via-blue-950/30 to-purple-950/40 p-2.5 rounded-xl flex items-center justify-between mb-1 active:scale-[0.98] transition-all hover:border-cyan-400/60 shadow-[0_0_15px_rgba(6,182,212,0.12)]"
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2.5 z-10">
                     <span className="text-xl animate-diamond">💎</span>
                     <div>
-                      <div className="text-xs font-bold text-cyan-200">{t.diamondBuildingsBannerTitle}</div>
-                      <div className="text-[10px] text-cyan-300/60">{t.diamondBuildingsBannerDesc}</div>
+                      <div className="text-xs font-bold text-cyan-200 flex items-center gap-1.5">
+                        {t.diamondBuildingsBannerTitle}
+                        <span className="text-[9px] px-1.5 py-0.5 bg-cyan-500/20 border border-cyan-400/30 text-cyan-300 rounded font-semibold">VIP</span>
+                      </div>
+                      <div className="text-[10px] text-cyan-300/70">{t.diamondBuildingsBannerDesc}</div>
                     </div>
                   </div>
-                  <span className="text-xs text-cyan-400 font-black">{t.goTo}</span>
+                  <span className="text-xs text-cyan-300 font-black z-10 flex items-center gap-1">
+                    {t.goTo} →
+                  </span>
+                  <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
+                    <span className="vip-sheen-cyan" />
+                  </span>
                 </div>
                 {BUILDINGS.map((b, i) => {
                 const bText = getBuildingText(b.id, lang);
@@ -2486,6 +2499,7 @@ export default function App() {
                 const prevOwned = i === 0 || (state.buildings[BUILDINGS[i - 1].id] || 0) > 0;
                 const visible = owned > 0 || prevOwned || state.total >= b.baseCost * 0.5;
                 const isRebirthLocked = (b.requireRebirth || 0) > state.prestige;
+                const isJustBought = lastBoughtId === b.id;
 
                 if (isRebirthLocked) {
                   return (
@@ -2519,16 +2533,33 @@ export default function App() {
                     isBroken ? 'border border-red-500/50 bg-red-950/30 p-2.5' : '',
                   )}>
                     <button onClick={() => buyBuilding(b.id)} disabled={!can}
-                      className={cn('w-full text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all active:scale-[0.98]',
-                        can ? 'glass-card glass-card-hover' : 'glass-card opacity-40',
+                      className={cn(
+                        'relative overflow-hidden w-full text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all active:scale-[0.98]',
+                        can ? 'glass-card glass-card-hover border-amber-500/20' : 'glass-card opacity-40',
+                        isJustBought && 'animate-purchase-pop ring-2 ring-amber-400/60 shadow-[0_0_15px_rgba(251,191,36,0.25)]',
                       )}>
-                      <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 transition-colors',
-                        can ? 'bg-amber-500/15' : 'bg-black/20',
-                      )}>{b.emoji}</div>
+                      <div className={cn(
+                        'relative w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 transition-transform select-none',
+                        can ? 'bg-gradient-to-br from-amber-500/20 to-amber-700/10 border border-amber-500/25 shadow-inner' : 'bg-black/20',
+                        isJustBought && 'animate-icon-bounce',
+                      )}>
+                        {b.emoji}
+                        {isJustBought && (
+                          <span className="pointer-events-none absolute -top-2 text-[11px] font-black text-amber-300 animate-plus-one drop-shadow">
+                            +1
+                          </span>
+                        )}
+                      </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-bold text-amber-100/90 text-[13px] flex justify-between">
+                        <div className="font-bold text-amber-100/90 text-[13px] flex justify-between items-center">
                           <span className="truncate">{bText.name}</span>
-                          <span className="text-amber-400/60 tabular-nums ml-2 text-xs">{owned}</span>
+                          <span className={cn(
+                            'tabular-nums ml-2 text-xs font-bold px-1.5 py-0.5 rounded-md transition-all',
+                            owned > 0 ? 'bg-amber-500/15 text-amber-300 border border-amber-500/25' : 'text-amber-400/40',
+                            isJustBought && 'animate-badge-pop text-amber-200 bg-amber-400/30',
+                          )}>
+                            {owned}
+                          </span>
                         </div>
                         <div className="text-[10px] text-amber-400/40 truncate">{bText.desc}</div>
                         <div className="text-[10px] mt-0.5 flex justify-between">
@@ -2538,6 +2569,11 @@ export default function App() {
                           </span>
                         </div>
                       </div>
+                      {can && (
+                        <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
+                          <span className="vip-sheen-gold" />
+                        </span>
+                      )}
                     </button>
 
                     {isBroken && (
@@ -2700,6 +2736,8 @@ export default function App() {
                       );
                     }
 
+                    const isJustBought = lastBoughtId === b.id;
+
                     return (
                       <button
                         key={b.id}
@@ -2707,17 +2745,33 @@ export default function App() {
                         disabled={!can}
                         style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
                         className={cn(
-                          'relative w-full text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all active:scale-[0.98] animate-card',
-                          can ? 'glass-card border-cyan-500/30 glass-card-hover' : 'glass-card opacity-40',
+                          'relative overflow-hidden w-full text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all active:scale-[0.98] animate-card',
+                          can ? 'glass-card border-cyan-500/35 glass-card-hover shadow-[0_0_12px_rgba(6,182,212,0.12)]' : 'glass-card opacity-40',
+                          isJustBought && 'animate-purchase-pop ring-2 ring-cyan-400/80 shadow-[0_0_20px_rgba(6,182,212,0.4)]',
                         )}
                       >
-                        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 transition-colors', can ? 'bg-cyan-500/15' : 'bg-black/30')}>
+                        <div className={cn(
+                          'relative w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 transition-transform select-none',
+                          can ? 'bg-gradient-to-br from-cyan-500/25 to-blue-600/15 border border-cyan-400/30 shadow-inner' : 'bg-black/30',
+                          isJustBought && 'animate-icon-bounce',
+                        )}>
                           {b.emoji}
+                          {isJustBought && (
+                            <span className="pointer-events-none absolute -top-2 text-[11px] font-black text-cyan-200 animate-plus-one drop-shadow">
+                              +1
+                            </span>
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="font-bold text-cyan-100/90 text-[13px] flex justify-between">
+                          <div className="font-bold text-cyan-100/90 text-[13px] flex justify-between items-center">
                             <span className="truncate">{dbText.name}</span>
-                            <span className="text-cyan-300/80 tabular-nums ml-2 text-xs font-bold">{owned}</span>
+                            <span className={cn(
+                              'tabular-nums ml-2 text-xs font-bold px-1.5 py-0.5 rounded-md transition-all',
+                              owned > 0 ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/30' : 'text-cyan-400/40',
+                              isJustBought && 'animate-badge-pop text-white bg-cyan-400/40',
+                            )}>
+                              {owned}
+                            </span>
                           </div>
                           <div className="text-[10px] text-cyan-300/60 truncate">{dbText.desc}</div>
                           <div className="text-[10px] mt-0.5 flex justify-between items-center">
@@ -2731,7 +2785,7 @@ export default function App() {
                         </div>
                         {can && (
                           <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
-                            <span className="vip-shine absolute inset-y-0 left-0 w-10 bg-cyan-400/10" />
+                            <span className="vip-sheen-cyan" />
                           </span>
                         )}
                       </button>
@@ -2775,7 +2829,7 @@ export default function App() {
                         </div>
                         {can && (
                           <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
-                            <span className="vip-shine absolute inset-y-0 left-0 w-10 bg-white/10" />
+                            <span className="vip-sheen-cyan" />
                           </span>
                         )}
                       </button>
