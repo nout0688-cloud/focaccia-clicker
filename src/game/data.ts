@@ -39,6 +39,7 @@ export interface AchState {
   goldenCaught: number;
   prestige: number;
   diamonds?: number;
+  diamondBuildings?: Record<string, number>;
   bossesDefeated?: number;
   pestsSquashed?: number;
 }
@@ -88,6 +89,83 @@ export const CLICK_UPGRADES: ClickUpgrade[] = [
   { id: 'b6', name: 'Італійська мафія', emoji: '🕶️', desc: 'Виробництво x3', cost: 1000000000, cpsMult: 3, requireBuilding: { id: 'italy', count: 5 }, requireRebirth: 5 },
 ];
 
+export interface DiamondBuilding {
+  id: string;
+  name: string;
+  emoji: string;
+  desc: string;
+  baseCost: number; // cost in diamonds
+  baseCps: number; // base flat CPS per unit
+  percentBonus: number; // % bonus to total CPS per unit (e.g. 0.01 = +1%)
+  requireRebirth?: number;
+}
+
+export const DIAMOND_BUILDINGS: DiamondBuilding[] = [
+  {
+    id: 'd_oven',
+    name: 'Кристалічна піч',
+    emoji: '💠',
+    desc: 'Кристалічний жар пече стабільно та гаряче (+1% CPS)',
+    baseCost: 10,
+    baseCps: 50,
+    percentBonus: 0.01,
+    requireRebirth: 0,
+  },
+  {
+    id: 'd_mine',
+    name: 'Діамантова копальня',
+    emoji: '⛏️',
+    desc: 'Добуває алмазний пил для надміцного тіста (+1.5% CPS)',
+    baseCost: 25,
+    baseCps: 350,
+    percentBonus: 0.015,
+    requireRebirth: 0,
+  },
+  {
+    id: 'd_palace',
+    name: 'Смарагдовий палац',
+    emoji: '🏛️',
+    desc: 'Королівська резиденція елітних пекарів (+2% CPS)',
+    baseCost: 50,
+    baseCps: 2000,
+    percentBonus: 0.02,
+    requireRebirth: 1,
+  },
+  {
+    id: 'd_lab',
+    name: 'Квантова лабораторія',
+    emoji: '🔬',
+    desc: 'Синтез нано-фокач вищої проби (+2.5% CPS)',
+    baseCost: 100,
+    baseCps: 15000,
+    percentBonus: 0.025,
+    requireRebirth: 2,
+  },
+  {
+    id: 'd_colossus',
+    name: 'Діамантовий колос',
+    emoji: '🗿',
+    desc: 'Древня статуя бога випічки (+3% CPS)',
+    baseCost: 200,
+    baseCps: 80000,
+    percentBonus: 0.03,
+    requireRebirth: 3,
+  },
+  {
+    id: 'd_citadel',
+    name: 'Зоряна цитадель',
+    emoji: '🌌',
+    desc: 'Генерує фокачі з зоряного пилу (+4% CPS)',
+    baseCost: 350,
+    baseCps: 350000,
+    percentBonus: 0.04,
+    requireRebirth: 4,
+  },
+];
+
+export const diamondBuildingCost = (b: DiamondBuilding, owned: number) =>
+  Math.floor(b.baseCost * Math.pow(1.35, owned));
+
 export interface VipUpgrade {
   id: string;
   name: string;
@@ -102,7 +180,13 @@ export const VIP_UPGRADES: VipUpgrade[] = [
   { id: 'vip_energy', name: 'Надзаряд', emoji: '⚡', desc: '+25 до максимальної енергії', cost: 15 },
   { id: 'vip_golden', name: 'Золота конюшина', emoji: '🍀', desc: 'Золота фокача з’являється удвічі частіше', cost: 20 },
   { id: 'vip_tax', name: 'Власний бухгалтер', emoji: '💼', desc: 'Податки знижено з 5% до 1%', cost: 25 },
+  { id: 'vip_crit', name: 'Алмазний фокус', emoji: '🎯', desc: 'Шанс криту 8% (було 5%), крит-урон x12 (було x10)', cost: 30 },
   { id: 'vip_chef', name: 'Зірка Мішлен', emoji: '👑', desc: '+30% до загального CPS назавжди', cost: 35 },
+  { id: 'vip_combo', name: 'Майстер комбо', emoji: '🌪️', desc: 'Комбо тримається 2.2с (було 1.2с) і спадає повільніше', cost: 35 },
+  { id: 'vip_magnet', name: 'Діамантовий магніт', emoji: '🧲', desc: '+50% шанс вибити 💎 зі шкідників, боси дають +1 💎', cost: 45 },
+  { id: 'vip_frenzy', name: 'Гіпер-френзі', emoji: '🔥', desc: 'Френзі триває 25с (замість 20с) та дає x8 замість x7', cost: 50 },
+  { id: 'vip_offline', name: 'Нічна пекарня', emoji: '🌙', desc: '75% доходу офлайн (замість 50%) до 12 годин', cost: 60 },
+  { id: 'vip_polish', name: 'Діамантове огранювання', emoji: '💎', desc: '+25% до ефективності всіх діамантових будівель', cost: 75 },
 ];
 
 export const ACHIEVEMENTS: Achievement[] = [
@@ -125,6 +209,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'a17', name: 'Дезінсектор', emoji: '🪲', desc: 'Знищи 5 шкідників', check: (s) => (s.pestsSquashed || 0) >= 5 },
   { id: 'a18', name: 'Вбивця босів', emoji: '⚔️', desc: 'Переможи першого боса', check: (s) => (s.bossesDefeated || 0) >= 1 },
   { id: 'a19', name: 'Діамантовий магнат', emoji: '💎', desc: 'Збери 10 діамантів', check: (s) => (s.diamonds || 0) >= 10 },
+  { id: 'a20', name: 'Діамантовий зодчий', emoji: '🏛️', desc: 'Побудуй першу діамантову будівлю', check: (s) => Object.values(s.diamondBuildings || {}).some((v) => v > 0) },
 ];
 
 export const buildingCost = (b: Building, owned: number) => Math.floor(b.baseCost * Math.pow(1.25, owned));

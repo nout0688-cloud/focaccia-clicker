@@ -3,8 +3,10 @@ import {
   ACHIEVEMENTS,
   BUILDINGS,
   CLICK_UPGRADES,
+  DIAMOND_BUILDINGS,
   VIP_UPGRADES,
   buildingCost,
+  diamondBuildingCost,
   formatCps,
   formatNum,
 } from './game/data';
@@ -90,6 +92,7 @@ interface SaveState {
   total: number;
   clicks: number;
   buildings: Record<string, number>;
+  diamondBuildings?: Record<string, number>;
   upgrades: string[];
   vipUpgrades: string[];
   achievements: string[];
@@ -175,6 +178,7 @@ const defaultState = (): SaveState => ({
   total: 0,
   clicks: 0,
   buildings: {},
+  diamondBuildings: {},
   upgrades: [],
   vipUpgrades: [],
   achievements: [],
@@ -276,6 +280,7 @@ export default function App() {
     haptic.light();
   };
   const [shopTab, setShopTab] = useState<ShopTab>('buildings');
+  const [vipSubTab, setVipSubTab] = useState<'buildings' | 'upgrades'>('buildings');
   const [phrase, setPhrase] = useState('Натисни!');
   const [golden, setGolden] = useState<{ x: number; y: number } | null>(null);
   const [frenzy, setFrenzy] = useState(0);
@@ -376,16 +381,26 @@ export default function App() {
     let adminIv: ReturnType<typeof setInterval> | undefined;
 
     loadState().then((s) => {
-      const elapsed = Math.min((Date.now() - s.lastSave) / 1000, 60 * 60 * 8);
+      const maxHours = s.vipUpgrades?.includes('vip_offline') ? 12 : 8;
+      const elapsed = Math.min((Date.now() - s.lastSave) / 1000, 60 * 60 * maxHours);
       if (elapsed > 30) {
         let base = 0;
         for (const b of BUILDINGS) base += (s.buildings[b.id] || 0) * b.cps;
+        const dPolish = s.vipUpgrades?.includes('vip_polish') ? 1.25 : 1.0;
+        let dPercentTotal = 0;
+        for (const db of DIAMOND_BUILDINGS) {
+          const owned = s.diamondBuildings?.[db.id] || 0;
+          base += owned * db.baseCps * dPolish;
+          dPercentTotal += owned * db.percentBonus * dPolish;
+        }
         let mult = 1;
         for (const u of CLICK_UPGRADES)
           if (u.cpsMult && s.upgrades.includes(u.id)) mult *= u.cpsMult;
         if (s.vipUpgrades?.includes('vip_chef')) mult *= 1.3;
+        mult *= (1 + dPercentTotal);
         const karmaMult = (s.karma ?? 100) < 50 ? 0.5 : 1; // погана карма — офлайн-дохід −50%
-        const gain = base * mult * (1 + s.prestige * 0.1) * elapsed * 0.5 * karmaMult;
+        const offlineRate = s.vipUpgrades?.includes('vip_offline') ? 0.75 : 0.5;
+        const gain = base * mult * (1 + s.prestige * 0.1) * elapsed * offlineRate * karmaMult;
         if (gain > 1) { s.focaccia += gain; s.total += gain; setOfflineGain(gain); }
       }
       setState(s);
@@ -497,16 +512,24 @@ export default function App() {
       const isBroken = brokenBuilding === b.id;
       base += (state.buildings[b.id] || 0) * b.cps * (isBroken ? 0.5 : 1);
     }
+    const dPolish = state.vipUpgrades?.includes('vip_polish') ? 1.25 : 1.0;
+    let dPercentTotal = 0;
+    for (const db of DIAMOND_BUILDINGS) {
+      const owned = state.diamondBuildings?.[db.id] || 0;
+      base += owned * db.baseCps * dPolish;
+      dPercentTotal += owned * db.percentBonus * dPolish;
+    }
     let mult = 1;
     for (const u of CLICK_UPGRADES) {
       if (u.cpsMult && state.upgrades.includes(u.id)) mult *= u.cpsMult;
     }
     if (state.vipUpgrades?.includes('vip_chef')) mult *= 1.3;
+    mult *= (1 + dPercentTotal);
     if (activeEvent) mult *= activeEvent.cpsMult;
     return base * mult * prestigeMult;
-  }, [state.buildings, state.upgrades, state.vipUpgrades, brokenBuilding, activeEvent, prestigeMult]);
+  }, [state.buildings, state.diamondBuildings, state.upgrades, state.vipUpgrades, brokenBuilding, activeEvent, prestigeMult]);
 
-  const frenzyMult = frenzy > 0 ? 7 : 1;
+  const frenzyMult = frenzy > 0 ? (state.vipUpgrades?.includes('vip_frenzy') ? 8 : 7) : 1;
   const comboMult = 1 + Math.min(combo, 100) * 0.02;
   const cpsRef = useRef(cps);
   cpsRef.current = cps * frenzyMult;
@@ -976,7 +999,10 @@ export default function App() {
   /* ---- Combo decay ---- */
   useEffect(() => {
     const iv = setInterval(() => {
-      if (Date.now() - lastClick.current > 1200) setCombo((c) => (c > 0 ? Math.max(0, c - 3) : 0));
+      const hasComboUp = stateRef.current.vipUpgrades?.includes('vip_combo');
+      const decayDelay = hasComboUp ? 2200 : 1200;
+      const decayAmount = hasComboUp ? 1 : 3;
+      if (Date.now() - lastClick.current > decayDelay) setCombo((c) => (c > 0 ? Math.max(0, c - decayAmount) : 0));
     }, 200);
     return () => clearInterval(iv);
   }, []);
@@ -1547,7 +1573,9 @@ export default function App() {
     const y = e.clientY - rect.top;
     const now = Date.now();
     const burning = karma < 25; // «фокачі пригорають» — Тінь бабусі
-    const newCombo = burning ? combo : (now - lastClick.current < 1200 ? combo + 1 : 1);
+    const hasComboUp = stateRef.current.vipUpgrades?.includes('vip_combo');
+    const comboDelay = hasComboUp ? 2200 : 1200;
+    const newCombo = burning ? combo : (now - lastClick.current < comboDelay ? combo + 1 : 1);
     lastClick.current = now;
     setCombo(newCombo);
     if (!burning && [25, 50, 75, 100].includes(newCombo)) {
@@ -1556,8 +1584,11 @@ export default function App() {
       haptic.success();
     }
 
-    const crit = !burning && Math.random() < 0.05;
-    const gain = clickPower * comboMult * frenzyMult * (crit ? 10 : 1) * (burning ? 0.05 : 1);
+    const hasCritUp = stateRef.current.vipUpgrades?.includes('vip_crit');
+    const critChance = hasCritUp ? 0.08 : 0.05;
+    const critMultVal = hasCritUp ? 12 : 10;
+    const crit = !burning && Math.random() < critChance;
+    const gain = clickPower * comboMult * frenzyMult * (crit ? critMultVal : 1) * (burning ? 0.05 : 1);
 
     setState((p) => {
       const newEnergy = p.energy - 1;
@@ -1624,7 +1655,8 @@ export default function App() {
 
       if (newHp <= 0) {
         // Boss defeated — apply rewards outside this setter via setState
-        const rDiamonds = currentBoss.rewardDiamonds;
+        const hasMagnet = stateRef.current.vipUpgrades?.includes('vip_magnet');
+        const rDiamonds = currentBoss.rewardDiamonds + (hasMagnet ? 1 : 0);
         const rFocaccia = currentBoss.rewardFocaccia;
         setBossSlain({ emoji: currentBoss.emoji, id: ++floatId.current });
         doFlash('success');
@@ -1656,7 +1688,8 @@ export default function App() {
     haptic.heavy();
     burstConfetti(['💀', '🪲', '✨', '⭐']);
 
-    const gotDiamond = Math.random() < 0.4;
+    const hasMagnet = stateRef.current.vipUpgrades?.includes('vip_magnet');
+    const gotDiamond = Math.random() < (hasMagnet ? 0.6 : 0.4);
     const bonus = Math.max(50, Math.floor((cpsRef.current || 10) * 15));
     const cur = stateRef.current;
     const next: SaveState = {
@@ -1746,6 +1779,32 @@ export default function App() {
     haptic.success();
   };
 
+  const buyDiamondBuilding = (id: string) => {
+    const b = DIAMOND_BUILDINGS.find((x) => x.id === id);
+    if (!b) return;
+    const cur = stateRef.current;
+    if ((b.requireRebirth || 0) > cur.prestige) return;
+    const owned = cur.diamondBuildings?.[id] || 0;
+    const cost = diamondBuildingCost(b, owned);
+    if (cur.diamonds < cost) {
+      addToast('Не вистачає діамантів', `Потрібно 💎 ${cost} діамантів`, '❌');
+      return;
+    }
+    const next: SaveState = {
+      ...cur,
+      diamonds: cur.diamonds - cost,
+      diamondBuildings: {
+        ...(cur.diamondBuildings || {}),
+        [id]: owned + 1,
+      },
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+    addToast('Збудовано!', `${b.name} (${owned + 1})`, b.emoji);
+    haptic.success();
+  };
+
   const catchGolden = () => {
     setGolden(null);
     haptic.heavy();
@@ -1755,8 +1814,11 @@ export default function App() {
     let bonus = 0;
     let dGain = 0;
     if (roll < 0.45) {
-      setFrenzy(20);
-      addToast('ФРЕНЗІ!', 'x7 до всього на 20 секунд!', '🔥');
+      const hasFrenzyUp = stateRef.current.vipUpgrades?.includes('vip_frenzy');
+      const dur = hasFrenzyUp ? 25 : 20;
+      const mult = hasFrenzyUp ? 8 : 7;
+      setFrenzy(dur);
+      addToast('ФРЕНЗІ!', `x${mult} до всього на ${dur} секунд!`, '🔥');
     } else if (roll < 0.8) {
       bonus = Math.max(cps * 60 * 3, clickPower * 200, 50);
       addToast('Удача!', `+${formatNum(bonus)} фокач!`, '✨');
@@ -1782,7 +1844,7 @@ export default function App() {
     if (prestigeGain < 1) return;
     setConfirmModal({
       title: 'Ребіртх', emoji: '🔄',
-      text: `Зробити +${prestigeGain} Ребіртх? (+${prestigeGain * 10}% до всього назавжди, +${prestigeGain * 5} енергії, та розблокування нових будівель і прокачок!). Фокачі та будівлі скинуться, але 💎 діаманти та ВІП залишаться!`,
+      text: `Зробити +${prestigeGain} Ребіртх? (+${prestigeGain * 10}% до всього назавжди, +${prestigeGain * 5} енергії, та розблокування нових будівель і прокачок!). Фокачі та звичайні будівлі скинуться, але 💎 діаманти, діамантові будівлі та ВІП залишаться!`,
       onConfirm: () => {
         const cur = stateRef.current;
         const next: SaveState = {
@@ -1790,6 +1852,7 @@ export default function App() {
           prestige: cur.prestige + prestigeGain,
           diamonds: cur.diamonds,
           vipUpgrades: cur.vipUpgrades,
+          diamondBuildings: cur.diamondBuildings,
           achievements: cur.achievements,
           goldenCaught: cur.goldenCaught,
           maxCombo: cur.maxCombo,
@@ -1824,7 +1887,9 @@ export default function App() {
     });
   };
 
-  const totalBuildings = Object.values(state.buildings).reduce((a, b) => a + b, 0);
+  const totalRegularBuildings = Object.values(state.buildings).reduce((a, b) => a + b, 0);
+  const totalDiamondBuildings = Object.values(state.diamondBuildings || {}).reduce((a, b) => a + b, 0);
+  const totalBuildings = totalRegularBuildings + totalDiamondBuildings;
   const energyPercent = (state.energy / maxEnergy) * 100;
 
   /* ---- Loading ---- */
@@ -2300,9 +2365,9 @@ export default function App() {
           <div className={cn('h-full flex flex-col', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
             <div className="flex shrink-0 p-1.5 gap-1">
               {([
-                ['buildings', '🏗️', 'Будівлі', totalBuildings],
+                ['buildings', '🏗️', 'Будівлі', totalRegularBuildings],
                 ['upgrades', '⚡', 'Апгрейди', state.upgrades.length],
-                ['vip', '💎', 'ВІП', state.vipUpgrades?.length || 0],
+                ['vip', '💎', 'ВІП', totalDiamondBuildings + (state.vipUpgrades?.length || 0)],
                 ['achievements', '🏆', 'Досягн.', state.achievements.length],
               ] as [ShopTab, string, string, number][]).map(([id, icon, label, count]) => (
                 <button
@@ -2322,7 +2387,21 @@ export default function App() {
 
             <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1.5">
               {/* BUILDINGS */}
-              {shopTab === 'buildings' && BUILDINGS.map((b, i) => {
+              {shopTab === 'buildings' && (<>
+                <div
+                  onClick={() => { setShopTab('vip'); setVipSubTab('buildings'); }}
+                  className="glass-card cursor-pointer border border-cyan-500/30 bg-gradient-to-r from-cyan-950/40 via-blue-950/20 to-amber-950/30 p-2.5 rounded-xl flex items-center justify-between mb-1 active:scale-[0.98] transition-all"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl animate-diamond">💎</span>
+                    <div>
+                      <div className="text-xs font-bold text-cyan-200">Діамантові будівлі</div>
+                      <div className="text-[10px] text-cyan-300/60">Постійний дохід та % бонуси до всього CPS</div>
+                    </div>
+                  </div>
+                  <span className="text-xs text-cyan-400 font-black">Перейти ➔</span>
+                </div>
+                {BUILDINGS.map((b, i) => {
                 const owned = state.buildings[b.id] || 0;
                 const cost = buildingCost(b, owned);
                 const can = state.focaccia >= cost;
@@ -2400,7 +2479,7 @@ export default function App() {
                     )}
                   </div>
                 );
-              })}
+              })}</>)}
 
               {/* UPGRADES */}
               {shopTab === 'upgrades' && (<>
@@ -2471,14 +2550,113 @@ export default function App() {
               {/* VIP / DIAMONDS SHOP */}
               {shopTab === 'vip' && (
                 <div className="space-y-2">
-                  <div className="glass-card rounded-xl p-3 flex items-center justify-between border-cyan-500/30 bg-cyan-950/20">
-                    <div>
-                      <div className="text-xs font-black text-cyan-200">💎 Твої діаманти: {state.diamonds}</div>
-                      <div className="text-[10px] text-cyan-300/60">Здобувай за перемогу над босами, шкідників та досягнення!</div>
+                  <div className="glass-card rounded-xl p-3 border-cyan-500/30 bg-cyan-950/20">
+                    <div className="flex items-center justify-between mb-2.5">
+                      <div>
+                        <div className="text-xs font-black text-cyan-200">💎 Твої діаманти: {state.diamonds}</div>
+                        <div className="text-[10px] text-cyan-300/60">Зберігаються при ребіртхах назавжди!</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] text-cyan-300/50">Діамантові будівлі:</div>
+                        <div className="text-xs font-bold text-cyan-300 tabular-nums">🏛️ {totalDiamondBuildings} шт.</div>
+                      </div>
+                    </div>
+
+                    {/* Sub-tab switcher */}
+                    <div className="flex bg-black/40 p-1 rounded-lg gap-1 border border-cyan-500/20">
+                      <button
+                        onClick={() => { setVipSubTab('buildings'); haptic.light(); }}
+                        className={cn(
+                          'flex-1 py-1.5 text-xs font-bold rounded-md transition-all',
+                          vipSubTab === 'buildings'
+                            ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 shadow'
+                            : 'text-cyan-400/50 hover:text-cyan-300',
+                        )}
+                      >
+                        🏛️ Будівлі ({totalDiamondBuildings})
+                      </button>
+                      <button
+                        onClick={() => { setVipSubTab('upgrades'); haptic.light(); }}
+                        className={cn(
+                          'flex-1 py-1.5 text-xs font-bold rounded-md transition-all',
+                          vipSubTab === 'upgrades'
+                            ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 shadow'
+                            : 'text-cyan-400/50 hover:text-cyan-300',
+                        )}
+                      >
+                        ⚡ Апгрейди ({state.vipUpgrades?.length || 0})
+                      </button>
                     </div>
                   </div>
 
-                  {VIP_UPGRADES.map((u, i) => {
+                  {/* DIAMOND BUILDINGS SUB-TAB */}
+                  {vipSubTab === 'buildings' && DIAMOND_BUILDINGS.map((b, i) => {
+                    const owned = state.diamondBuildings?.[b.id] || 0;
+                    const cost = diamondBuildingCost(b, owned);
+                    const can = state.diamonds >= cost;
+                    const isRebirthLocked = (b.requireRebirth || 0) > state.prestige;
+                    const dPolish = state.vipUpgrades?.includes('vip_polish') ? 1.25 : 1.0;
+                    const effectiveCps = b.baseCps * dPolish * prestigeMult;
+
+                    if (isRebirthLocked) {
+                      return (
+                        <div key={b.id} style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }} className="glass-card rounded-xl p-2.5 flex items-center gap-2.5 opacity-50 border border-cyan-500/15 animate-card">
+                          <div className="w-10 h-10 rounded-xl bg-black/40 flex items-center justify-center text-xl shrink-0 grayscale">
+                            🔒
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-cyan-100/70 text-[13px] flex justify-between">
+                              <span className="truncate">{b.name}</span>
+                              <span className="text-fuchsia-400 text-xs font-bold">Ребіртх {b.requireRebirth} 🔄</span>
+                            </div>
+                            <div className="text-[10px] text-cyan-400/50 truncate">
+                              Потрібен {b.requireRebirth} ребіртх для розблокування
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <button
+                        key={b.id}
+                        onClick={() => buyDiamondBuilding(b.id)}
+                        disabled={!can}
+                        style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
+                        className={cn(
+                          'relative w-full text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all active:scale-[0.98] animate-card',
+                          can ? 'glass-card border-cyan-500/30 glass-card-hover' : 'glass-card opacity-40',
+                        )}
+                      >
+                        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 transition-colors', can ? 'bg-cyan-500/15' : 'bg-black/30')}>
+                          {b.emoji}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-cyan-100/90 text-[13px] flex justify-between">
+                            <span className="truncate">{b.name}</span>
+                            <span className="text-cyan-300/80 tabular-nums ml-2 text-xs font-bold">{owned}</span>
+                          </div>
+                          <div className="text-[10px] text-cyan-300/60 truncate">{b.desc}</div>
+                          <div className="text-[10px] mt-0.5 flex justify-between items-center">
+                            <span className={cn('font-bold', can ? 'text-cyan-300' : 'text-red-400/70')}>
+                              💎 {formatNum(cost)}
+                            </span>
+                            <span className="text-cyan-300/70 font-medium">
+                              +{formatCps(effectiveCps)}/с • +{(b.percentBonus * 100).toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+                        {can && (
+                          <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
+                            <span className="vip-shine absolute inset-y-0 left-0 w-10 bg-cyan-400/10" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  {/* DIAMOND UPGRADES SUB-TAB */}
+                  {vipSubTab === 'upgrades' && VIP_UPGRADES.map((u, i) => {
                     const bought = state.vipUpgrades?.includes(u.id);
                     const can = state.diamonds >= u.cost && !bought;
                     return (
@@ -2486,7 +2664,7 @@ export default function App() {
                         key={u.id}
                         onClick={() => buyVipUpgrade(u.id)}
                         disabled={bought || !can}
-                        style={{ animationDelay: `${Math.min(i, 10) * 45}ms` }}
+                        style={{ animationDelay: `${Math.min(i, 12) * 45}ms` }}
                         className={cn(
                           'relative w-full overflow-hidden text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all active:scale-[0.98] animate-card',
                           bought
