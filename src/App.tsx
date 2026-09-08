@@ -2259,45 +2259,86 @@ export default function App() {
       )}
 
       {/* ===== TOP BAR ===== */}
-      <div className="relative z-10 shrink-0 glass border-b border-amber-500/15 px-4 py-2">
-        <div className="flex items-center justify-between">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <div key={state.clicks} className="animate-num-pop text-2xl font-black tabular-nums leading-tight">
-                <span className={cn('text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300', frenzy > 0 && 'animate-rainbow')}>{formatNum(state.focaccia)}</span>
-                <span className="text-xl ml-1">🫓</span>
-              </div>
-              <div className="flex items-center gap-1 bg-cyan-500/15 border border-cyan-500/30 px-2 py-0.5 rounded-lg text-xs font-black text-cyan-300 animate-diamond">
-                <span>💎</span>
-                <span>{state.diamonds}</span>
-              </div>
-            </div>
-            <div className="text-amber-400/60 text-[11px] font-medium mt-0.5">
-              {formatCps(cps * frenzyMult)}{t.topBarPerSec} • {formatNum(clickPower * comboMult * frenzyMult)}{t.topBarPerClick}
+      <div className="relative z-10 shrink-0 glass border-b border-amber-500/15 px-3.5 py-2 select-none">
+        {/* Row 1: Primary Balances (Focaccia on left, Diamonds & Rebirth on right) */}
+        <div className="flex items-center justify-between gap-2">
+          {/* Main Focaccia Counter */}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <div key={state.clicks} className="animate-num-pop text-2xl font-black tabular-nums leading-none tracking-tight">
+              <span className={cn('text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300', frenzy > 0 && 'animate-rainbow')}>
+                {formatNum(state.focaccia)}
+              </span>
+              <span className="text-xl ml-1">🫓</span>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+
+          {/* Persistent Meta-Currencies (Diamonds & Rebirth) */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Diamonds Pill */}
+            <button
+              type="button"
+              onClick={() => { goPage('shop'); setShopTab('vip'); }}
+              className="flex items-center gap-1 bg-cyan-500/15 hover:bg-cyan-500/25 active:scale-95 transition-all border border-cyan-500/30 px-2 py-0.5 rounded-lg text-xs font-black text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.15)] whitespace-nowrap cursor-pointer"
+              title={lang === 'uk' ? '💎 Алмази (ВІП Магазин)' : '💎 Алмазы (ВИП Магазин)'}
+            >
+              <span className="animate-diamond">💎</span>
+              <span className="tabular-nums font-mono">{formatNum(state.diamonds)}</span>
+            </button>
+
+            {/* Rebirth Pill */}
+            {state.prestige > 0 && (
+              <button
+                type="button"
+                onClick={() => goPage('other')}
+                className="flex items-center gap-1 bg-fuchsia-500/15 hover:bg-fuchsia-500/25 active:scale-95 transition-all border border-fuchsia-500/30 px-2 py-0.5 rounded-lg text-xs font-black text-fuchsia-300 shadow-[0_0_8px_rgba(217,70,239,0.15)] whitespace-nowrap cursor-pointer"
+                title={lang === 'uk' 
+                  ? `🔄 Ребіртх: ${state.prestige.toLocaleString()} (+${(state.prestige * 10).toLocaleString()}%)` 
+                  : `🔄 Ребиртх: ${state.prestige.toLocaleString()} (+${(state.prestige * 10).toLocaleString()}%)`}
+              >
+                <span>🔄</span>
+                <span className="tabular-nums font-mono">{formatNum(state.prestige)}</span>
+                <span className="text-[10px] font-bold text-fuchsia-300/80">+{formatNum(state.prestige * 10)}%</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Row 2: Production Rates & Active Buffs / Alerts */}
+        <div className="flex items-center justify-between gap-2 mt-1 min-h-[18px]">
+          {/* Income Rates */}
+          <div className="text-amber-400/70 text-[11px] font-medium truncate flex items-center gap-1.5 tabular-nums">
+            <span>{formatCps(cps * frenzyMult)}{t.topBarPerSec}</span>
+            <span className="text-amber-500/30 font-bold">•</span>
+            <span>{formatNum(clickPower * comboMult * frenzyMult)}{t.topBarPerClick}</span>
+          </div>
+
+          {/* Active Buffs / Temporary Statuses */}
+          <div className="flex items-center gap-1.5 shrink-0">
             {brokenBuilding && (
-              <div onClick={() => { goPage('shop'); setShopTab('buildings'); }} className="cursor-pointer text-red-300 text-[10px] font-black bg-red-500/25 px-2 py-1 rounded-full border border-red-500/40 animate-pulse">
-                {t.topBarBroken}
-              </div>
+              <button
+                type="button"
+                onClick={() => { goPage('shop'); setShopTab('buildings'); }}
+                className="cursor-pointer active:scale-95 transition-all text-red-300 text-[10px] font-black bg-red-500/25 hover:bg-red-500/35 px-2 py-0.5 rounded-full border border-red-500/40 animate-pulse flex items-center gap-1 shadow-[0_0_8px_rgba(239,68,68,0.3)] whitespace-nowrap"
+              >
+                <span>🔧</span>
+                <span>{t.topBarBroken}</span>
+              </button>
             )}
             {activeEvent && (
               <div className={cn(
-                'text-[10px] font-black px-2 py-1 rounded-full border animate-pulse',
-                activeEvent.cpsMult > 1 ? 'text-amber-200 bg-amber-500/20 border-amber-500/40' : 'text-blue-300 bg-blue-500/20 border-blue-500/40',
+                'text-[10px] font-black px-2 py-0.5 rounded-full border animate-pulse flex items-center gap-1 whitespace-nowrap',
+                activeEvent.cpsMult > 1 
+                  ? 'text-amber-200 bg-amber-500/20 border-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.2)]' 
+                  : 'text-blue-300 bg-blue-500/20 border-blue-500/40 shadow-[0_0_8px_rgba(59,130,246,0.2)]',
               )}>
-                {activeEvent.emoji} {activeEvent.timeLeft}с
+                <span>{activeEvent.emoji}</span>
+                <span>{activeEvent.timeLeft}с</span>
               </div>
             )}
             {frenzy > 0 && (
-              <div className="text-orange-300 font-black animate-pulse text-xs bg-gradient-to-r from-orange-500/20 to-red-500/20 px-2.5 py-1 rounded-full border border-orange-500/40">
-                🔥 x7 {frenzy}с
-              </div>
-            )}
-            {state.prestige > 0 && frenzy <= 0 && !activeEvent && (
-              <div className="text-fuchsia-300 text-[10px] font-bold bg-fuchsia-500/15 px-2 py-1 rounded-full border border-fuchsia-500/25">
-                {formatTemplate(t.topBarRebirth, state.prestige, state.prestige * 10)}
+              <div className="text-orange-300 font-black animate-pulse text-[10px] bg-gradient-to-r from-orange-500/20 to-red-500/20 px-2 py-0.5 rounded-full border border-orange-500/40 flex items-center gap-1 shadow-[0_0_8px_rgba(249,115,22,0.3)] whitespace-nowrap">
+                <span>🔥</span>
+                <span>x7 {frenzy}с</span>
               </div>
             )}
           </div>
