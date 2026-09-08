@@ -467,7 +467,7 @@ export default function App() {
                   saveNow(next);
                   return next;
                 });
-                addToast(curT.toastDuelReward, formatTemplate(curT.toastDuelRewardDesc, formatNum(data.diamonds)), '💎');
+                addToast(curT.toastDiamondReward, formatTemplate(curT.toastDiamondRewardDesc, formatNum(data.diamonds)), '💎');
                 haptic.success();
                 setTimeout(reportSync, 100);
               }
