@@ -324,6 +324,19 @@ export const BOSSES_I18N: Record<string, Record<Lang, string>> = {
   mold: { uk: 'Мутантна Цвіль', ru: 'Мутантная Плесень' },
   fire: { uk: 'Пекельна Пожежа', ru: 'Адский Пожар' },
   mafia: { uk: 'Дон Фокачіо', ru: 'Дон Фокаччио' },
+  chef: { uk: 'Шеф-Конкурент', ru: 'Шеф-Конкурент' },
+  inspector: { uk: 'Суворий Ревізор', ru: 'Грозный Ревизор' },
+  dragon: { uk: 'Пекельний Дракон', ru: 'Адский Дракон' },
+  golem: { uk: 'Тісто-Титан', ru: 'Тесто-Титан' },
+};
+
+export type BossDifficulty = 'easy' | 'medium' | 'hard' | 'epic';
+
+export const BOSS_DIFFICULTY_I18N: Record<BossDifficulty, Record<Lang, string>> = {
+  easy: { uk: 'Легкий', ru: 'Лёгкий' },
+  medium: { uk: 'Середній', ru: 'Средний' },
+  hard: { uk: 'Важкий', ru: 'Тяжёлый' },
+  epic: { uk: 'Епічний', ru: 'Эпический' },
 };
 
 export const PESTS_I18N: Record<string, Record<Lang, string>> = {
@@ -342,6 +355,7 @@ export const TRANSLATIONS = {
 
     // Clicker
     attackBtn: 'АТАКУВАТИ! ({0}/{1} HP)',
+    bossReward: 'Нагорода: +{0} 💎',
     combo: 'КОМБО',
     recharging: '⏳ ПЕРЕЗАРЯДКА',
     energy: '⚡ ЕНЕРГІЯ',
@@ -477,7 +491,7 @@ export const TRANSLATIONS = {
       '• 💎 Діаманти та ВІП-прокачки НЕ зникають після ребіртху',
     ],
     resetBtn: '🗑️ Скинути гру повністю',
-    gameVersion: 'ФОКАЧА КЛІКЕР v1.2.6',
+    gameVersion: 'ФОКАЧА КЛІКЕР v1.2.7',
 
     // Bottom Nav
     navShop: 'Прокачки',
@@ -638,6 +652,7 @@ export const TRANSLATIONS = {
 
     // Clicker
     attackBtn: 'АТАКОВАТЬ! ({0}/{1} HP)',
+    bossReward: 'Награда: +{0} 💎',
     combo: 'КОМБО',
     recharging: '⏳ ПЕРЕЗАРЯДКА',
     energy: '⚡ ЭНЕРГИЯ',
@@ -773,7 +788,7 @@ export const TRANSLATIONS = {
       '• 💎 Алмазы и ВИП-прокачки НЕ пропадают после ребиртха',
     ],
     resetBtn: '🗑️ Сбросить игру полностью',
-    gameVersion: 'ФОКАЧЧА КЛИКЕР v1.2.6',
+    gameVersion: 'ФОКАЧЧА КЛИКЕР v1.2.7',
 
     // Bottom Nav
     navShop: 'Прокачки',
@@ -957,6 +972,10 @@ export function getAchievementText(aId: string, lang: Lang): LocalizedItem {
 
 export function getBossName(bossId: string, lang: Lang): string {
   return BOSSES_I18N[bossId]?.[lang] || bossId;
+}
+
+export function getBossDifficultyName(diff: BossDifficulty, lang: Lang): string {
+  return BOSS_DIFFICULTY_I18N[diff]?.[lang] || diff;
 }
 
 export function getPestName(emoji: string, lang: Lang): string {

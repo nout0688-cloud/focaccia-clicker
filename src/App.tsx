@@ -21,6 +21,8 @@ import {
   getVipUpgradeText,
   getAchievementText,
   getBossName,
+  getBossDifficultyName,
+  BossDifficulty,
   getPestName,
 } from './game/i18n';
 import { cn } from './utils/cn';
@@ -247,6 +249,7 @@ interface Boss {
   timeLeft: number;
   rewardDiamonds: number;
   rewardFocaccia: number;
+  difficulty?: BossDifficulty;
 }
 
 interface Pest {
@@ -319,11 +322,32 @@ async function loadState(): Promise<SaveState> {
   } catch { return defaultState(); }
 }
 
-const BOSS_TYPES = [
-  { id: 'rat', emoji: '🐀', hp: 30, time: 20, diamonds: 3, timeCps: 60 },
-  { id: 'mold', emoji: '🦠', hp: 45, time: 22, diamonds: 5, timeCps: 120 },
-  { id: 'fire', emoji: '🔥', hp: 60, time: 25, diamonds: 8, timeCps: 180 },
-  { id: 'mafia', emoji: '🤵', hp: 80, time: 30, diamonds: 12, timeCps: 300 },
+interface BossType {
+  id: string;
+  emoji: string;
+  hp: number;
+  time: number;
+  diamonds: number;
+  timeCps: number;
+  difficulty: BossDifficulty;
+  minTotal?: number;
+  minPrestige?: number;
+}
+
+const BOSS_TYPES: BossType[] = [
+  // Легкі
+  { id: 'rat', emoji: '🐀', hp: 30, time: 20, diamonds: 3, timeCps: 60, difficulty: 'easy', minTotal: 3000 },
+  { id: 'mold', emoji: '🦠', hp: 45, time: 22, diamonds: 5, timeCps: 120, difficulty: 'easy', minTotal: 10000 },
+
+  // Середні
+  { id: 'fire', emoji: '🔥', hp: 65, time: 25, diamonds: 8, timeCps: 180, difficulty: 'medium', minTotal: 30000 },
+  { id: 'mafia', emoji: '🤵', hp: 90, time: 28, diamonds: 12, timeCps: 300, difficulty: 'medium', minTotal: 80000 },
+  { id: 'chef', emoji: '👨‍🍳', hp: 120, time: 30, diamonds: 16, timeCps: 450, difficulty: 'medium', minTotal: 250000 },
+  { id: 'inspector', emoji: '🕵️‍♂️', hp: 155, time: 30, diamonds: 22, timeCps: 650, difficulty: 'medium', minTotal: 1000000 },
+
+  // Важкі та Епічні
+  { id: 'dragon', emoji: '🐉', hp: 220, time: 32, diamonds: 35, timeCps: 1000, difficulty: 'hard', minTotal: 5000000 },
+  { id: 'golem', emoji: '🗿', hp: 300, time: 35, diamonds: 50, timeCps: 1600, difficulty: 'epic', minTotal: 25000000, minPrestige: 1 },
 ];
 
 const PEST_TYPES = [
@@ -1408,9 +1432,14 @@ export default function App() {
     if (loading) return;
     const iv = setInterval(() => {
       if (boss || stateRef.current.total < 3000) return;
-      // Spawn random boss
-      const curT = TRANSLATIONS[langRef.current];
-      const bType = BOSS_TYPES[Math.floor(Math.random() * BOSS_TYPES.length)];
+      // Filter available bosses based on progression
+      const total = stateRef.current.total;
+      const prestige = stateRef.current.prestige || 0;
+      const available = BOSS_TYPES.filter(
+        (b) => (b.minTotal || 0) <= total && (b.minPrestige || 0) <= prestige
+      );
+      const pool = available.length > 0 ? available : BOSS_TYPES.slice(0, 2);
+      const bType = pool[Math.floor(Math.random() * pool.length)];
       const currentCps = Math.max(10, cpsRef.current);
       const bName = getBossName(bType.id, langRef.current);
       setBoss({
@@ -1422,6 +1451,7 @@ export default function App() {
         timeLeft: bType.time,
         rewardDiamonds: bType.diamonds,
         rewardFocaccia: Math.max(100, Math.floor(currentCps * bType.timeCps)),
+        difficulty: bType.difficulty,
       });
       addToast(curT.toastBossArrived, formatTemplate(curT.toastBossArrivedDesc, bName), bType.emoji);
       haptic.heavy();
@@ -3842,22 +3872,60 @@ export default function App() {
 
             {/* Boss Battle Banner if boss is active */}
             {boss ? (
-              <div className="w-full max-w-xs glass border-2 border-red-500/60 rounded-2xl p-3 shadow-[0_0_30px_rgba(239,68,68,0.4)] text-center animate-boss">
-                <div className="flex items-center justify-between text-xs font-black text-red-300 mb-1">
-                  <span>🚨 {getBossName(boss.id, lang)}</span>
-                  <span className={cn('tabular-nums font-mono', boss.timeLeft <= 5 && 'text-red-400 font-bold animate-bounce')}>
+              <div className={cn(
+                "w-full max-w-xs glass rounded-2xl p-3 text-center animate-boss border-2 transition-all",
+                boss.difficulty === 'easy' && 'border-emerald-500/60 shadow-[0_0_25px_rgba(16,185,129,0.35)]',
+                boss.difficulty === 'medium' && 'border-amber-500/70 shadow-[0_0_30px_rgba(245,158,11,0.4)]',
+                boss.difficulty === 'hard' && 'border-red-500/80 shadow-[0_0_35px_rgba(239,68,68,0.5)]',
+                boss.difficulty === 'epic' && 'border-purple-500/80 shadow-[0_0_40px_rgba(168,85,247,0.6)]',
+                !boss.difficulty && 'border-red-500/60 shadow-[0_0_30px_rgba(239,68,68,0.4)]'
+              )}>
+                <div className="flex items-center justify-between text-xs font-black mb-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="truncate text-red-300">🚨 {getBossName(boss.id, lang)}</span>
+                    {boss.difficulty && (
+                      <span className={cn(
+                        'text-[9px] px-1.5 py-0.5 rounded font-bold uppercase shrink-0',
+                        boss.difficulty === 'easy' && 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40',
+                        boss.difficulty === 'medium' && 'bg-amber-500/20 text-amber-300 border border-amber-500/40',
+                        boss.difficulty === 'hard' && 'bg-red-500/25 text-red-300 border border-red-500/40',
+                        boss.difficulty === 'epic' && 'bg-purple-500/30 text-purple-300 border border-purple-500/50 animate-pulse'
+                      )}>
+                        {getBossDifficultyName(boss.difficulty, lang)}
+                      </span>
+                    )}
+                  </div>
+                  <span className={cn('tabular-nums font-mono shrink-0 ml-1.5', boss.timeLeft <= 5 ? 'text-red-400 font-bold animate-bounce' : 'text-red-300')}>
                     ⏱️ {boss.timeLeft}с
                   </span>
                 </div>
+
+                {/* Reward preview */}
+                <div className="flex items-center justify-center gap-1.5 text-[10px] text-amber-300 font-semibold mb-1.5 bg-black/30 rounded-lg py-0.5 border border-amber-500/20">
+                  <span>{formatTemplate(t.bossReward, boss.rewardDiamonds)}</span>
+                  <span className="opacity-40">•</span>
+                  <span>+{formatNum(boss.rewardFocaccia)} 🫓</span>
+                </div>
+
                 <div className="h-2.5 bg-black/60 rounded-full overflow-hidden border border-red-500/30 mb-2">
                   <div
-                    className="h-full bg-gradient-to-r from-red-600 via-red-500 to-orange-400 transition-all duration-100"
+                    className={cn(
+                      "h-full transition-all duration-100",
+                      boss.difficulty === 'epic'
+                        ? 'bg-gradient-to-r from-purple-600 via-pink-500 to-amber-400'
+                        : 'bg-gradient-to-r from-red-600 via-red-500 to-orange-400'
+                    )}
                     style={{ width: `${(boss.currentHp / boss.maxHp) * 100}%` }}
                   />
                 </div>
                 <button
                   onClick={attackBoss}
-                  className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white font-black py-2 rounded-xl text-sm transition active:scale-95 shadow-lg shadow-red-600/30 flex items-center justify-center gap-2"
+                  className={cn(
+                    "w-full text-white font-black py-2 rounded-xl text-sm transition active:scale-95 shadow-lg flex items-center justify-center gap-2",
+                    boss.difficulty === 'epic'
+                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-purple-600/30'
+                      : 'bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 shadow-red-600/30'
+                  )}
                 >
                   <span className="text-xl">{boss.emoji}</span>
                   <span>{formatTemplate(t.attackBtn, boss.currentHp, boss.maxHp)}</span>
