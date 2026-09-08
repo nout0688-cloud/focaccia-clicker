@@ -24,12 +24,27 @@ import {
   getPestName,
 } from './game/i18n';
 import { cn } from './utils/cn';
+import {
+  AVATAR_FRAMES,
+  NAME_COLOR_STYLES,
+  SHOWCASE_METRICS,
+  getAvatarFrame,
+  getNameColorStyle,
+  getShowcaseMetric,
+} from './game/cosmetics';
+import type { AvatarFrame, NameColorStyle, ShowcaseMetric } from './game/cosmetics';
 import focacciaImg from './assets/focaccia.png';
 import goldenImg from './assets/golden.png';
 
 /* ---- Telegram WebApp ---- */
 const tg = window.Telegram?.WebApp;
-const tgUser = (tg?.initDataUnsafe?.user || undefined) as { id?: number; first_name?: string; username?: string } | undefined;
+const tgUser = (tg?.initDataUnsafe?.user || undefined) as {
+  id?: number;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+} | undefined;
 const API_BASE = 'https://focaccia-bot.vercel.app';
 
 /* ---- Storage: Smart conflict resolver (localStorage + CloudStorage) ---- */
@@ -123,6 +138,13 @@ interface SaveState {
   lang?: 'uk' | 'ru'; // мова інтерфейсу
   lastReset: number;
   lastSave: number;
+  cosmetics?: {
+    ownedFrames: string[];
+    ownedNameColors: string[];
+    equippedFrame: string;
+    equippedNameColor: string;
+    showcase: string[];
+  };
 }
 
 interface FloatText {
@@ -209,6 +231,13 @@ const defaultState = (): SaveState => ({
   lang: 'uk',
   lastReset: 0,
   lastSave: Date.now(),
+  cosmetics: {
+    ownedFrames: ['frame_default'],
+    ownedNameColors: ['name_default'],
+    equippedFrame: 'frame_default',
+    equippedNameColor: 'name_default',
+    showcase: ['clicks', 'total', 'diamonds'],
+  },
 });
 
 async function loadState(): Promise<SaveState> {
@@ -217,7 +246,18 @@ async function loadState(): Promise<SaveState> {
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw);
     delete parsed.photo;
-    return { ...defaultState(), ...parsed };
+    const def = defaultState();
+    return {
+      ...def,
+      ...parsed,
+      cosmetics: {
+        ...def.cosmetics!,
+        ...(parsed.cosmetics || {}),
+        ownedFrames: parsed.cosmetics?.ownedFrames?.length ? parsed.cosmetics.ownedFrames : def.cosmetics!.ownedFrames,
+        ownedNameColors: parsed.cosmetics?.ownedNameColors?.length ? parsed.cosmetics.ownedNameColors : def.cosmetics!.ownedNameColors,
+        showcase: parsed.cosmetics?.showcase?.length ? parsed.cosmetics.showcase : def.cosmetics!.showcase,
+      },
+    };
   } catch { return defaultState(); }
 }
 
@@ -248,6 +288,9 @@ interface LeaderRow {
   diamonds?: number;
   flag?: boolean;
   online?: boolean;
+  frame?: string;
+  color?: string;
+  avatar?: string;
 }
 
 // TapSentinel v5.1: сырой тап — performance.now() для ритма, Date.now() для сессий
@@ -311,6 +354,11 @@ export default function App() {
   const [leadersLoading, setLeadersLoading] = useState(false);
   const [myRank, setMyRank] = useState<number | null>(null);
   const [leaderCategory, setLeaderCategory] = useState<LeaderCategory>('focaccia');
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileTab, setProfileTab] = useState<'overview' | 'shop'>('overview');
+  const [cosmeticShopTab, setCosmeticShopTab] = useState<'frames' | 'colors'>('frames');
+  const [showcasePickerSlot, setShowcasePickerSlot] = useState<number | null>(null);
+  const [viewingProfile, setViewingProfile] = useState<LeaderRow | null>(null);
 
   /* Hold-to-buy (затискання для швидкої покупки з прискоренням) */
   const [holdingBuyId, setHoldingBuyId] = useState<string | null>(null);
@@ -378,18 +426,22 @@ export default function App() {
   const reportSync = useCallback(() => {
     if (!tgUser?.id) return Promise.resolve(null);
     const cur = stateRef.current;
+    const fullName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ') || (langRef.current === 'uk' ? 'Гравець' : 'Игрок');
     return fetch(`${API_BASE}/api/leaderboard`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId: tgUser.id,
-        name: tgUser.first_name || (langRef.current === 'uk' ? 'Гравець' : 'Игрок'),
+        name: fullName,
         username: tgUser.username || '',
         total: Math.floor(cur.total),
         prestige: cur.prestige,
         clicks: Math.floor(cur.clicks),
         focaccia: Math.floor(cur.focaccia),
         diamonds: Math.floor(cur.diamonds),
+        frame: cur.cosmetics?.equippedFrame || 'frame_default',
+        color: cur.cosmetics?.equippedNameColor || 'name_default',
+        avatar: tgUser.photo_url || '',
       }),
     })
       .then((r) => r.json())
@@ -1934,6 +1986,116 @@ export default function App() {
     return true;
   };
 
+  const buyCosmetic = useCallback((type: 'frame' | 'color', id: string, cost: number) => {
+    const cur = stateRef.current;
+    const curT = TRANSLATIONS[langRef.current];
+    if (cur.diamonds < cost) {
+      addToast(curT.toastNotEnoughDiamonds, formatTemplate(curT.toastNeedDiamonds, cost), '💎');
+      haptic.error();
+      return;
+    }
+    const curCosmetics = cur.cosmetics || {
+      ownedFrames: ['frame_default'],
+      ownedNameColors: ['name_default'],
+      equippedFrame: 'frame_default',
+      equippedNameColor: 'name_default',
+      showcase: ['clicks', 'total', 'diamonds'],
+    };
+
+    let nextCosmetics = { ...curCosmetics };
+    let itemName = '';
+    if (type === 'frame') {
+      if (nextCosmetics.ownedFrames.includes(id)) return;
+      nextCosmetics.ownedFrames = [...nextCosmetics.ownedFrames, id];
+      nextCosmetics.equippedFrame = id;
+      const f = getAvatarFrame(id);
+      itemName = f.name[langRef.current];
+    } else {
+      if (nextCosmetics.ownedNameColors.includes(id)) return;
+      nextCosmetics.ownedNameColors = [...nextCosmetics.ownedNameColors, id];
+      nextCosmetics.equippedNameColor = id;
+      const c = getNameColorStyle(id);
+      itemName = c.name[langRef.current];
+    }
+
+    const next: SaveState = {
+      ...cur,
+      diamonds: cur.diamonds - cost,
+      cosmetics: nextCosmetics,
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+    haptic.success();
+    burstConfetti(['✨', '💎', '👑', '⭐']);
+    addToast(curT.toastCosmeticBought, formatTemplate(curT.toastCosmeticBoughtDesc, itemName), '💎');
+    reportSync();
+  }, [saveNow, addToast, reportSync]);
+
+  const equipCosmetic = useCallback((type: 'frame' | 'color', id: string) => {
+    const cur = stateRef.current;
+    const curT = TRANSLATIONS[langRef.current];
+    const curCosmetics = cur.cosmetics || {
+      ownedFrames: ['frame_default'],
+      ownedNameColors: ['name_default'],
+      equippedFrame: 'frame_default',
+      equippedNameColor: 'name_default',
+      showcase: ['clicks', 'total', 'diamonds'],
+    };
+
+    let nextCosmetics = { ...curCosmetics };
+    let itemName = '';
+    if (type === 'frame') {
+      if (!nextCosmetics.ownedFrames.includes(id)) return;
+      nextCosmetics.equippedFrame = id;
+      const f = getAvatarFrame(id);
+      itemName = f.name[langRef.current];
+    } else {
+      if (!nextCosmetics.ownedNameColors.includes(id)) return;
+      nextCosmetics.equippedNameColor = id;
+      const c = getNameColorStyle(id);
+      itemName = c.name[langRef.current];
+    }
+
+    const next: SaveState = {
+      ...cur,
+      cosmetics: nextCosmetics,
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+    haptic.selection();
+    addToast(curT.toastCosmeticEquipped, formatTemplate(curT.toastCosmeticEquippedDesc, itemName), '🎨');
+    reportSync();
+  }, [saveNow, addToast, reportSync]);
+
+  const changeShowcaseMetric = useCallback((slotIdx: number, metricId: string) => {
+    const cur = stateRef.current;
+    const curCosmetics = cur.cosmetics || {
+      ownedFrames: ['frame_default'],
+      ownedNameColors: ['name_default'],
+      equippedFrame: 'frame_default',
+      equippedNameColor: 'name_default',
+      showcase: ['clicks', 'total', 'diamonds'],
+    };
+
+    const nextShowcase = [...(curCosmetics.showcase || ['clicks', 'total', 'diamonds'])];
+    nextShowcase[slotIdx] = metricId;
+
+    const next: SaveState = {
+      ...cur,
+      cosmetics: {
+        ...curCosmetics,
+        showcase: nextShowcase,
+      },
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+    setShowcasePickerSlot(null);
+    haptic.selection();
+  }, [saveNow]);
+
   /* Hold-to-buy controllers (контролери затискання з наростаючим прискоренням) */
   const stopHoldBuy = useCallback(() => {
     if (holdInitialTimerRef.current) {
@@ -2401,12 +2563,541 @@ export default function App() {
         </div>
       )}
 
+      {/* ===== PROFILE MODAL ===== */}
+      {profileModalOpen && (
+        <div
+          className="fixed inset-0 z-[65] bg-black/85 backdrop-blur-md flex items-center justify-center p-3"
+          onClick={() => setProfileModalOpen(false)}
+        >
+          <div
+            className="glass border border-amber-500/30 rounded-3xl p-4 max-w-sm w-full max-h-[88vh] flex flex-col overflow-hidden shadow-[0_0_60px_rgba(251,191,36,0.2)]"
+            style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-amber-500/20 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">👨‍🍳</span>
+                <h3 className="font-black text-amber-100 text-sm tracking-wide">{t.profileTitle}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setProfileModalOpen(false); haptic.light(); }}
+                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-amber-200/80 flex items-center justify-center text-xs font-bold active:scale-95 transition-all cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Profile Hero Card */}
+            <div className="flex flex-col items-center pt-4 pb-3 shrink-0">
+              <div className={cn(
+                'w-20 h-20 rounded-full overflow-hidden flex items-center justify-center relative shadow-xl transition-all',
+                getAvatarFrame(state.cosmetics?.equippedFrame).frameClass
+              )}>
+                {tgUser?.photo_url ? (
+                  <img src={tgUser.photo_url} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-3xl font-black text-amber-200">
+                    {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
+                  </span>
+                )}
+                {getAvatarFrame(state.cosmetics?.equippedFrame).cost > 0 && (
+                  <div className="absolute -bottom-1 -right-1 text-xs bg-black/80 rounded-full px-1.5 py-0.5 border border-amber-500/30">
+                    {getAvatarFrame(state.cosmetics?.equippedFrame).emoji}
+                  </div>
+                )}
+              </div>
+
+              {/* Nickname & Username */}
+              <div className={cn('text-base font-black mt-2 text-center truncate max-w-[90%]', getNameColorStyle(state.cosmetics?.equippedNameColor).colorClass)}>
+                {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
+              </div>
+              {tgUser?.username && (
+                <div className="text-xs text-amber-200/50 font-mono mt-0.5">
+                  @{tgUser.username}
+                </div>
+              )}
+
+              {/* Diamonds Balance Pill */}
+              <div className="flex items-center gap-1.5 mt-2 bg-cyan-500/15 border border-cyan-500/30 px-3 py-1 rounded-full text-xs font-black text-cyan-300 shadow-sm">
+                <span>💎</span>
+                <span className="font-mono tabular-nums">{formatNum(state.diamonds)}</span>
+              </div>
+            </div>
+
+            {/* Main Tabs */}
+            <div className="grid grid-cols-2 gap-1.5 p-1 bg-black/40 rounded-2xl border border-amber-500/20 shrink-0 mb-3">
+              <button
+                type="button"
+                onClick={() => { setProfileTab('overview'); haptic.selection(); }}
+                className={cn(
+                  'py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5',
+                  profileTab === 'overview'
+                    ? 'bg-amber-500/25 border border-amber-400/60 text-amber-200 shadow-sm'
+                    : 'text-amber-400/60 hover:text-amber-200'
+                )}
+              >
+                <span>🏆</span>
+                <span>{t.tabOverview}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setProfileTab('shop'); haptic.selection(); }}
+                className={cn(
+                  'py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5',
+                  profileTab === 'shop'
+                    ? 'bg-gradient-to-r from-cyan-500/30 to-fuchsia-500/30 border border-cyan-400/60 text-cyan-200 shadow-sm'
+                    : 'text-cyan-400/60 hover:text-cyan-200'
+                )}
+              >
+                <span>💎</span>
+                <span>{t.profileCosmeticsTitle}</span>
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="flex-1 overflow-y-auto pr-0.5 space-y-3">
+              {/* TAB 1: OVERVIEW & SHOWCASE */}
+              {profileTab === 'overview' && (
+                <div className="space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-xs font-black text-amber-200 flex items-center gap-1">
+                        <span>✨</span>
+                        <span>{t.profileShowcaseTitle}</span>
+                      </div>
+                      <div className="text-[10px] text-amber-500/50">
+                        {t.profileShowcaseSubtitle}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 mt-2">
+                      {(state.cosmetics?.showcase || ['clicks', 'total', 'diamonds']).slice(0, 3).map((metricId, slotIdx) => {
+                        const metric = getShowcaseMetric(metricId);
+                        return (
+                          <div
+                            key={slotIdx}
+                            className="glass-card rounded-2xl p-2.5 flex items-center justify-between gap-2.5 border border-amber-500/20 shadow-sm"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-9 h-9 rounded-xl bg-black/40 border border-amber-500/20 flex items-center justify-center text-xl shrink-0">
+                                {metric.emoji}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[10px] text-amber-500/70 font-bold uppercase tracking-wide truncate">
+                                  {metric.name[lang]}
+                                </div>
+                                <div className="text-sm font-black text-amber-100 tabular-nums truncate">
+                                  {metric.getValue(state)}
+                                </div>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => { setShowcasePickerSlot(slotIdx); haptic.light(); }}
+                              className="shrink-0 px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 text-[11px] font-bold active:scale-95 transition-all flex items-center gap-1"
+                            >
+                              <span>✏️</span>
+                              <span>{t.profileEditSlot}</span>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Active Style Preview banner */}
+                  <div className="glass-card rounded-2xl p-3 border border-amber-500/15 text-center">
+                    <div className="text-[10px] text-amber-500/50 uppercase font-bold tracking-wider mb-1">
+                      {lang === 'uk' ? 'Поточний стиль' : 'Текущий стиль'}
+                    </div>
+                    <div className="text-xs text-amber-200/90 font-medium">
+                      {getAvatarFrame(state.cosmetics?.equippedFrame).emoji} {getAvatarFrame(state.cosmetics?.equippedFrame).name[lang]} • {getNameColorStyle(state.cosmetics?.equippedNameColor).name[lang]}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: COSMETIC SHOP */}
+              {profileTab === 'shop' && (
+                <div className="space-y-3">
+                  {/* Shop Subtabs */}
+                  <div className="flex gap-2 border-b border-amber-500/15 pb-2">
+                    <button
+                      type="button"
+                      onClick={() => { setCosmeticShopTab('frames'); haptic.selection(); }}
+                      className={cn(
+                        'flex-1 py-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1',
+                        cosmeticShopTab === 'frames'
+                          ? 'bg-cyan-500/20 border border-cyan-400/50 text-cyan-200'
+                          : 'glass-card text-amber-300/50'
+                      )}
+                    >
+                      <span>🖼️</span>
+                      <span>{t.tabFrames}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setCosmeticShopTab('colors'); haptic.selection(); }}
+                      className={cn(
+                        'flex-1 py-1.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1',
+                        cosmeticShopTab === 'colors'
+                          ? 'bg-fuchsia-500/20 border border-fuchsia-400/50 text-fuchsia-200'
+                          : 'glass-card text-amber-300/50'
+                      )}
+                    >
+                      <span>🎨</span>
+                      <span>{t.tabColors}</span>
+                    </button>
+                  </div>
+
+                  {/* Frames Subtab */}
+                  {cosmeticShopTab === 'frames' && (
+                    <div className="space-y-2">
+                      {AVATAR_FRAMES.map((f) => {
+                        const isEquipped = (state.cosmetics?.equippedFrame || 'frame_default') === f.id;
+                        const isOwned = (state.cosmetics?.ownedFrames || ['frame_default']).includes(f.id);
+                        const canBuy = state.diamonds >= f.cost;
+
+                        return (
+                          <div
+                            key={f.id}
+                            className={cn(
+                              'glass-card rounded-2xl p-2.5 flex items-center justify-between gap-3 border transition-all',
+                              isEquipped
+                                ? 'border-emerald-400/60 bg-emerald-950/20'
+                                : 'border-amber-500/20'
+                            )}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {/* Avatar Preview */}
+                              <div className={cn(
+                                'w-11 h-11 rounded-full overflow-hidden shrink-0 flex items-center justify-center relative shadow-md',
+                                f.frameClass
+                              )}>
+                                {tgUser?.photo_url ? (
+                                  <img src={tgUser.photo_url} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-sm font-black text-amber-200">
+                                    {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="min-w-0">
+                                <div className="text-xs font-black text-amber-100 flex items-center gap-1 truncate">
+                                  <span>{f.emoji}</span>
+                                  <span className="truncate">{f.name[lang]}</span>
+                                </div>
+                                <div className="text-[10px] text-amber-400/60 truncate">
+                                  {f.desc[lang]}
+                                </div>
+                                <div className="text-[10px] font-black mt-0.5">
+                                  {f.cost === 0 ? (
+                                    <span className="text-emerald-300">{lang === 'uk' ? 'Безкоштовно' : 'Бесплатно'}</span>
+                                  ) : (
+                                    <span className="text-cyan-300 font-mono">💎 {f.cost}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Action Button */}
+                            <div className="shrink-0">
+                              {isEquipped ? (
+                                <div className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-black">
+                                  ✓ {t.btnEquipped}
+                                </div>
+                              ) : isOwned ? (
+                                <button
+                                  type="button"
+                                  onClick={() => equipCosmetic('frame', f.id)}
+                                  className="px-3 py-1.5 rounded-xl bg-amber-500/25 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 text-[11px] font-black active:scale-95 transition-all cursor-pointer"
+                                >
+                                  {t.btnEquip}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={!canBuy}
+                                  onClick={() => buyCosmetic('frame', f.id, f.cost)}
+                                  className={cn(
+                                    'px-2.5 py-1.5 rounded-xl text-[11px] font-black active:scale-95 transition-all flex items-center gap-1',
+                                    canBuy
+                                      ? 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white shadow-md shadow-cyan-500/20 cursor-pointer'
+                                      : 'bg-white/5 border border-cyan-500/20 text-cyan-400/40 cursor-not-allowed'
+                                  )}
+                                >
+                                  <span>💎</span>
+                                  <span>{f.cost}</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Colors Subtab */}
+                  {cosmeticShopTab === 'colors' && (
+                    <div className="space-y-2">
+                      {NAME_COLOR_STYLES.map((c) => {
+                        const isEquipped = (state.cosmetics?.equippedNameColor || 'name_default') === c.id;
+                        const isOwned = (state.cosmetics?.ownedNameColors || ['name_default']).includes(c.id);
+                        const canBuy = state.diamonds >= c.cost;
+
+                        return (
+                          <div
+                            key={c.id}
+                            className={cn(
+                              'glass-card rounded-2xl p-2.5 flex items-center justify-between gap-3 border transition-all',
+                              isEquipped
+                                ? 'border-emerald-400/60 bg-emerald-950/20'
+                                : 'border-amber-500/20'
+                            )}
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className={cn('text-sm truncate font-bold', c.colorClass)}>
+                                {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
+                              </div>
+                              <div className="text-[10px] text-amber-500/80 font-bold mt-0.5">
+                                {c.name[lang]}
+                              </div>
+                              <div className="text-[9px] text-amber-400/50 truncate">
+                                {c.desc[lang]}
+                              </div>
+                              <div className="text-[10px] font-black mt-0.5">
+                                {c.cost === 0 ? (
+                                  <span className="text-emerald-300">{lang === 'uk' ? 'Безкоштовно' : 'Бесплатно'}</span>
+                                ) : (
+                                  <span className="text-cyan-300 font-mono">💎 {c.cost}</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Action Button */}
+                            <div className="shrink-0">
+                              {isEquipped ? (
+                                <div className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-black">
+                                  ✓ {t.btnEquipped}
+                                </div>
+                              ) : isOwned ? (
+                                <button
+                                  type="button"
+                                  onClick={() => equipCosmetic('color', c.id)}
+                                  className="px-3 py-1.5 rounded-xl bg-amber-500/25 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 text-[11px] font-black active:scale-95 transition-all cursor-pointer"
+                                >
+                                  {t.btnEquip}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={!canBuy}
+                                  onClick={() => buyCosmetic('color', c.id, c.cost)}
+                                  className={cn(
+                                    'px-2.5 py-1.5 rounded-xl text-[11px] font-black active:scale-95 transition-all flex items-center gap-1',
+                                    canBuy
+                                      ? 'bg-gradient-to-r from-fuchsia-500 to-pink-500 hover:from-fuchsia-400 hover:to-pink-400 text-white shadow-md shadow-fuchsia-500/20 cursor-pointer'
+                                      : 'bg-white/5 border border-fuchsia-500/20 text-fuchsia-400/40 cursor-not-allowed'
+                                  )}
+                                >
+                                  <span>💎</span>
+                                  <span>{c.cost}</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== SHOWCASE PICKER MODAL ===== */}
+      {showcasePickerSlot !== null && (
+        <div
+          className="fixed inset-0 z-[70] bg-black/90 backdrop-blur-md flex items-center justify-center p-4"
+          onClick={() => setShowcasePickerSlot(null)}
+        >
+          <div
+            className="glass border border-amber-500/40 rounded-3xl p-4 max-w-xs w-full max-h-[80vh] flex flex-col overflow-hidden shadow-[0_0_60px_rgba(251,191,36,0.3)]"
+            style={{ animation: 'modal-enter 0.25s cubic-bezier(0.34,1.56,0.64,1)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2.5 border-b border-amber-500/20 shrink-0">
+              <div className="text-xs font-black text-amber-100 flex items-center gap-1">
+                <span>🎯</span>
+                <span>{t.selectMetricTitle}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowcasePickerSlot(null)}
+                className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-amber-200/80 flex items-center justify-center text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-1.5 pt-3 pr-0.5">
+              {SHOWCASE_METRICS.map((m) => {
+                const isSelected = state.cosmetics?.showcase?.[showcasePickerSlot] === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => changeShowcaseMetric(showcasePickerSlot, m.id)}
+                    className={cn(
+                      'w-full rounded-xl p-2.5 text-left flex items-center justify-between gap-2 transition-all active:scale-95 border',
+                      isSelected
+                        ? 'bg-amber-500/30 border-amber-400 text-amber-100 shadow-md shadow-amber-500/20'
+                        : 'glass-card border-amber-500/15 text-amber-200/80 hover:bg-white/10'
+                    )}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-xl shrink-0">{m.emoji}</span>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold truncate">{m.name[lang]}</div>
+                        <div className="text-[10px] text-amber-400/60 font-mono tabular-nums">
+                          {m.getValue(state)}
+                        </div>
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <span className="text-amber-300 font-black text-xs shrink-0">✓</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== VIEWING OTHER PLAYER'S PROFILE MODAL ===== */}
+      {viewingProfile !== null && (
+        <div
+          className="fixed inset-0 z-[65] bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+          onClick={() => setViewingProfile(null)}
+        >
+          <div
+            className="glass border border-amber-500/40 rounded-3xl p-5 max-w-xs w-full text-center shadow-[0_0_60px_rgba(251,191,36,0.2)]"
+            style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header / Close */}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setViewingProfile(null)}
+                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-amber-200/80 flex items-center justify-center text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Avatar with Frame */}
+            <div className="flex justify-center mt-1">
+              <div className={cn(
+                'w-20 h-20 rounded-full overflow-hidden flex items-center justify-center relative shadow-xl',
+                getAvatarFrame(viewingProfile.frame).frameClass
+              )}>
+                {viewingProfile.avatar ? (
+                  <img src={viewingProfile.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-3xl font-black text-amber-200">
+                    {(viewingProfile.name?.[0] || '👨‍🍳').toUpperCase()}
+                  </span>
+                )}
+                {getAvatarFrame(viewingProfile.frame).cost > 0 && (
+                  <div className="absolute -bottom-1 -right-1 text-xs bg-black/80 rounded-full px-1.5 py-0.5 border border-amber-500/30">
+                    {getAvatarFrame(viewingProfile.frame).emoji}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Name & Username */}
+            <div className={cn('text-base font-black mt-2.5 truncate', getNameColorStyle(viewingProfile.color).colorClass)}>
+              {viewingProfile.name}
+            </div>
+            <div className="text-xs text-amber-200/50 font-mono mt-0.5">
+              {viewingProfile.username ? `@${viewingProfile.username}` : `ID: ${viewingProfile.id}`}
+            </div>
+
+            {viewingProfile.online && (
+              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold mt-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Онлайн</span>
+              </div>
+            )}
+
+            {/* Stats Grid */}
+            <div className="grid grid-cols-3 gap-1.5 mt-4">
+              <div className="glass-card rounded-xl p-2 text-center">
+                <div className="text-base">🫓</div>
+                <div className="font-black text-amber-200 text-xs tabular-nums mt-0.5">{formatNum(viewingProfile.total)}</div>
+                <div className="text-[8px] text-amber-500/50">{t.statEaten}</div>
+              </div>
+              <div className="glass-card rounded-xl p-2 text-center">
+                <div className="text-base">🔄</div>
+                <div className="font-black text-fuchsia-200 text-xs tabular-nums mt-0.5">{viewingProfile.prestige}</div>
+                <div className="text-[8px] text-fuchsia-400/50">{t.statRebirths}</div>
+              </div>
+              <div className="glass-card rounded-xl p-2 text-center">
+                <div className="text-base">💎</div>
+                <div className="font-black text-cyan-200 text-xs tabular-nums mt-0.5">{formatNum(viewingProfile.diamonds || 0)}</div>
+                <div className="text-[8px] text-cyan-400/50">{t.statDiamonds}</div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setViewingProfile(null)}
+              className="mt-5 w-full py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-black font-black text-xs active:scale-95 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
+            >
+              {t.confirmOk}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ===== TOP BAR ===== */}
       <div className="relative z-10 shrink-0 glass border-b border-amber-500/15 px-3.5 py-2 select-none">
         {/* Row 1: Primary Balances (Focaccia on left, Diamonds & Rebirth on right) */}
         <div className="flex items-center justify-between gap-2">
-          {/* Main Focaccia Counter */}
-          <div className="flex items-center gap-1.5 min-w-0">
+          {/* Main Focaccia Counter & Profile Avatar Button */}
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              onClick={() => { setProfileModalOpen(true); haptic.light(); }}
+              className="relative shrink-0 active:scale-90 transition-transform cursor-pointer group"
+              title={t.profileTitle}
+            >
+              <div className={cn(
+                'w-9 h-9 rounded-full overflow-hidden flex items-center justify-center transition-all shadow-md',
+                getAvatarFrame(state.cosmetics?.equippedFrame).frameClass
+              )}>
+                {tgUser?.photo_url ? (
+                  <img src={tgUser.photo_url} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-base font-black text-amber-200">
+                    {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-black/80 rounded-full border border-amber-500/40 w-4 h-4 flex items-center justify-center text-[9px] shadow">
+                {getAvatarFrame(state.cosmetics?.equippedFrame).emoji}
+              </div>
+            </button>
+
             <div key={state.clicks} className="animate-num-pop text-2xl font-black tabular-nums leading-none tracking-tight">
               <span className={cn('text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300', frenzy > 0 && 'animate-rainbow')}>
                 {formatNum(state.focaccia)}
@@ -3416,12 +4107,23 @@ export default function App() {
               else if (isTop2) podiumClass = 'leader-podium-2';
               else if (isTop3) podiumClass = 'leader-podium-3';
 
+              const rowFrame = getAvatarFrame(isMe ? state.cosmetics?.equippedFrame : pl.frame);
+              const rowColor = getNameColorStyle(isMe ? state.cosmetics?.equippedNameColor : pl.color);
+
               return (
                 <div
                   key={`${leaderCategory}-${pl.id}`}
                   style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}
+                  onClick={() => {
+                    if (isMe) {
+                      setProfileModalOpen(true);
+                    } else {
+                      setViewingProfile(pl);
+                    }
+                    haptic.light();
+                  }}
                   className={cn(
-                    'relative overflow-hidden rounded-xl p-2.5 flex items-center gap-2.5 transition-all animate-card',
+                    'relative overflow-hidden rounded-xl p-2.5 flex items-center gap-2.5 transition-all animate-card cursor-pointer active:scale-[0.99]',
                     podiumClass,
                     isMe && 'ring-1 ring-amber-400/70 shadow-[0_0_12px_rgba(245,158,11,0.2)]',
                   )}
@@ -3434,20 +4136,39 @@ export default function App() {
                     {isTop1 ? '🥇' : isTop2 ? '🥈' : isTop3 ? '🥉' : `#${i + 1}`}
                   </div>
 
+                  {/* Player Avatar with Frame */}
+                  <div className={cn(
+                    'w-8 h-8 rounded-full overflow-hidden flex items-center justify-center shrink-0 shadow-sm relative',
+                    rowFrame.frameClass
+                  )}>
+                    {(isMe ? tgUser?.photo_url : pl.avatar) ? (
+                      <img src={isMe ? tgUser?.photo_url : pl.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-xs font-black text-amber-200">
+                        {pl.name ? pl.name[0].toUpperCase() : '👨‍🍳'}
+                      </span>
+                    )}
+                    {rowFrame.cost > 0 && (
+                      <div className="absolute -bottom-1 -right-1 text-[8px] leading-none bg-black/80 rounded-full px-0.5">
+                        {rowFrame.emoji}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Player Details */}
                   <div className="min-w-0 flex-1">
-                    <div className="font-bold text-[13px] text-amber-100/90 truncate flex items-center gap-1">
+                    <div className="font-bold text-[13px] truncate flex items-center gap-1">
                       {pl.online && (
                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" title="Онлайн" />
                       )}
-                      <span className="truncate">{pl.name}</span>
+                      <span className={cn('truncate', rowColor.colorClass)}>{pl.name}</span>
                       {isMe && (
                         <span className="shrink-0 text-[9px] bg-gradient-to-r from-amber-500/30 to-amber-600/30 border border-amber-400/40 text-amber-200 px-1.5 py-0.2 rounded-full font-black">
                           {t.itsYou}
                         </span>
                       )}
                     </div>
-                    <div className="text-[10px] text-amber-500/50 truncate flex items-center gap-1.5">
+                    <div className="text-[10px] text-amber-200/50 truncate flex items-center gap-1.5 font-mono">
                       {pl.username ? <span>@{pl.username}</span> : <span>ID: {pl.id}</span>}
                     </div>
                   </div>
@@ -3520,6 +4241,47 @@ export default function App() {
         {page === 'settings' && (
           <div className={cn('h-full overflow-y-auto p-4 space-y-3', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
             <h2 className="text-base font-black text-amber-200/80 text-center tracking-wide">{t.settingsTitle}</h2>
+
+            {/* Profile Hero Card */}
+            <div className="glass-card rounded-2xl p-3.5 border border-amber-500/25 flex items-center justify-between gap-3 shadow-lg shadow-black/40">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={cn('w-12 h-12 rounded-full overflow-hidden shrink-0 flex items-center justify-center relative', getAvatarFrame(state.cosmetics?.equippedFrame).frameClass)}>
+                  {tgUser?.photo_url ? (
+                    <img src={tgUser.photo_url} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-xl font-black text-amber-200">
+                      {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
+                    </span>
+                  )}
+                  {getAvatarFrame(state.cosmetics?.equippedFrame).cost > 0 && (
+                    <div className="absolute -bottom-1 -right-1 text-[9px] leading-none bg-black/80 rounded-full px-1 py-0.5 border border-amber-500/30">
+                      {getAvatarFrame(state.cosmetics?.equippedFrame).emoji}
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className={cn('text-sm truncate font-bold', getNameColorStyle(state.cosmetics?.equippedNameColor).colorClass)}>
+                    {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
+                  </div>
+                  {tgUser?.username ? (
+                    <div className="text-[11px] text-amber-200/50 font-mono truncate">
+                      @{tgUser.username}
+                    </div>
+                  ) : null}
+                  <div className="text-[10px] text-amber-500/60 mt-0.5">
+                    {t.profileCardDesc}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setProfileModalOpen(true); haptic.light(); }}
+                className="shrink-0 px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs shadow-md shadow-amber-500/20 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <span>👤</span>
+                <span>{t.openProfileBtn}</span>
+              </button>
+            </div>
 
             <div className="grid grid-cols-3 gap-1.5">
               {[

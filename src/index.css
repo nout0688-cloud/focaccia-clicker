@@ -547,3 +547,39 @@ button { -webkit-tap-highlight-color: transparent; }
   color: #f5d0fe !important;
   box-shadow: 0 0 14px rgba(217, 70, 239, 0.25);
 }
+
+/* Profile Cosmetics Animations */
+@keyframes frame-fire-pulse {
+  0%, 100% { box-shadow: 0 0 16px rgba(249, 115, 22, 0.6), inset 0 0 8px rgba(239, 68, 68, 0.4); border-color: #f97316; }
+  50% { box-shadow: 0 0 24px rgba(239, 68, 68, 0.8), inset 0 0 12px rgba(249, 115, 22, 0.6); border-color: #ef4444; }
+}
+.frame-fire-anim { animation: frame-fire-pulse 1.8s ease-in-out infinite; }
+
+@keyframes frame-gold-glow {
+  0%, 100% { box-shadow: 0 0 16px rgba(253, 224, 71, 0.5), inset 0 0 8px rgba(245, 158, 11, 0.3); border-color: #fde047; }
+  50% { box-shadow: 0 0 25px rgba(250, 204, 21, 0.8), inset 0 0 14px rgba(234, 179, 8, 0.5); border-color: #fef08a; }
+}
+.frame-gold-anim { animation: frame-gold-glow 2.2s ease-in-out infinite; }
+
+@keyframes frame-cyber-glitch {
+  0%, 100% { box-shadow: 0 0 14px rgba(52, 211, 153, 0.6); border-color: #34d399; }
+  33% { box-shadow: 0 0 22px rgba(16, 185, 129, 0.8); border-color: #10b981; }
+  66% { box-shadow: 0 0 16px rgba(6, 182, 212, 0.7); border-color: #06b6d4; }
+}
+.frame-cyber-anim { animation: frame-cyber-glitch 2s ease-in-out infinite; }
+
+@keyframes frame-galaxy-pulse {
+  0%, 100% { box-shadow: 0 0 18px rgba(168, 85, 247, 0.6), inset 0 0 8px rgba(99, 102, 241, 0.4); border-color: #a855f7; }
+  50% { box-shadow: 0 0 26px rgba(192, 132, 252, 0.8), inset 0 0 12px rgba(168, 85, 247, 0.6); border-color: #c084fc; }
+}
+.frame-galaxy-anim { animation: frame-galaxy-pulse 2.5s ease-in-out infinite; }
+
+@keyframes frame-rainbow-rotate {
+  0% { border-color: #f43f5e; box-shadow: 0 0 18px rgba(244, 63, 94, 0.7); }
+  25% { border-color: #eab308; box-shadow: 0 0 18px rgba(234, 179, 8, 0.7); }
+  50% { border-color: #10b981; box-shadow: 0 0 18px rgba(16, 185, 129, 0.7); }
+  75% { border-color: #06b6d4; box-shadow: 0 0 18px rgba(6, 182, 212, 0.7); }
+  100% { border-color: #f43f5e; box-shadow: 0 0 18px rgba(244, 63, 94, 0.7); }
+}
+.frame-prismatic-anim { animation: frame-rainbow-rotate 3s linear infinite; }
+
