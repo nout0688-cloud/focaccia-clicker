@@ -360,9 +360,9 @@ export default function App() {
   }, []);
 
   const reportSync = useCallback(() => {
-    if (!tgUser?.id) return;
+    if (!tgUser?.id) return Promise.resolve(null);
     const cur = stateRef.current;
-    fetch(`${API_BASE}/api/leaderboard`, {
+    return fetch(`${API_BASE}/api/leaderboard`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -380,8 +380,9 @@ export default function App() {
       .then((data) => {
         if (typeof data?.karma === 'number') setKarma(data.karma);
         if (data?.rank) setMyRank(data.rank);
+        return data;
       })
-      .catch(() => { /* silent */ });
+      .catch(() => null);
   }, [tgUser]);
 
   /* ---- Init ---- */
@@ -964,12 +965,30 @@ export default function App() {
   /* ---- Leaderboard: report my stats + load top players ---- */
   const loadLeaders = useCallback(() => {
     setLeadersLoading(true);
-    fetch(`${API_BASE}/api/leaderboard`)
-      .then((r) => r.json())
-      .then((data) => setLeaders(data?.players || []))
-      .catch(() => setLeaders([]))
-      .finally(() => setLeadersLoading(false));
-  }, []);
+    const syncPromise = tgUser?.id ? reportSync() : Promise.resolve(null);
+    syncPromise.finally(() => {
+      fetch(`${API_BASE}/api/leaderboard`)
+        .then((r) => r.json())
+        .then((data) => {
+          const list: LeaderRow[] = data?.players || [];
+          setLeaders(list);
+          if (tgUser?.id && list.length > 0) {
+            const myIdx = list.findIndex((p) => String(p.id) === String(tgUser.id));
+            if (myIdx >= 0) setMyRank(myIdx + 1);
+          }
+        })
+        .catch(() => setLeaders([]))
+        .finally(() => setLeadersLoading(false));
+    });
+  }, [reportSync, tgUser]);
+
+  useEffect(() => {
+    if (page === 'leaders') {
+      loadLeaders();
+      const iv = setInterval(loadLeaders, 15000); // авто-оновлення кожні 15с при відкритому лідерборді
+      return () => clearInterval(iv);
+    }
+  }, [page, loadLeaders]);
 
   useEffect(() => {
     if (loading) return;
