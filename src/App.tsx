@@ -853,13 +853,30 @@ export default function App() {
       veryStrongRatio >= 0.35 &&
       independentSignals >= 2
     ) {
-      triggerChallenge();
+      // Збираємо дебаг-снапшот для адміна
+      const ivs: number[] = [];
+      for (let i = 1; i < t40.length; i++) ivs.push(Math.round(t40[i].t - t40[i - 1].t));
+      const debugSnap = {
+        R: Math.round(R), C: Math.round(C), B: Math.round(B), H: Math.round(H),
+        evidence: Math.round(evidence), suspicion: Math.round(suspicion.current),
+        independentSignals,
+        strongRatio: Math.round(strongRatio * 100) / 100,
+        veryStrongRatio: Math.round(veryStrongRatio * 100) / 100,
+        metronome,
+        cv40: Math.round(cv40 * 1000) / 1000,
+        ivs40: ivs.join('-'),
+        taps40count: t40.length,
+        taps300count: t300.length,
+        extremeSpeedBoost: Math.round(extremeSpeedBoost.current * 10) / 10,
+        ts: Date.now(),
+      };
+      triggerChallenge(debugSnap);
     }
   };
 
-  const triggerChallenge = () => {
+  const triggerChallenge = (debugSnap?: Record<string, unknown>) => {
     if (challenge !== null || challengeOpening.current) return;
-    challengeOpening.current = true; // guard от double-flag race
+    challengeOpening.current = true; // guard від double-flag race
     setChallenge({ caught: 0, x: 20 + Math.random() * 55, y: 30 + Math.random() * 32, timeLeft: 5, result: null });
     addToast('🚫 Авто-клікер не смачний!', 'Фокачі пригорають… Доведи бабусі, що ти не робот!', '👵');
     haptic.error();
@@ -867,12 +884,12 @@ export default function App() {
       fetch(`${API_BASE}/api/leaderboard`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: tgUser.id, event: 'flag' }),
+        body: JSON.stringify({ userId: tgUser.id, event: 'flag', debug: debugSnap }),
       })
         .then((r) => r.json())
         .then((data) => {
           if (typeof data?.karma === 'number') setKarma(data.karma);
-          challengeOpening.current = false; // challenge установлен — guard снят
+          challengeOpening.current = false;
         })
         .catch(() => { challengeOpening.current = false; });
     } else {
