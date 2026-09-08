@@ -1,0 +1,880 @@
+export type Lang = 'uk' | 'ru';
+
+export interface LocalizedItem {
+  name: string;
+  desc: string;
+}
+
+export const PHRASES_I18N: Record<Lang, string[]> = {
+  uk: [
+    'Ммм, фокача!',
+    'Ще одну!',
+    'Смачно!',
+    'Дай ще!',
+    'Хрустить!',
+    'Бле-е-е 👅',
+    'ФОКАЧА!!!',
+    'Ням-ням',
+    'З томатом!',
+    'Це моя фокача!',
+    'Гаряча! 🔥',
+    'Божественно!',
+    'Ще-ще-ще!',
+    'Обожнюю! 💛',
+  ],
+  ru: [
+    'Ммм, фокачча!',
+    'Ещё одну!',
+    'Вкусно!',
+    'Дай ещё!',
+    'Хрустит!',
+    'Бле-е-е 👅',
+    'ФОКАЧЧА!!!',
+    'Ням-ням',
+    'С томатом!',
+    'Это моя фокачча!',
+    'Горячая! 🔥',
+    'Божественно!',
+    'Ещё-ещё-ещё!',
+    'Обожаю! 💛',
+  ],
+};
+
+export const BUILDINGS_I18N: Record<string, Record<Lang, LocalizedItem>> = {
+  hand: {
+    uk: { name: 'Друга рука', desc: 'Їсти можна двома руками' },
+    ru: { name: 'Вторая рука', desc: 'Есть можно двумя руками' },
+  },
+  grandma: {
+    uk: { name: 'Бабуся', desc: 'Пече фокачі з любов’ю' },
+    ru: { name: 'Бабушка', desc: 'Печёт фокаччи с любовью' },
+  },
+  oven: {
+    uk: { name: 'Піч', desc: 'Дров’яна піч на подвір’ї' },
+    ru: { name: 'Печь', desc: 'Дровяная печь во дворе' },
+  },
+  kiosk: {
+    uk: { name: 'Кіоск', desc: 'Зелений кіоск біля зупинки' },
+    ru: { name: 'Киоск', desc: 'Зелёный киоск у остановки' },
+  },
+  bakery: {
+    uk: { name: 'Пекарня', desc: 'Справжня фокачерія' },
+    ru: { name: 'Пекарня', desc: 'Настоящая фокаччерия' },
+  },
+  factory: {
+    uk: { name: 'Завод', desc: 'Промислове виробництво фокач' },
+    ru: { name: 'Завод', desc: 'Промышленное производство фокачч' },
+  },
+  italy: {
+    uk: { name: 'Філія в Італії', desc: 'Прямо з Лігурії' },
+    ru: { name: 'Филиал в Италии', desc: 'Прямиком из Лигурии' },
+  },
+  rocket: {
+    uk: { name: 'Космо-пекарня', desc: 'Фокачі на орбіті' },
+    ru: { name: 'Космо-пекарня', desc: 'Фокаччи на орбите' },
+  },
+  portal: {
+    uk: { name: 'Портал фокач', desc: 'Фокачі з паралельних всесвітів' },
+    ru: { name: 'Портал фокачч', desc: 'Фокаччи из параллельных вселенных' },
+  },
+  god: {
+    uk: { name: 'Бог фокачі', desc: 'Все є фокача' },
+    ru: { name: 'Бог фокаччи', desc: 'Всё есть фокачча' },
+  },
+};
+
+export const CLICK_UPGRADES_I18N: Record<string, Record<Lang, LocalizedItem>> = {
+  c1: {
+    uk: { name: 'Голодний погляд', desc: '+1 фокача за клік' },
+    ru: { name: 'Голодный взгляд', desc: '+1 фокачча за клик' },
+  },
+  c2: {
+    uk: { name: 'Язик назовні', desc: '+3 фокачі за клік' },
+    ru: { name: 'Язык наружу', desc: '+3 фокаччи за клик' },
+  },
+  e1: {
+    uk: { name: 'Енергетик', desc: 'Відновлення енергії x2' },
+    ru: { name: 'Энергетик', desc: 'Восстановление энергии x2' },
+  },
+  b1: {
+    uk: { name: 'Бабусині рецепти', desc: 'Виробництво x2' },
+    ru: { name: 'Бабушкины рецепты', desc: 'Производство x2' },
+  },
+  c3: {
+    uk: { name: 'Чорна футболка', desc: 'Клік x2' },
+    ru: { name: 'Чёрная футболка', desc: 'Клик x2' },
+  },
+  c4: {
+    uk: { name: 'Рюкзак з припасами', desc: '+25 за клік' },
+    ru: { name: 'Рюкзак с припасами', desc: '+25 за клик' },
+  },
+  b2: {
+    uk: { name: 'Гаряча піч', desc: 'Виробництво x2' },
+    ru: { name: 'Горячая печь', desc: 'Производство x2' },
+  },
+  e2: {
+    uk: { name: 'Міцна кава', desc: 'Відновлення енергії x2' },
+    ru: { name: 'Крепкий кофе', desc: 'Восстановление энергии x2' },
+  },
+  c5: {
+    uk: { name: 'Зачіска сили', desc: 'Клік x2' },
+    ru: { name: 'Причёска силы', desc: 'Клик x2' },
+  },
+  c6: {
+    uk: { name: 'Томатний соус', desc: '+250 за клік' },
+    ru: { name: 'Томатный соус', desc: '+250 за клик' },
+  },
+  b3: {
+    uk: { name: 'Реклама на кіоску', desc: 'Виробництво x2' },
+    ru: { name: 'Реклама на киоске', desc: 'Производство x2' },
+  },
+  e3: {
+    uk: { name: 'Протеїновий батончик', desc: 'Відновлення енергії x3' },
+    ru: { name: 'Протеиновый батончик', desc: 'Восстановление энергии x3' },
+  },
+  c7: {
+    uk: { name: 'Розмарин', desc: 'Клік x3' },
+    ru: { name: 'Розмарин', desc: 'Клик x3' },
+  },
+  b4: {
+    uk: { name: 'Франшиза', desc: 'Виробництво x2' },
+    ru: { name: 'Франшиза', desc: 'Производство x2' },
+  },
+  c8: {
+    uk: { name: 'Оливкова олія', desc: 'Клік x3' },
+    ru: { name: 'Оливковое масло', desc: 'Клик x3' },
+  },
+  b5: {
+    uk: { name: 'Автоматизація', desc: 'Виробництво x2' },
+    ru: { name: 'Автоматизация', desc: 'Производство x2' },
+  },
+  c9: {
+    uk: { name: 'Легендарний апетит', desc: 'Клік x5' },
+    ru: { name: 'Легендарный аппетит', desc: 'Клик x5' },
+  },
+  b6: {
+    uk: { name: 'Італійська мафія', desc: 'Виробництво x3' },
+    ru: { name: 'Итальянская мафия', desc: 'Производство x3' },
+  },
+};
+
+export const DIAMOND_BUILDINGS_I18N: Record<string, Record<Lang, LocalizedItem>> = {
+  d_oven: {
+    uk: { name: 'Кристалічна піч', desc: 'Кристалічний жар пече стабільно та гаряче (+1% CPS)' },
+    ru: { name: 'Кристальная печь', desc: 'Кристальный жар печёт стабильно и горячо (+1% CPS)' },
+  },
+  d_mine: {
+    uk: { name: 'Діамантова копальня', desc: 'Добуває алмазний пил для надміцного тіста (+1.5% CPS)' },
+    ru: { name: 'Алмазный рудник', desc: 'Добывает алмазную пыль для сверхпрочного теста (+1.5% CPS)' },
+  },
+  d_palace: {
+    uk: { name: 'Смарагдовий палац', desc: 'Королівська резиденція елітних пекарів (+2% CPS)' },
+    ru: { name: 'Изумрудный дворец', desc: 'Королевская резиденция элитных пекарей (+2% CPS)' },
+  },
+  d_lab: {
+    uk: { name: 'Квантова лабораторія', desc: 'Синтез нано-фокач вищої проби (+2.5% CPS)' },
+    ru: { name: 'Квантовая лаборатория', desc: 'Синтез нано-фокачч высшей пробы (+2.5% CPS)' },
+  },
+  d_colossus: {
+    uk: { name: 'Діамантовий колос', desc: 'Древня статуя бога випічки (+3% CPS)' },
+    ru: { name: 'Алмазный колосс', desc: 'Древнее изваяние бога выпечки (+3% CPS)' },
+  },
+  d_citadel: {
+    uk: { name: 'Зоряна цитадель', desc: 'Генерує фокачі з зоряного пилу (+4% CPS)' },
+    ru: { name: 'Звёздная цитадель', desc: 'Генерирует фокаччи из звёздной пыли (+4% CPS)' },
+  },
+};
+
+export const VIP_UPGRADES_I18N: Record<string, Record<Lang, LocalizedItem>> = {
+  vip_knife: {
+    uk: { name: 'Шеф-ніж', desc: 'Подвійний урон по босах (2 HP за тап)' },
+    ru: { name: 'Шеф-нож', desc: 'Двойной урон по боссам (2 HP за тап)' },
+  },
+  vip_trap: {
+    uk: { name: 'Пастка для шкідників', desc: 'Шкідники крадуть удвічі менше фокач' },
+    ru: { name: 'Ловушка для вредителей', desc: 'Вредители воруют в два раза меньше фокачч' },
+  },
+  vip_energy: {
+    uk: { name: 'Надзаряд', desc: '+25 до максимальної енергії' },
+    ru: { name: 'Сверхзаряд', desc: '+25 к максимальной энергии' },
+  },
+  vip_golden: {
+    uk: { name: 'Золота конюшина', desc: 'Золота фокача з’являється удвічі частіше' },
+    ru: { name: 'Золотой клевер', desc: 'Золотая фокачча появляется в 2 раза чаще' },
+  },
+  vip_tax: {
+    uk: { name: 'Власний бухгалтер', desc: 'Податки знижено з 5% до 1%' },
+    ru: { name: 'Личный бухгалтер', desc: 'Налоги снижены с 5% до 1%' },
+  },
+  vip_crit: {
+    uk: { name: 'Алмазний фокус', desc: 'Шанс криту 8% (було 5%), крит-урон x12 (було x10)' },
+    ru: { name: 'Алмазный фокус', desc: 'Шанс крита 8% (было 5%), крит-урон x12 (было x10)' },
+  },
+  vip_chef: {
+    uk: { name: 'Зірка Мішлен', desc: '+30% до загального CPS назавжди' },
+    ru: { name: 'Звезда Мишлен', desc: '+30% к общему CPS навсегда' },
+  },
+  vip_combo: {
+    uk: { name: 'Майстер комбо', desc: 'Комбо тримається 2.2с (було 1.2с) і спадає повільніше' },
+    ru: { name: 'Мастер комбо', desc: 'Комбо держится 2.2с (было 1.2с) и спадает медленнее' },
+  },
+  vip_magnet: {
+    uk: { name: 'Діамантовий магніт', desc: '+50% шанс вибити 💎 зі шкідників, боси дають +1 💎' },
+    ru: { name: 'Алмазный магнит', desc: '+50% шанс выбить 💎 из вредителей, боссы дают +1 💎' },
+  },
+  vip_frenzy: {
+    uk: { name: 'Гіпер-френзі', desc: 'Френзі триває 25с (замість 20с) та дає x8 замість x7' },
+    ru: { name: 'Гипер-френзи', desc: 'Френзи длится 25с (вместо 20с) и даёт x8 вместо x7' },
+  },
+  vip_offline: {
+    uk: { name: 'Нічна пекарня', desc: '75% доходу офлайн (замість 50%) до 12 годин' },
+    ru: { name: 'Ночная пекарня', desc: '75% дохода офлайн (вместо 50%) до 12 часов' },
+  },
+  vip_polish: {
+    uk: { name: 'Діамантове огранювання', desc: '+25% до ефективності всіх діамантових будівель' },
+    ru: { name: 'Алмазная огранка', desc: '+25% к эффективности всех алмазных зданий' },
+  },
+};
+
+export const ACHIEVEMENTS_I18N: Record<string, Record<Lang, LocalizedItem>> = {
+  a1: {
+    uk: { name: 'Перший укус', desc: 'Отримай першу фокачу' },
+    ru: { name: 'Первый укус', desc: 'Получи первую фокаччу' },
+  },
+  a2: {
+    uk: { name: 'Голодний', desc: '100 фокач' },
+    ru: { name: 'Голодный', desc: '100 фокачч' },
+  },
+  a3: {
+    uk: { name: 'Ситий', desc: '10 000 фокач' },
+    ru: { name: 'Сытый', desc: '10 000 фокачч' },
+  },
+  a4: {
+    uk: { name: 'Мільйонер', desc: '1 000 000 фокач' },
+    ru: { name: 'Миллионер', desc: '1 000 000 фокачч' },
+  },
+  a5: {
+    uk: { name: 'Мільярдер', desc: '1 000 000 000 фокач' },
+    ru: { name: 'Миллиардер', desc: '1 000 000 000 фокачч' },
+  },
+  a6: {
+    uk: { name: 'Клікер', desc: '100 кліків' },
+    ru: { name: 'Кликер', desc: '100 кликов' },
+  },
+  a7: {
+    uk: { name: 'Тиснути!', desc: '1000 кліків' },
+    ru: { name: 'Жми!', desc: '1000 кликов' },
+  },
+  a8: {
+    uk: { name: 'Палець зі сталі', desc: '10 000 кліків' },
+    ru: { name: 'Стальной палец', desc: '10 000 кликов' },
+  },
+  a9: {
+    uk: { name: 'Комбо-майстер', desc: 'Комбо x25' },
+    ru: { name: 'Мастер комбо', desc: 'Комбо x25' },
+  },
+  a10: {
+    uk: { name: 'Шалене комбо', desc: 'Комбо x100' },
+    ru: { name: 'Бешеное комбо', desc: 'Комбо x100' },
+  },
+  a11: {
+    uk: { name: 'Онук року', desc: '10 бабусь' },
+    ru: { name: 'Внук года', desc: '10 бабушек' },
+  },
+  a12: {
+    uk: { name: 'Директор', desc: 'Побудуй завод' },
+    ru: { name: 'Директор', desc: 'Построй завод' },
+  },
+  a13: {
+    uk: { name: 'Золота рука', desc: 'Злови золоту фокачу' },
+    ru: { name: 'Золотая рука', desc: 'Поймай золотую фокаччу' },
+  },
+  a14: {
+    uk: { name: 'Мисливець', desc: 'Злови 10 золотих фокач' },
+    ru: { name: 'Охотник', desc: 'Поймай 10 золотых фокачч' },
+  },
+  a15: {
+    uk: { name: 'Конвеєр', desc: '1000 фокач/сек' },
+    ru: { name: 'Конвейер', desc: '1000 фокачч/сек' },
+  },
+  a16: {
+    uk: { name: 'Ребіртх', desc: 'Зроби перший ребіртх' },
+    ru: { name: 'Перерождение', desc: 'Сделай первый ребиртх' },
+  },
+  a17: {
+    uk: { name: 'Дезінсектор', desc: 'Знищи 5 шкідників' },
+    ru: { name: 'Дезинсектор', desc: 'Уничтожь 5 вредителей' },
+  },
+  a18: {
+    uk: { name: 'Вбивця босів', desc: 'Переможи першого боса' },
+    ru: { name: 'Убийца боссов', desc: 'Победи первого босса' },
+  },
+  a19: {
+    uk: { name: 'Діамантовий магнат', desc: 'Збери 10 діамантів' },
+    ru: { name: 'Алмазный магнат', desc: 'Собери 10 алмазов' },
+  },
+  a20: {
+    uk: { name: 'Діамантовий зодчий', desc: 'Побудуй першу діамантову будівлю' },
+    ru: { name: 'Алмазный зодчий', desc: 'Построй первое алмазное здание' },
+  },
+};
+
+export const BOSSES_I18N: Record<string, Record<Lang, string>> = {
+  rat: { uk: 'Король Щурів', ru: 'Король Крыс' },
+  mold: { uk: 'Мутантна Цвіль', ru: 'Мутантная Плесень' },
+  fire: { uk: 'Пекельна Пожежа', ru: 'Адский Пожар' },
+  mafia: { uk: 'Дон Фокачіо', ru: 'Дон Фокаччио' },
+};
+
+export const PESTS_I18N: Record<string, Record<Lang, string>> = {
+  '🪳': { uk: 'Тарган-злодюжка', ru: 'Таракан-воришка' },
+  '🐜': { uk: 'Голодний жук', ru: 'Голодный жук' },
+  '🐁': { uk: 'Хитрий щур', ru: 'Хитрый крысёныш' },
+};
+
+export const TRANSLATIONS = {
+  uk: {
+    loading: 'ЗАВАНТАЖЕННЯ',
+    topBarPerSec: '/с',
+    topBarPerClick: '/клік',
+    topBarBroken: '🔧 Зламано!',
+    topBarRebirth: '🔄 {0} Ребіртх (+{1}%)',
+
+    // Clicker
+    attackBtn: 'АТАКУВАТИ! ({0}/{1} HP)',
+    combo: 'КОМБО',
+    recharging: '⏳ ПЕРЕЗАРЯДКА',
+    energy: '⚡ ЕНЕРГІЯ',
+    waitSpeech: '⏳ Зачекай...',
+    eaten: "З'їдено",
+    clicks: 'Кліків',
+    bosses: 'Босів',
+    tapPest: 'Тапни! 💥',
+    pestTitle: 'Натисни щоб прибити шкідника!',
+
+    // Shop
+    tabBuildings: 'Будівлі',
+    tabUpgrades: 'Апгрейди',
+    tabVip: 'ВІП',
+    tabAchievements: 'Досягн.',
+    diamondBuildingsBannerTitle: 'Діамантові будівлі',
+    diamondBuildingsBannerDesc: 'Постійний дохід та % бонуси до всього CPS',
+    goTo: 'Перейти ➔',
+    rebirthLock: 'Ребіртх {0} 🔄',
+    rebirthLockDesc: 'Потрібен {0} ребіртх для розблокування',
+    brokenWarning: '⚠️ -50% CPS',
+    brokenNotice: 'Зламано! Ефективність впала вдвічі',
+    repairBtn: '🔧 Полагодити (🫓 {0})',
+    noMoreUpgrades: '✨ Доступних прокачок на цьому ребіртху більше нема',
+    boughtUpgrades: 'Куплено',
+    yourDiamonds: '💎 Твої діаманти: {0}',
+    diamondsKeepNotice: 'Зберігаються при ребіртхах назавжди!',
+    diamondBuildingsCount: 'Діамантові будівлі:',
+    pcs: 'шт.',
+    vipBuildingsSubTab: '🏛️ Будівлі',
+    vipUpgradesSubTab: '⚡ Апгрейди',
+    boughtCheck: '✓ Куплено',
+    diamondsCost: '💎 {0} діамантів',
+
+    // Casino
+    casinoTitle: '🎰 КАЗИНО «ОДНАРУКА БАБУСЯ»',
+    tabSlots: 'Автомат',
+    tabDice: 'Кості',
+    tabWheel: 'Колесо',
+    spinSlots: '🎰 КРУТИТИ',
+    spinDice: '🎲 КИНУТИ КОСТІ',
+    spinWheel: '🎡 ОБЕРТИ КОЛЕСО',
+    spinning: '🎲 ГРАЄМО…',
+    casinoClosedTitle: 'Казино закрите',
+    casinoClosedDesc: 'Карма {0}/100 — бабуся не довіряє тобі. Грай чесно, підніми карму вище 50, і двері відчиняться.',
+    curFocaccia: 'Фокачі',
+    curDiamonds: 'Алмази',
+    betLabel: 'Ставка',
+    balanceLabel: 'Баланс:',
+    customBetPlaceholder: 'Своя ставка…',
+    payoutsLabel: 'Виплати',
+    anyPair: 'Будь-які 2 однакові',
+    diceRule1: '• Кинув більший кістяк, ніж бабуся → ',
+    diceRule2: '• Нічия → ставка повертається',
+    diceRule3: '• Менший → ставка згоріла 🔥',
+    wheelRule: '• 5 з 10 секторів порожні, але є ×2, ×5 і два ×0.5/×1.5. Вказівник зверху — куди впаде, те й твій множник.',
+    casinoDisclaimer: "Виграш казино не додається до рейтингу «з'їдено»",
+    diceYou: 'ТИ',
+    diceGranny: 'БАБУСЯ',
+    slotsLoss: 'Мимо… фокача пригоріла. Спробуй ще!',
+    diceTie: 'Нічия — ставка повернулась',
+    diceLoss: 'Бабуся перемогла: {0} проти {1}. Ще раз?',
+    diceWin: 'Твої {0} проти {1} — виграш +{2} {3}!',
+    wheelLoss: 'Колесо показало порожній сектор… Ще раз?',
+    wheelWin: 'Колесо ×{0}',
+    winText: 'Виграш +{0} {1} (×{2})',
+
+    // Leaders
+    leadersTitle: '🏆 ЛІДЕРИ ФОКАЧІ',
+    yourRank: 'Твоє місце: #{0}',
+    joinTop: "Залітай у топ — з'їдь більше фокач! 🫓",
+    online: 'Онлайн: {0}',
+    loadingLeaders: '⏳ Завантаження…',
+    emptyLeaders: 'Поки що порожньо. Обганяй усіх! 🫓',
+    itsYou: 'ЦЕ ТИ',
+    rebirthsCount: '🔄 {0} ребіртх(ів)',
+    eatenLabel: "з'їдено 🫓",
+    refreshBtn: '🔄 Оновити',
+    leadersFooter: "Рейтинг за з'їденими фокачами за весь час",
+
+    // Settings
+    settingsTitle: '⚙️ НАЛАШТУВАННЯ ТА СТАТИСТИКА',
+    statEaten: "З'їдено",
+    statDiamonds: 'Діамантів',
+    statRebirths: 'Ребіртхів',
+    statBosses: 'Босів подолано',
+    statPests: 'Шкідників знищено',
+    statClicks: 'Кліків',
+    statCombo: 'Макс комбо',
+    statGolden: 'Золотих',
+    statBuildings: 'Будівель',
+    rebirthLevel: 'Ребіртх: {0} рівень',
+    rebirthBonus: '+{0}% доходу назавжди • +{1} енергії',
+    rebirthReady: '+{0} Готово!',
+    rebirthReq: '🔒 Потрібно: 1 000 000 🫓 (1 млн / 1кк)',
+    rebirthNext: '🎯 До наступного (+{0})',
+    rebirthEarned: 'Зароблено: {0} 🫓',
+    rebirthTarget: 'Ціль: {0} 🫓',
+    rebirthTipLocked: '💡 Ребіртх відкривається при досягненні <b>1 000 000 фокач</b> (залишилось ще {0}). Він розблокує нові будівлі та прокачки в магазині! 💎 Діаманти та ВІП зберігаються.',
+    rebirthTipReady: '✨ Скинь фокачі та будівлі → отримай <b class="text-fuchsia-200">+{0} Ребіртх{1}</b>! Відкриває нові будівлі та прокачки в магазині. 💎 Діаманти та ВІП залишаються.',
+    rebirthBtnActive: 'Зробити Ребіртх (+{0} 🔄)',
+    rebirthBtnLocked: '🔒 Потрібно 1 000 000 🫓 (ще {0})',
+    antiCheatStatusTitle: '🛡 СТАТУС АКАУНТА',
+    antiCheatProtected: 'ЗАХИЩЕНО TAPSENTINEL v5 — BEHAVIORAL ANTI-CHEAT',
+    karmaChecking: '⚠️ Перевірка триває',
+    karmaShadow: '🔴 Тінь бабусі',
+    karmaRestricted: '⚠️ Обмежений режим',
+    karmaSuspicious: '🟡 Під підозрою',
+    karmaClean: 'Акаунт чистий ✅',
+    karmaWarnBurnt: '🚫 Фокачі пригорають — кліки дають ×0.05',
+    karmaWarnBetLimit: '🔒 Ставки в казино — максимум 1K',
+    karmaWarnCasinoClosed: '🔒 Казино закрите, офлайн-дохід −50%',
+    karmaWarnLeaderboardFrozen: '🔒 Лідерборд заморожено, нагороди від адміна не видаються',
+    karmaWarnPlayFair: 'Грай чесно — карма відновиться',
+    karmaRhythmTip: 'Античит стежить за ритмом кліків — грай чесно і стрілка буде в зелені',
+    langTitle: '🌐 МОВА / ЯЗЫК',
+    tipsTitle: '💡 Підказки та правила',
+    tips: [
+      '• 🔄 Ребіртх доступний від 1 000 000 фокач (1 млн / 1кк) — дає +10% доходу назавжди та відкриває нові товари!',
+      '• ⚔️ Бий босів швидко — вони тікають і крадуть 10% каси!',
+      '• 🪲 Тапай шкідників одразу, поки вони не поїли фокачі!',
+      '• 🔧 Лагодь зношені будівлі в магазині (-50% CPS)',
+      '• 👮 Плати податок або купуй Бухгалтера у ВІП за 💎',
+      '• 💎 Діаманти та ВІП-прокачки НЕ зникають після ребіртху',
+    ],
+    resetBtn: '🗑️ Скинути гру повністю',
+    gameVersion: 'ФОКАЧА КЛІКЕР v1.1',
+
+    // Bottom Nav
+    navShop: 'Прокачки',
+    navCasino: 'Казино',
+    navClicker: 'Клікер',
+    navLeaders: 'Лідери',
+    navSettings: 'Інше',
+
+    // Modals
+    offlineTitle: 'Поки тебе не було…',
+    offlineSub: 'Бабусі напекли тобі',
+    claimBtn: 'Забрати!',
+    confirmYes: 'Так',
+    confirmNo: 'Ні',
+    confirmOk: 'Ок',
+    modalUnderstand: 'Зрозуміло',
+    challengeTitle: 'Бабуся не вірить тобі!',
+    challengeDesc: 'Злови 3 фокачі за 5 секунд і доведи, що ти не робот',
+    challengeChecking: 'Бабуся перевіряє карму…',
+    challengeWin: 'Бабуся повірила тобі! Фокачі більше не пригорають.',
+    challengePlayOn: 'Грати далі',
+    challengeDeniedTitle: 'Тінь бабусі не слухає!',
+    challengeDeniedDesc: 'Карма нижче 25 — випробування не діє. Грай чесно, карма відновиться.',
+    challengeFailTitle: 'Не встиг! Фокачі поки що пригорають…',
+    challengeRetry: 'Ще спроба',
+    challengeLater: 'Пізніше',
+
+    // Karma Modal
+    karmaModalTitle: 'TapSentinel v5',
+    karmaModalDesc: 'Це поведінковий рейтинг акаунта — <b class="text-amber-200">карма 0–100</b>. Античит стежить за ритмом натискань: люди тапають нерівно, з паузами й різними точками — боти рівно, як метроном. Підозрілі патерни знижують карму, а чим менша карма — тим більше обмежень.',
+    karmaZoneClean: '75–100 — Чистий:',
+    karmaZoneCleanDesc: 'все доступно',
+    karmaZoneSuspicious: '50–74 — Під підозрою:',
+    karmaZoneSuspiciousDesc: 'ставки в казино максимум 1K',
+    karmaZoneBad: '25–49 — Погана репутація:',
+    karmaZoneBadDesc: 'казино закрите, офлайн-дохід −50%',
+    karmaZoneShadow: '0–24 — Тінь бабусі:',
+    karmaZoneShadowDesc: 'кліки дають ×0.05, лідерборд заморожено, нагороди від адміна не видаються',
+    karmaRestoreTitle: 'Як відновити карму:',
+    karmaRestore1: '• Пройди випробування «Злови 3 фокачі» — <b class="text-amber-200">+10</b>',
+    karmaRestore2: '• Грай чесно — <b class="text-amber-200">+1 за годину</b> гри',
+
+    // Toasts
+    toastCloseTip: 'Натисни, щоб закрити',
+    toastReward: '🎁 Нагорода!',
+    toastRewardDesc: '+{0} фокач від адміна!',
+    toastDuelReward: '💎 Нагорода за дуель!',
+    toastDuelRewardDesc: '+{0} 💎 отримано!',
+    toastRebirthReward: '🔄 Ребіртхи від адміна!',
+    toastRebirthRewardDesc: '+{0} 🔄 до престижу!',
+    toastDeduct: '⚖️ Коригування',
+    toastDeductDesc: '-{0} фокач списано адміністратором',
+    toastBotDetect: '🚫 Авто-клікер не смачний!',
+    toastBotDetectDesc: 'Фокачі пригорають… Доведи бабусі, що ти не робот!',
+    toastTax: '👮 Податкова!',
+    toastTaxDesc: 'Сплачено {0}% податку (-{1} 🫓)',
+    toastBakingFest: '☀️ Свято випічки!',
+    toastBakingFestDesc: 'Виробництво x2 на 25 секунд!',
+    toastDampWeather: '🌧️ Сирість на кухні!',
+    toastDampWeatherDesc: 'CPS -30% на 20 секунд',
+    toastGrandmaGift: '👵 Бабусин пиріг!',
+    toastGrandmaGiftDesc: '+{0} смачних фокач!',
+    toastPestArrived: '⚠️ Шкідник!',
+    toastPestArrivedDesc: '{0} пробрався на склад! Тапни його!',
+    toastPestEscaped: '💨 Втік!',
+    toastPestEscapedDesc: 'Шкідник наївся і втік!',
+    toastBossArrived: '🚨 БОС НАПАВ!',
+    toastBossArrivedDesc: '{0} атакує! Заклікай його!',
+    toastBossEscaped: '💀 Бос втік!',
+    toastBossEscapedStolen: 'Вкрав {0} фокач! Наступного разу бий швидше!',
+    toastBossEscapedEmpty: 'Твоя каса була порожня — красти нічого!',
+    toastBuildingBroken: '🔧 Зношення!',
+    toastBuildingBrokenDesc: '{0} зламалась! (-50% CPS). Полагодь у магазині!',
+    toastAchievement: 'Досягнення!',
+    toastChallengeFail: '💀 Випробування провалено!',
+    toastChallengeFailDesc: '−5 карми. Бабуся спостерігає…',
+    toastShadowReminder: '🔴 Тінь бабусі…',
+    toastShadowReminderDesc: 'Карма {0}/100 — грай чесно, обмеження знімуться',
+    toastChallengeSuccess: '✅ Бабуся повірила тобі!',
+    toastChallengeSuccessDesc: 'Підозру знято, фокачі більше не пригорають!',
+    toastJackpot: '🎰 ДЖЕКПОТ!',
+    toastJackpotDesc: '{0} — +{1} {2}!',
+    toastKarmaLow: '🔒 Карма замала',
+    toastKarmaMaxBet: 'Максимальна ставка — {0} {1}',
+    toastNotEnough: '🎰 Не вистачає {0}!',
+    toastNotEnoughDesc: 'Ставка {0} {1} — зменш її',
+    toastBossSlain: '🏆 БОСА ЗНИЩЕНО!',
+    toastBossSlainDesc: '+{0} 💎 та +{1} 🫓!',
+    toastPestSquashed: '💥 РОЗЧАВЛЕНО!',
+    toastPestSquashedDiamond: '+1 💎 та +{0} 🫓!',
+    toastPestSquashedNoDiamond: '+{0} 🫓 захищено!',
+    toastNotEnoughFocaccia: 'Не вистачає фокач',
+    toastRepairCost: 'Ремонт коштує 🫓 {0}',
+    toastRepaired: 'Ремонт завершено!',
+    toastRepairedDesc: '{0} знову працює на 100%!',
+    toastBought: 'Куплено!',
+    toastVipBought: 'ВІП куплено!',
+    toastNotEnoughDiamonds: 'Не вистачає діамантів',
+    toastNeedDiamonds: 'Потрібно 💎 {0} діамантів',
+    toastBuilt: 'Збудовано!',
+    toastFrenzy: 'ФРЕНЗІ!',
+    toastFrenzyDesc: 'x{0} до всього на {1} секунд!',
+    toastLuck: 'Удача!',
+    toastLuckDesc: '+{0} фокач!',
+    toastDiamondTreasure: 'Діамантовий скарб!',
+    toastDiamondTreasureDesc: '+{0} 💎 рідкісних діамантів!',
+    toastRebirthDone: 'Ребіртх виконано!',
+    toastRebirthDoneDesc: '+{0}% бонус та нові відкриття!',
+    modalRebirthTitle: 'Ребіртх',
+    modalRebirthDesc: 'Зробити +{0} Ребіртх? (+{1}% до всього назавжди, +{2} енергії, та розблокування нових будівель і прокачок!). Фокачі та звичайні будівлі скинуться, але 💎 діаманти, діамантові будівлі та ВІП залишаться!',
+    modalResetTitle: 'Скинути гру?',
+    modalResetDesc: 'Ти впевнений? Весь прогрес, досягнення та престиж будуть втрачені НАЗАВЖДИ!',
+    modalResetWarnTitle: '⚠️ ОСТАННЄ ПОПЕРЕДЖЕННЯ',
+    modalResetWarnDesc: 'Ти збираєшся видалити {0} фокач, {1} досягнень, {2} 💎 і {3} очок престижу. Це НЕ можна відмінити!',
+    toastFlagWarn: '⚠️ Можливо використовував авто-клікер',
+    toastFlagWarnDesc: '{0} — спрацював античит',
+    milestoneCombo: '🔥 КОМБО x{0}! 🔥',
+  },
+  ru: {
+    loading: 'ЗАГРУЗКА',
+    topBarPerSec: '/сек',
+    topBarPerClick: '/клик',
+    topBarBroken: '🔧 Сломано!',
+    topBarRebirth: '🔄 {0} Ребиртх (+{1}%)',
+
+    // Clicker
+    attackBtn: 'АТАКОВАТЬ! ({0}/{1} HP)',
+    combo: 'КОМБО',
+    recharging: '⏳ ПЕРЕЗАРЯДКА',
+    energy: '⚡ ЭНЕРГИЯ',
+    waitSpeech: '⏳ Подожди...',
+    eaten: 'Съедено',
+    clicks: 'Кликов',
+    bosses: 'Боссов',
+    tapPest: 'Тапни! 💥',
+    pestTitle: 'Нажми чтобы прихлопнуть вредителя!',
+
+    // Shop
+    tabBuildings: 'Здания',
+    tabUpgrades: 'Апгрейды',
+    tabVip: 'ВИП',
+    tabAchievements: 'Достиж.',
+    diamondBuildingsBannerTitle: 'Алмазные здания',
+    diamondBuildingsBannerDesc: 'Постоянный доход и % бонусы ко всему CPS',
+    goTo: 'Перейти ➔',
+    rebirthLock: 'Ребиртх {0} 🔄',
+    rebirthLockDesc: 'Требуется {0} ребиртх для разблокировки',
+    brokenWarning: '⚠️ -50% CPS',
+    brokenNotice: 'Сломано! Эффективность упала вдвое',
+    repairBtn: '🔧 Починить (🫓 {0})',
+    noMoreUpgrades: '✨ Доступных прокачек на этом ребиртхе больше нет',
+    boughtUpgrades: 'Куплено',
+    yourDiamonds: '💎 Твои алмазы: {0}',
+    diamondsKeepNotice: 'Сохраняются при ребиртхах навсегда!',
+    diamondBuildingsCount: 'Алмазные здания:',
+    pcs: 'шт.',
+    vipBuildingsSubTab: '🏛️ Здания',
+    vipUpgradesSubTab: '⚡ Апгрейды',
+    boughtCheck: '✓ Куплено',
+    diamondsCost: '💎 {0} алмазов',
+
+    // Casino
+    casinoTitle: '🎰 КАЗИНО «ОДНОРУКАЯ БАБУШКА»',
+    tabSlots: 'Автомат',
+    tabDice: 'Кости',
+    tabWheel: 'Колесо',
+    spinSlots: '🎰 КРУТИТЬ',
+    spinDice: '🎲 БРОСИТЬ КОСТИ',
+    spinWheel: '🎡 КРУТИТЬ КОЛЕСО',
+    spinning: '🎲 ИГРАЕМ…',
+    casinoClosedTitle: 'Казино закрыто',
+    casinoClosedDesc: 'Карма {0}/100 — бабушка не доверяет тебе. Играй честно, подними карму выше 50, и двери откроются.',
+    curFocaccia: 'Фокаччи',
+    curDiamonds: 'Алмазы',
+    betLabel: 'Ставка',
+    balanceLabel: 'Баланс:',
+    customBetPlaceholder: 'Своя ставка…',
+    payoutsLabel: 'Выплаты',
+    anyPair: 'Любые 2 одинаковых',
+    diceRule1: '• Выбросил кость больше, чем бабушка → ',
+    diceRule2: '• Ничья → ставка возвращается',
+    diceRule3: '• Меньше → ставка сгорела 🔥',
+    wheelRule: '• 5 из 10 секторов пустые, но есть ×2, ×5 и два ×0.5/×1.5. Указатель сверху — куда упадёт, тот и твой множитель.',
+    casinoDisclaimer: 'Выигрыш в казино не добавляется в рейтинг «съедено»',
+    diceYou: 'ТЫ',
+    diceGranny: 'БАБУШКА',
+    slotsLoss: 'Мимо… фокачча пригорела. Попробуй ещё!',
+    diceTie: 'Ничья — ставка возвращена',
+    diceLoss: 'Бабушка победила: {0} против {1}. Ещё раз?',
+    diceWin: 'Твои {0} против {1} — выигрыш +{2} {3}!',
+    wheelLoss: 'Колесо показало пустой сектор… Ещё раз?',
+    wheelWin: 'Колесо ×{0}',
+    winText: 'Выигрыш +{0} {1} (×{2})',
+
+    // Leaders
+    leadersTitle: '🏆 ЛИДЕРЫ ФОКАЧЧИ',
+    yourRank: 'Твоё место: #{0}',
+    joinTop: 'Врывайся в топ — съешь больше фокачч! 🫓',
+    online: 'Онлайн: {0}',
+    loadingLeaders: '⏳ Загрузка…',
+    emptyLeaders: 'Пока что пусто. Обгоняй всех! 🫓',
+    itsYou: 'ЭТО ТЫ',
+    rebirthsCount: '🔄 {0} ребиртх(ов)',
+    eatenLabel: 'съедено 🫓',
+    refreshBtn: '🔄 Обновить',
+    leadersFooter: 'Рейтинг по съеденным фокаччам за всё время',
+
+    // Settings
+    settingsTitle: '⚙️ НАСТРОЙКИ И СТАТИСТИКА',
+    statEaten: 'Съедено',
+    statDiamonds: 'Алмазов',
+    statRebirths: 'Ребиртхов',
+    statBosses: 'Боссов побеждено',
+    statPests: 'Вредителей уничтожено',
+    statClicks: 'Кликов',
+    statCombo: 'Макс комбо',
+    statGolden: 'Золотых',
+    statBuildings: 'Зданий',
+    rebirthLevel: 'Ребиртх: {0} уровень',
+    rebirthBonus: '+{0}% дохода навсегда • +{1} энергии',
+    rebirthReady: '+{0} Готово!',
+    rebirthReq: '🔒 Требуется: 1 000 000 🫓 (1 млн / 1кк)',
+    rebirthNext: '🎯 До следующего (+{0})',
+    rebirthEarned: 'Заработано: {0} 🫓',
+    rebirthTarget: 'Цель: {0} 🫓',
+    rebirthTipLocked: '💡 Ребиртх открывается при достижении <b>1 000 000 фокачч</b> (осталось ещё {0}). Он разблокирует новые здания и прокачки в магазине! 💎 Алмазы и ВИП сохраняются.',
+    rebirthTipReady: '✨ Сбрось фокаччи и здания → получи <b class="text-fuchsia-200">+{0} Ребиртх{1}</b>! Открывает новые здания и прокачки в магазине. 💎 Алмазы и ВИП остаются.',
+    rebirthBtnActive: 'Сделать Ребиртх (+{0} 🔄)',
+    rebirthBtnLocked: '🔒 Требуется 1 000 000 🫓 (ещё {0})',
+    antiCheatStatusTitle: '🛡 СТАТУС АККАУНТА',
+    antiCheatProtected: 'ЗАЩИЩЕНО TAPSENTINEL v5 — BEHAVIORAL ANTI-CHEAT',
+    karmaChecking: '⚠️ Идёт проверка',
+    karmaShadow: '🔴 Тень бабушки',
+    karmaRestricted: '⚠️ Ограниченный режим',
+    karmaSuspicious: '🟡 Под подозрением',
+    karmaClean: 'Аккаунт чист ✅',
+    karmaWarnBurnt: '🚫 Фокаччи пригорают — клики дают ×0.05',
+    karmaWarnBetLimit: '🔒 Ставки в казино — максимум 1K',
+    karmaWarnCasinoClosed: '🔒 Казино закрыто, офлайн-доход −50%',
+    karmaWarnLeaderboardFrozen: '🔒 Лидерборд заморожен, награды от админа не выдаются',
+    karmaWarnPlayFair: 'Играй честно — карма восстановится',
+    karmaRhythmTip: 'Античит следит за ритмом кликов — играй честно и стрелка будет в зелёной зоне',
+    langTitle: '🌐 МОВА / ЯЗЫК',
+    tipsTitle: '💡 Подсказки и правила',
+    tips: [
+      '• 🔄 Ребиртх доступен от 1 000 000 фокачч (1 млн / 1кк) — даёт +10% дохода навсегда и открывает новые товары!',
+      '• ⚔️ Бей боссов быстро — они сбегают и воруют 10% кассы!',
+      '• 🪲 Тапай вредителей сразу, пока они не съели фокаччи!',
+      '• 🔧 Чини изношенные здания в магазине (-50% CPS)',
+      '• 👮 Плати налог или покупай Бухгалтера в ВИП за 💎',
+      '• 💎 Алмазы и ВИП-прокачки НЕ пропадают после ребиртха',
+    ],
+    resetBtn: '🗑️ Сбросить игру полностью',
+    gameVersion: 'ФОКАЧЧА КЛИКЕР v1.1',
+
+    // Bottom Nav
+    navShop: 'Прокачки',
+    navCasino: 'Казино',
+    navClicker: 'Кликер',
+    navLeaders: 'Лидеры',
+    navSettings: 'Прочее',
+
+    // Modals
+    offlineTitle: 'Пока тебя не было…',
+    offlineSub: 'Бабушки испекли тебе',
+    claimBtn: 'Забрать!',
+    confirmYes: 'Да',
+    confirmNo: 'Нет',
+    confirmOk: 'Ок',
+    modalUnderstand: 'Понятно',
+    challengeTitle: 'Бабушка не верит тебе!',
+    challengeDesc: 'Поймай 3 фокаччи за 5 секунд и докажи, что ты не робот',
+    challengeChecking: 'Бабушка проверяет карму…',
+    challengeWin: 'Бабушка поверила тебе! Фокаччи больше не пригорают.',
+    challengePlayOn: 'Играть дальше',
+    challengeDeniedTitle: 'Тень бабушки не слушает!',
+    challengeDeniedDesc: 'Карма ниже 25 — испытание не действует. Играй честно, карма восстановится.',
+    challengeFailTitle: 'Не успел! Фокаччи пока что пригорают…',
+    challengeRetry: 'Ещё попытка',
+    challengeLater: 'Позже',
+
+    // Karma Modal
+    karmaModalTitle: 'TapSentinel v5',
+    karmaModalDesc: 'Это поведенческий рейтинг аккаунта — <b class="text-amber-200">карма 0–100</b>. Античит следит за ритмом нажатий: люди тапают неравномерно, с паузами и в разные точки — боты ровно, как метроном. Подозрительные паттерны снижают карму, а чем ниже карма — тем больше ограничений.',
+    karmaZoneClean: '75–100 — Чистый:',
+    karmaZoneCleanDesc: 'всё доступно',
+    karmaZoneSuspicious: '50–74 — Под подозрением:',
+    karmaZoneSuspiciousDesc: 'ставки в казино максимум 1K',
+    karmaZoneBad: '25–49 — Плохая репутация:',
+    karmaZoneBadDesc: 'казино закрыто, офлайн-доход −50%',
+    karmaZoneShadow: '0–24 — Тень бабушки:',
+    karmaZoneShadowDesc: 'клики дают ×0.05, лидерборд заморожен, награды от админа не выдаются',
+    karmaRestoreTitle: 'Как восстановить карму:',
+    karmaRestore1: '• Пройди испытание «Поймай 3 фокаччи» — <b class="text-amber-200">+10</b>',
+    karmaRestore2: '• Играй честно — <b class="text-amber-200">+1 за час</b> игры',
+
+    // Toasts
+    toastCloseTip: 'Нажми, чтобы закрыть',
+    toastReward: '🎁 Награда!',
+    toastRewardDesc: '+{0} фокачч от админа!',
+    toastDuelReward: '💎 Награда за дуэль!',
+    toastDuelRewardDesc: '+{0} 💎 получено!',
+    toastRebirthReward: '🔄 Ребиртхи от админа!',
+    toastRebirthRewardDesc: '+{0} 🔄 к престижу!',
+    toastDeduct: '⚖️ Корректировка',
+    toastDeductDesc: '-{0} фокачч списано администратором',
+    toastBotDetect: '🚫 Авто-кликер не вкусный!',
+    toastBotDetectDesc: 'Фокаччи пригорают… Докажи бабушке, что ты не робот!',
+    toastTax: '👮 Налоговая!',
+    toastTaxDesc: 'Уплачено {0}% налога (-{1} 🫓)',
+    toastBakingFest: '☀️ Праздник выпечки!',
+    toastBakingFestDesc: 'Производство x2 на 25 секунд!',
+    toastDampWeather: '🌧️ Сырость на кухне!',
+    toastDampWeatherDesc: 'CPS -30% на 20 секунд',
+    toastGrandmaGift: '👵 Бабушкин пирог!',
+    toastGrandmaGiftDesc: '+{0} вкусных фокачч!',
+    toastPestArrived: '⚠️ Вредитель!',
+    toastPestArrivedDesc: '{0} пробрался на склад! Тапни его!',
+    toastPestEscaped: '💨 Сбежал!',
+    toastPestEscapedDesc: 'Вредитель наелся и сбежал!',
+    toastBossArrived: '🚨 БОСС НАПАЛ!',
+    toastBossArrivedDesc: '{0} атакует! Закликай его!',
+    toastBossEscaped: '💀 Босс сбежал!',
+    toastBossEscapedStolen: 'Украл {0} фокачч! В следующий раз бей быстрее!',
+    toastBossEscapedEmpty: 'Твоя касса была пуста — воровать нечего!',
+    toastBuildingBroken: '🔧 Износ!',
+    toastBuildingBrokenDesc: '{0} сломалась! (-50% CPS). Почини в магазине!',
+    toastAchievement: 'Достижение!',
+    toastChallengeFail: '💀 Испытание провалено!',
+    toastChallengeFailDesc: '−5 кармы. Бабушка наблюдает…',
+    toastShadowReminder: '🔴 Тень бабушки…',
+    toastShadowReminderDesc: 'Карма {0}/100 — играй честно, ограничения снимутся',
+    toastChallengeSuccess: '✅ Бабушка поверила тебе!',
+    toastChallengeSuccessDesc: 'Подозрение снято, фокаччи больше не пригорают!',
+    toastJackpot: '🎰 ДЖЕКПОТ!',
+    toastJackpotDesc: '{0} — +{1} {2}!',
+    toastKarmaLow: '🔒 Карма мала',
+    toastKarmaMaxBet: 'Максимальная ставка — {0} {1}',
+    toastNotEnough: '🎰 Не хватает {0}!',
+    toastNotEnoughDesc: 'Ставка {0} {1} — уменьши её',
+    toastBossSlain: '🏆 БОСС УНИЧТОЖЕН!',
+    toastBossSlainDesc: '+{0} 💎 и +{1} 🫓!',
+    toastPestSquashed: '💥 РАЗДАВЛЕН!',
+    toastPestSquashedDiamond: '+1 💎 и +{0} 🫓!',
+    toastPestSquashedNoDiamond: '+{0} 🫓 защищено!',
+    toastNotEnoughFocaccia: 'Не хватает фокачч',
+    toastRepairCost: 'Ремонт стоит 🫓 {0}',
+    toastRepaired: 'Ремонт завершён!',
+    toastRepairedDesc: '{0} снова работает на 100%!',
+    toastBought: 'Куплено!',
+    toastVipBought: 'ВИП куплено!',
+    toastNotEnoughDiamonds: 'Не хватает алмазов',
+    toastNeedDiamonds: 'Требуется 💎 {0} алмазов',
+    toastBuilt: 'Построено!',
+    toastFrenzy: 'ФРЕНЗИ!',
+    toastFrenzyDesc: 'x{0} ко всему на {1} секунд!',
+    toastLuck: 'Удача!',
+    toastLuckDesc: '+{0} фокачч!',
+    toastDiamondTreasure: 'Алмазный клад!',
+    toastDiamondTreasureDesc: '+{0} 💎 редких алмазов!',
+    toastRebirthDone: 'Ребиртх выполнен!',
+    toastRebirthDoneDesc: '+{0}% бонус и новые открытия!',
+    modalRebirthTitle: 'Ребиртх',
+    modalRebirthDesc: 'Сделать +{0} Ребиртх? (+{1}% ко всему навсегда, +{2} энергии, и разблокировка новых зданий и прокачек!). Фокаччи и обычные здания сбросятся, но 💎 алмазы, алмазные здания и ВИП останутся!',
+    modalResetTitle: 'Сбросить игру?',
+    modalResetDesc: 'Ты уверен? Весь прогресс, достижения и престиж будут потеряны НАВСЕГДА!',
+    modalResetWarnTitle: '⚠️ ПОСЛЕДНЕЕ ПРЕДУПРЕЖДЕНИЕ',
+    modalResetWarnDesc: 'Ты собираешься удалить {0} фокачч, {1} достижений, {2} 💎 и {3} очков престижа. Это НЕЛЬЗЯ отменить!',
+    toastFlagWarn: '⚠️ Возможно использовал авто-кликер',
+    toastFlagWarnDesc: '{0} — сработал античит',
+    milestoneCombo: '🔥 КОМБО x{0}! 🔥',
+  },
+};
+
+export function formatTemplate(tmpl: string, ...args: (string | number)[]): string {
+  let res = tmpl;
+  args.forEach((val, idx) => {
+    res = res.replaceAll(`{${idx}}`, String(val));
+  });
+  return res;
+}
+
+export function getBuildingText(bId: string, lang: Lang): LocalizedItem {
+  return BUILDINGS_I18N[bId]?.[lang] || { name: bId, desc: '' };
+}
+
+export function getUpgradeText(uId: string, lang: Lang): LocalizedItem {
+  return CLICK_UPGRADES_I18N[uId]?.[lang] || { name: uId, desc: '' };
+}
+
+export function getDiamondBuildingText(bId: string, lang: Lang): LocalizedItem {
+  return DIAMOND_BUILDINGS_I18N[bId]?.[lang] || { name: bId, desc: '' };
+}
+
+export function getVipUpgradeText(vuId: string, lang: Lang): LocalizedItem {
+  return VIP_UPGRADES_I18N[vuId]?.[lang] || { name: vuId, desc: '' };
+}
+
+export function getAchievementText(aId: string, lang: Lang): LocalizedItem {
+  return ACHIEVEMENTS_I18N[aId]?.[lang] || { name: aId, desc: '' };
+}
+
+export function getBossName(bossId: string, lang: Lang): string {
+  return BOSSES_I18N[bossId]?.[lang] || bossId;
+}
+
+export function getPestName(emoji: string, lang: Lang): string {
+  return PESTS_I18N[emoji]?.[lang] || '';
+}

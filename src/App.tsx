@@ -10,6 +10,19 @@ import {
   formatCps,
   formatNum,
 } from './game/data';
+import {
+  Lang,
+  TRANSLATIONS,
+  PHRASES_I18N,
+  formatTemplate,
+  getBuildingText,
+  getUpgradeText,
+  getDiamondBuildingText,
+  getVipUpgradeText,
+  getAchievementText,
+  getBossName,
+  getPestName,
+} from './game/i18n';
 import { cn } from './utils/cn';
 import focacciaImg from './assets/focaccia.png';
 import goldenImg from './assets/golden.png';
@@ -206,23 +219,17 @@ async function loadState(): Promise<SaveState> {
   } catch { return defaultState(); }
 }
 
-const PHRASES = [
-  'Ммм, фокача!', 'Ще одну!', 'Смачно!', 'Дай ще!', 'Хрустить!',
-  'Бле-е-е 👅', 'ФОКАЧА!!!', 'Ням-ням', 'З томатом!', 'Це моя фокача!',
-  'Гаряча! 🔥', 'Божественно!', 'Ще-ще-ще!', 'Обожнюю! 💛',
-];
-
 const BOSS_TYPES = [
-  { id: 'rat', name: 'Король Щурів', emoji: '🐀', hp: 30, time: 20, diamonds: 3, timeCps: 60 },
-  { id: 'mold', name: 'Мутантна Цвіль', emoji: '🦠', hp: 45, time: 22, diamonds: 5, timeCps: 120 },
-  { id: 'fire', name: 'Пекельна Пожежа', emoji: '🔥', hp: 60, time: 25, diamonds: 8, timeCps: 180 },
-  { id: 'mafia', name: 'Дон Фокачіо', emoji: '🤵', hp: 80, time: 30, diamonds: 12, timeCps: 300 },
+  { id: 'rat', emoji: '🐀', hp: 30, time: 20, diamonds: 3, timeCps: 60 },
+  { id: 'mold', emoji: '🦠', hp: 45, time: 22, diamonds: 5, timeCps: 120 },
+  { id: 'fire', emoji: '🔥', hp: 60, time: 25, diamonds: 8, timeCps: 180 },
+  { id: 'mafia', emoji: '🤵', hp: 80, time: 30, diamonds: 12, timeCps: 300 },
 ];
 
 const PEST_TYPES = [
-  { name: 'Тарган-злодюжка', emoji: '🪳' },
-  { name: 'Голодний жук', emoji: '🐜' },
-  { name: 'Хитрий щур', emoji: '🐁' },
+  { emoji: '🪳' },
+  { emoji: '🐜' },
+  { emoji: '🐁' },
 ];
 
 type Page = 'shop' | 'casino' | 'clicker' | 'leaders' | 'settings';
@@ -281,7 +288,7 @@ export default function App() {
   };
   const [shopTab, setShopTab] = useState<ShopTab>('buildings');
   const [vipSubTab, setVipSubTab] = useState<'buildings' | 'upgrades'>('buildings');
-  const [phrase, setPhrase] = useState('Натисни!');
+  const [phrase, setPhrase] = useState(PHRASES_I18N.uk[0]);
   const [golden, setGolden] = useState<{ x: number; y: number } | null>(null);
   const [frenzy, setFrenzy] = useState(0);
   const [offlineGain, setOfflineGain] = useState<number | null>(null);
@@ -315,7 +322,10 @@ export default function App() {
   const suspicionCooldownUntil = useRef(0); // після пройденого challenge
   const syntheticTaps = useRef<number[]>([]); // ts скриптових подій (isTrusted=false)
   const [karmaInfo, setKarmaInfo] = useState(false); // меню «що це?» біля спідометра
-  const [lang, setLang] = useState<'uk' | 'ru'>('uk'); // мова інтерфейсу
+  const [lang, setLang] = useState<Lang>('uk'); // мова інтерфейсу
+  const langRef = useRef<Lang>('uk');
+  langRef.current = lang;
+  const t = TRANSLATIONS[lang];
 
   /* Казино */
   const [casinoGame, setCasinoGame] = useState<'slots' | 'dice' | 'wheel'>('slots');
@@ -357,7 +367,7 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId: tgUser.id,
-        name: tgUser.first_name || 'Гравець',
+        name: tgUser.first_name || (langRef.current === 'uk' ? 'Гравець' : 'Игрок'),
         username: tgUser.username || '',
         total: Math.floor(cur.total),
         prestige: cur.prestige,
@@ -424,17 +434,21 @@ export default function App() {
               storage.set(SAVE_KEY, JSON.stringify(fresh));
               stateRef.current = fresh;
               setState(fresh);
+              const curT = TRANSLATIONS[langRef.current];
               setConfirmModal({
-                title: 'Скидання акаунту',
-                text: 'Адміністратор провів скидання гри. Твій прогрес розпочато спочатку!',
+                title: langRef.current === 'uk' ? 'Скидання акаунту' : 'Сброс аккаунта',
+                text: langRef.current === 'uk'
+                  ? 'Адміністратор провів скидання гри. Твій прогрес розпочато спочатку!'
+                  : 'Администратор произвёл сброс игры. Твой прогресс начат сначала!',
                 emoji: '🗑️',
                 isAlert: true,
-                confirmText: 'Ок',
+                confirmText: curT.confirmOk,
                 onConfirm: () => setConfirmModal(null),
               });
               haptic.error();
               setTimeout(reportSync, 100);
             } else {
+              const curT = TRANSLATIONS[langRef.current];
               if (data?.reward && data.reward > 0) {
                 setState((p) => {
                   const next = { ...p, focaccia: p.focaccia + data.reward, total: p.total + data.reward };
@@ -442,7 +456,7 @@ export default function App() {
                   saveNow(next);
                   return next;
                 });
-                addToast('🎁 Нагорода!', `+${formatNum(data.reward)} фокач від адміна!`, '🎁');
+                addToast(curT.toastReward, formatTemplate(curT.toastRewardDesc, formatNum(data.reward)), '🎁');
                 setTimeout(reportSync, 100);
               }
               if (data?.diamonds && data.diamonds > 0) {
@@ -452,7 +466,7 @@ export default function App() {
                   saveNow(next);
                   return next;
                 });
-                addToast('💎 Нагорода за дуель!', `+${formatNum(data.diamonds)} 💎 отримано!`, '💎');
+                addToast(curT.toastDuelReward, formatTemplate(curT.toastDuelRewardDesc, formatNum(data.diamonds)), '💎');
                 haptic.success();
                 setTimeout(reportSync, 100);
               }
@@ -463,7 +477,7 @@ export default function App() {
                   saveNow(next);
                   return next;
                 });
-                addToast('🔄 Ребіртхи від адміна!', `+${data.rebirth} 🔄 до престижу!`, '🔄');
+                addToast(curT.toastRebirthReward, formatTemplate(curT.toastRebirthRewardDesc, data.rebirth), '🔄');
                 haptic.success();
                 setTimeout(reportSync, 100);
               }
@@ -474,7 +488,7 @@ export default function App() {
                   saveNow(next);
                   return next;
                 });
-                addToast('⚖️ Коригування', `-${formatNum(data.deduct)} фокач списано адміністратором`, '⚠️');
+                addToast(curT.toastDeduct, formatTemplate(curT.toastDeductDesc, formatNum(data.deduct)), '⚠️');
                 haptic.warning();
                 setTimeout(reportSync, 100);
               }
@@ -901,7 +915,8 @@ export default function App() {
     if (challenge !== null || challengeOpening.current) return;
     challengeOpening.current = true; // guard від double-flag race
     setChallenge({ caught: 0, x: 20 + Math.random() * 55, y: 30 + Math.random() * 32, timeLeft: 5, result: null });
-    addToast('🚫 Авто-клікер не смачний!', 'Фокачі пригорають… Доведи бабусі, що ти не робот!', '👵');
+    const curT = TRANSLATIONS[langRef.current];
+    addToast(curT.toastBotDetect, curT.toastBotDetectDesc, '👵');
     haptic.error();
     if (tgUser?.id) {
       fetch(`${API_BASE}/api/leaderboard`, {
@@ -1075,6 +1090,7 @@ export default function App() {
       const roll = Math.random();
       const cur = stateRef.current;
       if (cur.total < 1000) return;
+      const curT = TRANSLATIONS[langRef.current];
 
       if (roll < 0.35 && cur.focaccia >= 500) {
         // Tax inspection
@@ -1082,24 +1098,24 @@ export default function App() {
         const taxRate = hasAccountant ? 0.01 : 0.05;
         const tax = Math.max(1, Math.floor(cur.focaccia * taxRate));
         setState((p) => ({ ...p, focaccia: Math.max(0, p.focaccia - tax) }));
-        addToast('👮 Податкова!', `Сплачено ${taxRate * 100}% податку (-${formatNum(tax)} 🫓)`, '📋');
+        addToast(curT.toastTax, formatTemplate(curT.toastTaxDesc, taxRate * 100, formatNum(tax)), '📋');
         doFlash('tax');
         haptic.medium();
       } else if (roll < 0.6) {
         // Baking Festival
-        setActiveEvent({ title: 'Свято випічки', emoji: '☀️', timeLeft: 25, cpsMult: 2.0 });
-        addToast('☀️ Свято випічки!', 'Виробництво x2 на 25 секунд!', '🎉');
+        setActiveEvent({ title: langRef.current === 'uk' ? 'Свято випічки' : 'Праздник выпечки', emoji: '☀️', timeLeft: 25, cpsMult: 2.0 });
+        addToast(curT.toastBakingFest, curT.toastBakingFestDesc, '🎉');
         haptic.success();
       } else if (roll < 0.8) {
         // Damp weather
-        setActiveEvent({ title: 'Сирість у печі', emoji: '🌧️', timeLeft: 20, cpsMult: 0.7 });
-        addToast('🌧️ Сирість на кухні!', 'CPS -30% на 20 секунд', '💨');
+        setActiveEvent({ title: langRef.current === 'uk' ? 'Сирість у печі' : 'Сырость на кухне', emoji: '🌧️', timeLeft: 20, cpsMult: 0.7 });
+        addToast(curT.toastDampWeather, curT.toastDampWeatherDesc, '💨');
         haptic.error();
       } else {
         // Grandma surprise gift
         const bonus = Math.max(100, Math.floor((cpsRef.current || 10) * 90));
         setState((p) => ({ ...p, focaccia: p.focaccia + bonus, total: p.total + bonus }));
-        addToast('👵 Бабусин пиріг!', `+${formatNum(bonus)} смачних фокач!`, '🥐');
+        addToast(curT.toastGrandmaGift, formatTemplate(curT.toastGrandmaGiftDesc, formatNum(bonus)), '🥐');
         haptic.success();
       }
     }, 90000);
@@ -1111,16 +1127,18 @@ export default function App() {
     if (loading) return;
     const iv = setInterval(() => {
       if (pest || stateRef.current.total < 500) return;
+      const curT = TRANSLATIONS[langRef.current];
       const pType = PEST_TYPES[Math.floor(Math.random() * PEST_TYPES.length)];
+      const pName = getPestName(pType.emoji, langRef.current);
       setPest({
         id: Date.now(),
         x: 15 + Math.random() * 70,
         y: 25 + Math.random() * 45,
-        name: pType.name,
+        name: pName,
         emoji: pType.emoji,
         dir: Math.random() < 0.5 ? 1 : -1,
       });
-      addToast('⚠️ Шкідник!', `${pType.name} пробрався на склад! Тапни його!`, pType.emoji);
+      addToast(curT.toastPestArrived, formatTemplate(curT.toastPestArrivedDesc, pName), pType.emoji);
       haptic.medium();
     }, 45000);
     return () => clearInterval(iv);
@@ -1131,7 +1149,8 @@ export default function App() {
     if (!pest) return;
     const escapeTimer = setTimeout(() => {
       setPest(null);
-      addToast('💨 Втік!', 'Шкідник наївся і втік!', '🏃');
+      const curT = TRANSLATIONS[langRef.current];
+      addToast(curT.toastPestEscaped, curT.toastPestEscapedDesc, '🏃');
     }, 14000);
 
     const stealInterval = setInterval(() => {
@@ -1174,11 +1193,13 @@ export default function App() {
     const iv = setInterval(() => {
       if (boss || stateRef.current.total < 3000) return;
       // Spawn random boss
+      const curT = TRANSLATIONS[langRef.current];
       const bType = BOSS_TYPES[Math.floor(Math.random() * BOSS_TYPES.length)];
       const currentCps = Math.max(10, cpsRef.current);
+      const bName = getBossName(bType.id, langRef.current);
       setBoss({
         id: bType.id,
-        name: bType.name,
+        name: bName,
         emoji: bType.emoji,
         maxHp: bType.hp,
         currentHp: bType.hp,
@@ -1186,7 +1207,7 @@ export default function App() {
         rewardDiamonds: bType.diamonds,
         rewardFocaccia: Math.max(100, Math.floor(currentCps * bType.timeCps)),
       });
-      addToast('🚨 БОС НАПАВ!', `${bType.name} атакує! Заклікай його!`, bType.emoji);
+      addToast(curT.toastBossArrived, formatTemplate(curT.toastBossArrivedDesc, bName), bType.emoji);
       haptic.heavy();
     }, 180000);
     return () => clearInterval(iv);
@@ -1204,12 +1225,13 @@ export default function App() {
       if (left <= 0 && !fled) {
         fled = true;
         clearInterval(iv);
+        const curT = TRANSLATIONS[langRef.current];
         const stolen = Math.floor(stateRef.current.focaccia * 0.1);
         if (stolen > 0) {
           setState((p) => ({ ...p, focaccia: Math.max(0, p.focaccia - stolen) }));
-          addToast('💀 Бос втік!', `Вкрав ${formatNum(stolen)} фокач! Наступного разу бий швидше!`, '😱');
+          addToast(curT.toastBossEscaped, formatTemplate(curT.toastBossEscapedStolen, formatNum(stolen)), '😱');
         } else {
-          addToast('💀 Бос втік!', 'Твоя каса була порожня — красти нічого!', '😱');
+          addToast(curT.toastBossEscaped, curT.toastBossEscapedEmpty, '😱');
         }
         haptic.error();
         setBoss(null);
@@ -1227,7 +1249,9 @@ export default function App() {
       if (owned.length === 0) return;
       const target = owned[Math.floor(Math.random() * owned.length)];
       setBrokenBuilding(target.id);
-      addToast('🔧 Зношення!', `${target.name} зламалась! (-50% CPS). Полагодь у магазині!`, '⚠️');
+      const curT = TRANSLATIONS[langRef.current];
+      const bText = getBuildingText(target.id, langRef.current);
+      addToast(curT.toastBuildingBroken, formatTemplate(curT.toastBuildingBrokenDesc, bText.name), '⚠️');
       haptic.error();
     }, 140000);
     return () => clearInterval(iv);
@@ -1259,7 +1283,9 @@ export default function App() {
         achievements: [...p.achievements, ...newly.map((a) => a.id)],
       }));
       newly.forEach((a) => {
-        addToast('Досягнення!', a.name, a.emoji);
+        const curT = TRANSLATIONS[langRef.current];
+        const aText = getAchievementText(a.id, langRef.current);
+        addToast(curT.toastAchievement, aText.name, a.emoji);
         haptic.success();
       });
     }
@@ -1295,14 +1321,16 @@ export default function App() {
         .then((data) => { if (typeof data?.karma === 'number') setKarma(data.karma); })
         .catch(() => {});
     }
-    addToast('💀 Випробування провалено!', '−5 карми. Бабуся спостерігає…', '💔');
+    const curT = TRANSLATIONS[langRef.current];
+    addToast(curT.toastChallengeFail, curT.toastChallengeFailDesc, '💔');
   }, [challenge?.result, tgUser]);
 
   useEffect(() => {
     if (loading || karma >= 25) return;
     // «Тінь бабусі» — нагадування при глибоко посадженій кармі
     const iv = setInterval(() => {
-      addToast('🔴 Тінь бабусі…', `Карма ${karma}/100 — грай чесно, обмеження знімуться`, '⏳');
+      const curT = TRANSLATIONS[langRef.current];
+      addToast(curT.toastShadowReminder, formatTemplate(curT.toastShadowReminderDesc, karma), '⏳');
     }, 90000);
     return () => clearInterval(iv);
   }, [loading, karma, addToast]);
@@ -1320,7 +1348,8 @@ export default function App() {
         recentEvidence.current = [];
         suspicionCooldownUntil.current = Date.now() + 7 * 60 * 1000;
         setChallenge((c) => (c ? { ...c, result: 'win' } : c));
-        addToast('✅ Бабуся повірила тобі!', 'Підозру знято, фокачі більше не пригорають!', '🫓');
+        const curT = TRANSLATIONS[langRef.current];
+        addToast(curT.toastChallengeSuccess, curT.toastChallengeSuccessDesc, '🫓');
         haptic.success();
       };
       if (tgUser?.id) {
@@ -1381,12 +1410,13 @@ export default function App() {
   const creditWin = (mult: number, combo: string, jackpot: boolean) => {
     const winAmt = Math.floor(casinoBet * mult);
     casinoGive(casinoCur, winAmt);
-    setCasinoMsg({ text: `Виграш +${formatNum(winAmt)} ${casinoCurSym} (×${mult})`, win: true });
+    const curT = TRANSLATIONS[langRef.current];
+    setCasinoMsg({ text: formatTemplate(curT.winText, formatNum(winAmt), casinoCurSym, mult), win: true });
     updateLuck(mult);
     if (jackpot || mult >= 5) {
       burstConfetti(['🫓', '💎', '⭐', '✨']);
       doFlash('golden');
-      addToast('🎰 ДЖЕКПОТ!', `${combo} — +${formatNum(winAmt)} ${casinoCurSym}!`, '💎');
+      addToast(curT.toastJackpot, formatTemplate(curT.toastJackpotDesc, combo, formatNum(winAmt), casinoCurSym), '💎');
       haptic.heavy();
     } else {
       haptic.success();
@@ -1401,12 +1431,14 @@ export default function App() {
 
   const spinCasino = () => {
     if (casinoSpinning) return;
+    const curT = TRANSLATIONS[langRef.current];
     if (casinoBet > casinoMaxBet) {
-      addToast('🔒 Карма замала', `Максимальна ставка — ${formatNum(casinoMaxBet)} ${casinoCurSym}`, '❌');
+      addToast(curT.toastKarmaLow, formatTemplate(curT.toastKarmaMaxBet, formatNum(casinoMaxBet), casinoCurSym), '❌');
       return;
     }
     if (casinoBalance < casinoBet) {
-      addToast(`🎰 Не вистачає ${casinoCur === 'gem' ? 'алмазів' : 'фокач'}!`, `Ставка ${formatNum(casinoBet)} ${casinoCurSym} — зменш її`, '❌');
+      const curName = casinoCur === 'gem' ? curT.curDiamonds.toLowerCase() : curT.curFocaccia.toLowerCase();
+      addToast(formatTemplate(curT.toastNotEnough, curName), formatTemplate(curT.toastNotEnoughDesc, formatNum(casinoBet), casinoCurSym), '❌');
       return;
     }
     setCasinoSpinning(true);
@@ -1441,18 +1473,18 @@ export default function App() {
       if (finalMult > 0) {
         const winAmt = Math.floor(casinoBet * finalMult);
         casinoGive(casinoCur, winAmt);
-        setCasinoMsg({ text: `Виграш +${formatNum(winAmt)} ${casinoCurSym} (×${finalMult})`, win: true });
+        setCasinoMsg({ text: formatTemplate(curT.winText, formatNum(winAmt), casinoCurSym, finalMult), win: true });
         updateLuck(finalMult);
         if (finalMult >= 8) {
           burstConfetti(['🫓', '💎', '⭐', '✨']);
           doFlash('golden');
-          addToast('🎰 ДЖЕКПОТ!', `${final[0]}${final[1]}${final[2]} — +${formatNum(winAmt)} ${casinoCurSym}!`, '💎');
+          addToast(curT.toastJackpot, formatTemplate(curT.toastJackpotDesc, `${final[0]}${final[1]}${final[2]}`, formatNum(winAmt), casinoCurSym), '💎');
           haptic.heavy();
         } else {
           haptic.success();
         }
       } else {
-        setCasinoMsg({ text: 'Мимо… фокача пригоріла. Спробуй ще!', win: false });
+        setCasinoMsg({ text: curT.slotsLoss, win: false });
         updateLuck(0);
         haptic.light();
       }
@@ -1461,12 +1493,14 @@ export default function App() {
 
   const rollDice = () => {
     if (casinoSpinning) return;
+    const curT = TRANSLATIONS[langRef.current];
     if (casinoBet > casinoMaxBet) {
-      addToast('🔒 Карма замала', `Максимальна ставка — ${formatNum(casinoMaxBet)} ${casinoCurSym}`, '❌');
+      addToast(curT.toastKarmaLow, formatTemplate(curT.toastKarmaMaxBet, formatNum(casinoMaxBet), casinoCurSym), '❌');
       return;
     }
     if (casinoBalance < casinoBet) {
-      addToast(`🎲 Не вистачає ${casinoCur === 'gem' ? 'алмазів' : 'фокач'}!`, `Ставка ${formatNum(casinoBet)} ${casinoCurSym} — зменш її`, '❌');
+      const curName = casinoCur === 'gem' ? curT.curDiamonds.toLowerCase() : curT.curFocaccia.toLowerCase();
+      addToast(formatTemplate(curT.toastNotEnough, curName), formatTemplate(curT.toastNotEnoughDesc, formatNum(casinoBet), casinoCurSym), '❌');
       return;
     }
     setCasinoSpinning(true);
@@ -1498,16 +1532,16 @@ export default function App() {
       if (mult === 1.9) {
         const winAmt = Math.floor(casinoBet * 1.9);
         casinoGive(casinoCur, winAmt);
-        setCasinoMsg({ text: `Твої ${(DICE_FACES[result.mine - 1])} проти ${(DICE_FACES[result.house - 1])} — виграш +${formatNum(winAmt)} ${casinoCurSym}!`, win: true });
+        setCasinoMsg({ text: formatTemplate(curT.diceWin, DICE_FACES[result.mine - 1], DICE_FACES[result.house - 1], formatNum(winAmt), casinoCurSym), win: true });
         updateLuck(1.9);
         haptic.success();
       } else if (mult === 1) {
         casinoGive(casinoCur, casinoBet); // ничья — ставка возвращается
-        setCasinoMsg({ text: 'Нічия — ставка повернулась', win: false });
+        setCasinoMsg({ text: curT.diceTie, win: false });
         updateLuck(1);
         haptic.light();
       } else {
-        setCasinoMsg({ text: `Бабуся перемогла: ${(DICE_FACES[result.house - 1])} проти ${(DICE_FACES[result.mine - 1])}. Ще раз?`, win: false });
+        setCasinoMsg({ text: formatTemplate(curT.diceLoss, DICE_FACES[result.house - 1], DICE_FACES[result.mine - 1]), win: false });
         updateLuck(0);
         haptic.light();
       }
@@ -1516,12 +1550,13 @@ export default function App() {
 
   const spinWheel = () => {
     if (casinoSpinning) return;
+    const curT = TRANSLATIONS[langRef.current];
     if (casinoBet > casinoMaxBet) {
-      addToast('🔒 Карма замала', `Максимальна ставка — ${formatNum(casinoMaxBet)} 🫓`, '❌');
+      addToast(curT.toastKarmaLow, formatTemplate(curT.toastKarmaMaxBet, formatNum(casinoMaxBet), '🫓'), '❌');
       return;
     }
     if (state.focaccia < casinoBet) {
-      addToast('🎡 Не вистачає фокач!', `Ставка ${formatNum(casinoBet)} 🫓 — зменш її`, '❌');
+      addToast(formatTemplate(curT.toastNotEnough, curT.curFocaccia.toLowerCase()), formatTemplate(curT.toastNotEnoughDesc, formatNum(casinoBet), '🫓'), '❌');
       return;
     }
     setCasinoSpinning(true);
@@ -1550,9 +1585,9 @@ export default function App() {
     setTimeout(() => {
       setCasinoSpinning(false);
       if (mult > 0) {
-        creditWin(mult, `Колесо ×${mult}`, false);
+        creditWin(mult, formatTemplate(curT.wheelWin, mult), false);
       } else {
-        setCasinoMsg({ text: 'Колесо показало порожній сектор… Ще раз?', win: false });
+        setCasinoMsg({ text: curT.wheelLoss, win: false });
         updateLuck(0);
         haptic.light();
       }
@@ -1579,7 +1614,8 @@ export default function App() {
     lastClick.current = now;
     setCombo(newCombo);
     if (!burning && [25, 50, 75, 100].includes(newCombo)) {
-      showMilestone(`🔥 КОМБО x${newCombo}! 🔥`);
+      const curT = TRANSLATIONS[langRef.current];
+      showMilestone(formatTemplate(curT.milestoneCombo, newCombo));
       burstConfetti(newCombo >= 100 ? ['🔥', '💥', '⭐', '🫓'] : ['✨', '⭐']);
       haptic.success();
     }
@@ -1637,7 +1673,10 @@ export default function App() {
       haptic.light();
     }
 
-    if (Math.random() < 0.15) setPhrase(PHRASES[Math.floor(Math.random() * PHRASES.length)]);
+    if (Math.random() < 0.15) {
+      const phs = PHRASES_I18N[langRef.current];
+      setPhrase(phs[Math.floor(Math.random() * phs.length)]);
+    }
   };
 
   const attackBoss = (e: React.MouseEvent) => {
@@ -1672,7 +1711,8 @@ export default function App() {
         stateRef.current = next;
         setState(next);
         saveNow(next);
-        addToast('🏆 БОСА ЗНИЩЕНО!', `+${rDiamonds} 💎 та +${formatNum(rFocaccia)} 🫓!`, '⚔️');
+        const curT = TRANSLATIONS[langRef.current];
+        addToast(curT.toastBossSlain, formatTemplate(curT.toastBossSlainDesc, rDiamonds, formatNum(rFocaccia)), '⚔️');
         haptic.success();
         return null; // boss cleared
       }
@@ -1703,9 +1743,10 @@ export default function App() {
     setState(next);
     saveNow(next);
 
+    const curT = TRANSLATIONS[langRef.current];
     addToast(
-      '💥 РОЗЧАВЛЕНО!',
-      gotDiamond ? `+1 💎 та +${formatNum(bonus)} 🫓!` : `+${formatNum(bonus)} 🫓 захищено!`,
+      curT.toastPestSquashed,
+      gotDiamond ? formatTemplate(curT.toastPestSquashedDiamond, formatNum(bonus)) : formatTemplate(curT.toastPestSquashedNoDiamond, formatNum(bonus)),
       '🪲',
     );
   };
@@ -1715,8 +1756,10 @@ export default function App() {
     if (!b) return;
     const cur = stateRef.current;
     const cost = Math.max(50, Math.floor(b.baseCost * 0.3));
+    const curT = TRANSLATIONS[langRef.current];
+    const bText = getBuildingText(b.id, langRef.current);
     if (cur.focaccia < cost) {
-      addToast('Не вистачає фокач', `Ремонт коштує 🫓 ${formatNum(cost)}`, '❌');
+      addToast(curT.toastNotEnoughFocaccia, formatTemplate(curT.toastRepairCost, formatNum(cost)), '❌');
       return;
     }
     const next: SaveState = { ...cur, focaccia: cur.focaccia - cost };
@@ -1724,7 +1767,7 @@ export default function App() {
     setState(next);
     saveNow(next);
     setBrokenBuilding(null);
-    addToast('Ремонт завершено!', `${b.name} знову працює на 100%!`, '🔧');
+    addToast(curT.toastRepaired, formatTemplate(curT.toastRepairedDesc, bText.name), '🔧');
     haptic.success();
   };
 
@@ -1758,7 +1801,9 @@ export default function App() {
     stateRef.current = next;
     setState(next);
     saveNow(next);
-    addToast('Куплено!', u.name, u.emoji);
+    const curT = TRANSLATIONS[langRef.current];
+    const uText = getUpgradeText(u.id, langRef.current);
+    addToast(curT.toastBought, uText.name, u.emoji);
     haptic.success();
   };
 
@@ -1775,7 +1820,9 @@ export default function App() {
     stateRef.current = next;
     setState(next);
     saveNow(next);
-    addToast('ВІП куплено!', u.name, u.emoji);
+    const curT = TRANSLATIONS[langRef.current];
+    const vuText = getVipUpgradeText(u.id, langRef.current);
+    addToast(curT.toastVipBought, vuText.name, u.emoji);
     haptic.success();
   };
 
@@ -1786,8 +1833,10 @@ export default function App() {
     if ((b.requireRebirth || 0) > cur.prestige) return;
     const owned = cur.diamondBuildings?.[id] || 0;
     const cost = diamondBuildingCost(b, owned);
+    const curT = TRANSLATIONS[langRef.current];
+    const dbText = getDiamondBuildingText(b.id, langRef.current);
     if (cur.diamonds < cost) {
-      addToast('Не вистачає діамантів', `Потрібно 💎 ${cost} діамантів`, '❌');
+      addToast(curT.toastNotEnoughDiamonds, formatTemplate(curT.toastNeedDiamonds, cost), '❌');
       return;
     }
     const next: SaveState = {
@@ -1801,7 +1850,7 @@ export default function App() {
     stateRef.current = next;
     setState(next);
     saveNow(next);
-    addToast('Збудовано!', `${b.name} (${owned + 1})`, b.emoji);
+    addToast(curT.toastBuilt, `${dbText.name} (${owned + 1})`, b.emoji);
     haptic.success();
   };
 
@@ -1813,19 +1862,20 @@ export default function App() {
     const roll = Math.random();
     let bonus = 0;
     let dGain = 0;
+    const curT = TRANSLATIONS[langRef.current];
     if (roll < 0.45) {
       const hasFrenzyUp = stateRef.current.vipUpgrades?.includes('vip_frenzy');
       const dur = hasFrenzyUp ? 25 : 20;
       const mult = hasFrenzyUp ? 8 : 7;
       setFrenzy(dur);
-      addToast('ФРЕНЗІ!', `x${mult} до всього на ${dur} секунд!`, '🔥');
+      addToast(curT.toastFrenzy, formatTemplate(curT.toastFrenzyDesc, mult, dur), '🔥');
     } else if (roll < 0.8) {
       bonus = Math.max(cps * 60 * 3, clickPower * 200, 50);
-      addToast('Удача!', `+${formatNum(bonus)} фокач!`, '✨');
+      addToast(curT.toastLuck, formatTemplate(curT.toastLuckDesc, formatNum(bonus)), '✨');
     } else {
       // Golden gives diamonds!
       dGain = 2;
-      addToast('Діамантовий скарб!', `+${dGain} 💎 рідкісних діамантів!`, '💎');
+      addToast(curT.toastDiamondTreasure, formatTemplate(curT.toastDiamondTreasureDesc, dGain), '💎');
     }
     const cur = stateRef.current;
     const next: SaveState = {
@@ -1842,9 +1892,11 @@ export default function App() {
 
   const doPrestige = () => {
     if (prestigeGain < 1) return;
+    const curT = TRANSLATIONS[langRef.current];
     setConfirmModal({
-      title: 'Ребіртх', emoji: '🔄',
-      text: `Зробити +${prestigeGain} Ребіртх? (+${prestigeGain * 10}% до всього назавжди, +${prestigeGain * 5} енергії, та розблокування нових будівель і прокачок!). Фокачі та звичайні будівлі скинуться, але 💎 діаманти, діамантові будівлі та ВІП залишаться!`,
+      title: curT.modalRebirthTitle, emoji: '🔄',
+      text: formatTemplate(curT.modalRebirthDesc, prestigeGain, prestigeGain * 10, prestigeGain * 5),
+      confirmText: curT.confirmYes,
       onConfirm: () => {
         const cur = stateRef.current;
         const next: SaveState = {
@@ -1858,13 +1910,14 @@ export default function App() {
           maxCombo: cur.maxCombo,
           bossesDefeated: cur.bossesDefeated,
           pestsSquashed: cur.pestsSquashed,
+          lang: cur.lang,
           lastReset: cur.lastReset,
         };
         stateRef.current = next;
         setState(next);
         saveNow(next);
         reportSync();
-        addToast('Ребіртх виконано!', `+${(cur.prestige + prestigeGain) * 10}% бонус та нові відкриття!`, '🔄');
+        addToast(curT.toastRebirthDone, formatTemplate(curT.toastRebirthDoneDesc, (cur.prestige + prestigeGain) * 10), '🔄');
         doFlash('golden');
         burstConfetti(['🔄', '💎', '✨', '⭐', '🫓']);
         haptic.success();
@@ -1874,13 +1927,16 @@ export default function App() {
   };
 
   const resetGame = () => {
+    const curT = TRANSLATIONS[langRef.current];
     setConfirmModal({
-      title: 'Скинути гру?', emoji: '🗑️',
-      text: 'Ти впевнений? Весь прогрес, досягнення та престиж будуть втрачені НАЗАВЖДИ!',
+      title: curT.modalResetTitle, emoji: '🗑️',
+      text: curT.modalResetDesc,
+      confirmText: curT.confirmYes,
       onConfirm: () => {
         setConfirmModal({
-          title: '⚠️ ОСТАННЄ ПОПЕРЕДЖЕННЯ', emoji: '💀',
-          text: `Ти збираєшся видалити ${formatNum(state.total)} фокач, ${state.achievements.length} досягнень, ${state.diamonds} 💎 і ${state.prestige} очок престижу. Це НЕ можна відмінити!`,
+          title: curT.modalResetWarnTitle, emoji: '💀',
+          text: formatTemplate(curT.modalResetWarnDesc, formatNum(state.total), state.achievements.length, state.diamonds, state.prestige),
+          confirmText: curT.confirmYes,
           onConfirm: () => { storage.remove(SAVE_KEY); setState(defaultState()); haptic.error(); setConfirmModal(null); },
         });
       },
@@ -1898,7 +1954,7 @@ export default function App() {
       <div className="h-screen bg-[#0d0a04] flex items-center justify-center">
         <div className="text-center">
           <div className="text-8xl mb-6" style={{ animation: 'bob 1.5s ease-in-out infinite' }}>🫓</div>
-          <div className="text-amber-400 font-black text-xl tracking-widest">ЗАВАНТАЖЕННЯ</div>
+          <div className="text-amber-400 font-black text-xl tracking-widest">{t.loading}</div>
           <div className="mt-4 w-48 h-1 bg-amber-900/50 rounded-full overflow-hidden mx-auto">
             <div className="h-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full" style={{ animation: 'shimmer 1.5s ease-in-out infinite', width: '60%' }} />
           </div>
@@ -1934,11 +1990,11 @@ export default function App() {
           onClick={squashPest}
           className="pest-crawl fixed z-40 p-2 cursor-pointer transition-transform active:scale-75 animate-pest"
           style={{ left: `${pest.x}%`, top: `${pest.y}%`, filter: 'drop-shadow(0 0 14px rgba(239,68,68,0.95))' }}
-          title="Натисни щоб прибити шкідника!"
+          title={t.pestTitle}
         >
           <span className="text-3xl inline-block" style={{ transform: `scaleX(${pest.dir})` }}>{pest.emoji}</span>
           <div className="text-[9px] bg-red-600/90 text-white font-black px-1.5 py-0.5 rounded-full whitespace-nowrap shadow mt-0.5 animate-bounce">
-            Тапни! 💥
+            {t.tapPest}
           </div>
         </button>
       )}
@@ -1992,20 +2048,20 @@ export default function App() {
 
       {/* Toasts */}
       <div className="fixed top-2 left-2 right-2 z-50 flex flex-col gap-2 pointer-events-auto">
-        {toasts.map((t) => (
+        {toasts.map((toastItem) => (
           <div
-            key={t.id}
-            onClick={() => { closeToast(t.id); haptic.light(); }}
+            key={toastItem.id}
+            onClick={() => { closeToast(toastItem.id); haptic.light(); }}
             className={cn(
               'animate-toast glass rounded-2xl p-3 flex items-center gap-3 shadow-2xl border border-amber-500/30 cursor-pointer active:scale-95 transition-transform',
-              toastsLeaving.includes(t.id) && 'toast-exit',
+              toastsLeaving.includes(toastItem.id) && 'toast-exit',
             )}
-            title="Натисни, щоб закрити"
+            title={t.toastCloseTip}
           >
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-2xl shrink-0">{t.emoji}</div>
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-2xl shrink-0">{toastItem.emoji}</div>
             <div className="min-w-0 flex-1">
-              <div className="text-[10px] uppercase tracking-widest text-amber-400 font-bold">{t.title}</div>
-              <div className="text-xs font-semibold truncate text-amber-100">{t.text}</div>
+              <div className="text-[10px] uppercase tracking-widest text-amber-400 font-bold">{toastItem.title}</div>
+              <div className="text-xs font-semibold truncate text-amber-100">{toastItem.text}</div>
             </div>
             <div className="text-amber-500/40 text-xs font-bold px-1">✕</div>
           </div>
@@ -2024,12 +2080,12 @@ export default function App() {
                 className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl transition active:scale-95 shadow-lg shadow-amber-500/25"
                 onClick={confirmModal.onConfirm}
               >
-                {confirmModal.confirmText || 'Ок'}
+                {confirmModal.confirmText || t.confirmOk}
               </button>
             ) : (
               <div className="flex gap-3">
-                <button className="flex-1 glass border border-amber-500/20 text-amber-200 font-bold py-3 rounded-2xl transition active:scale-95" onClick={() => setConfirmModal(null)}>Ні</button>
-                <button className="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl transition active:scale-95 shadow-lg shadow-amber-500/25" onClick={confirmModal.onConfirm}>{confirmModal.confirmText || 'Так'}</button>
+                <button className="flex-1 glass border border-amber-500/20 text-amber-200 font-bold py-3 rounded-2xl transition active:scale-95" onClick={() => setConfirmModal(null)}>{t.confirmNo}</button>
+                <button className="flex-1 bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl transition active:scale-95 shadow-lg shadow-amber-500/25" onClick={confirmModal.onConfirm}>{confirmModal.confirmText || t.confirmYes}</button>
               </div>
             )}
           </div>
@@ -2041,10 +2097,10 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6" onClick={() => setOfflineGain(null)}>
           <div className="glass border border-amber-500/40 rounded-3xl p-7 text-center max-w-xs w-full shadow-[0_0_60px_rgba(251,191,36,0.15)]" style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
             <div className="text-6xl mb-3">😴</div>
-            <h2 className="text-xl font-black mb-1 text-amber-100">Поки тебе не було…</h2>
-            <p className="text-amber-300/70 mb-3 text-sm">Бабусі напекли тобі</p>
+            <h2 className="text-xl font-black mb-1 text-amber-100">{t.offlineTitle}</h2>
+            <p className="text-amber-300/70 mb-3 text-sm">{t.offlineSub}</p>
             <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-orange-300 mb-6">+{formatNum(offlineGain)} 🫓</div>
-            <button className="bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl w-full transition active:scale-95 shadow-lg shadow-amber-500/25" onClick={() => { setOfflineGain(null); doFlash('golden'); burstConfetti(['🫓', '🥐', '⭐', '✨']); }}>Забрати!</button>
+            <button className="bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl w-full transition active:scale-95 shadow-lg shadow-amber-500/25" onClick={() => { setOfflineGain(null); doFlash('golden'); burstConfetti(['🫓', '🥐', '⭐', '✨']); }}>{t.claimBtn}</button>
           </div>
         </div>
       )}
@@ -2053,10 +2109,10 @@ export default function App() {
       {challenge && (
         <div className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center p-6">
           <div className="text-5xl mb-2">👵</div>
-          <h2 className="text-xl font-black text-amber-100 mb-1 text-center">Бабуся не вірить тобі!</h2>
+          <h2 className="text-xl font-black text-amber-100 mb-1 text-center">{t.challengeTitle}</h2>
           {challenge.result === null && (
             <>
-              <p className="text-amber-300/70 text-sm mb-4 text-center">Злови 3 фокачі за 5 секунд і доведи, що ти не робот</p>
+              <p className="text-amber-300/70 text-sm mb-4 text-center">{t.challengeDesc}</p>
               <div className="text-amber-200 font-black text-2xl tabular-nums mb-1">{challenge.caught}/3</div>
               <div className="w-48 h-2 bg-black/50 rounded-full overflow-hidden mb-6 border border-amber-500/20">
                 <div className="h-full bg-gradient-to-r from-amber-500 to-red-500 transition-all duration-100" style={{ width: `${(challenge.timeLeft / 5) * 100}%` }} />
@@ -2075,35 +2131,35 @@ export default function App() {
           {challenge.result === 'pending' && (
             <div className="text-center" style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
               <div className="text-6xl mb-3 animate-bob">⏳</div>
-              <p className="text-amber-200 font-bold mb-4">Бабуся перевіряє карму…</p>
+              <p className="text-amber-200 font-bold mb-4">{t.challengeChecking}</p>
             </div>
           )}
           {challenge.result === 'win' && (
             <div className="text-center" style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
               <div className="text-6xl mb-3">✅</div>
-              <p className="text-emerald-300 font-bold mb-5">Бабуся повірила тобі! Фокачі більше не пригорають.</p>
-              <button onClick={() => setChallenge(null)} className="bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 px-8 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25">Грати далі</button>
+              <p className="text-emerald-300 font-bold mb-5">{t.challengeWin}</p>
+              <button onClick={() => setChallenge(null)} className="bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 px-8 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25">{t.challengePlayOn}</button>
             </div>
           )}
           {challenge.result === 'denied' && (
             <div className="text-center" style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
               <div className="text-6xl mb-3">🔴</div>
-              <p className="text-red-300 font-bold mb-1">Тінь бабусі не слухає!</p>
-              <p className="text-amber-300/60 text-[11px] mb-5">Карма нижче 25 — випробування не діє. Грай чесно, карма відновиться.</p>
-              <button onClick={() => setChallenge(null)} className="bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 px-8 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25">Зрозуміло</button>
+              <p className="text-red-300 font-bold mb-1">{t.challengeDeniedTitle}</p>
+              <p className="text-amber-300/60 text-[11px] mb-5">{t.challengeDeniedDesc}</p>
+              <button onClick={() => setChallenge(null)} className="bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 px-8 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25">{t.modalUnderstand}</button>
             </div>
           )}
           {challenge.result === 'fail' && (
             <div className="text-center" style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
               <div className="text-6xl mb-3">💀</div>
-              <p className="text-red-300 font-bold mb-5">Не встиг! Фокачі поки що пригорають…</p>
+              <p className="text-red-300 font-bold mb-5">{t.challengeFailTitle}</p>
               <button
                 onClick={() => setChallenge({ caught: 0, x: 20 + Math.random() * 55, y: 30 + Math.random() * 32, timeLeft: 5, result: null })}
                 className="bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 px-8 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25"
               >
-                Ще спроба
+                {t.challengeRetry}
               </button>
-              <button onClick={() => setChallenge(null)} className="block mx-auto mt-3 text-xs text-amber-500/50 font-bold">Пізніше</button>
+              <button onClick={() => setChallenge(null)} className="block mx-auto mt-3 text-xs text-amber-500/50 font-bold">{t.challengeLater}</button>
             </div>
           )}
         </div>
@@ -2118,40 +2174,36 @@ export default function App() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-4xl mb-2 text-center">🛡</div>
-            <h2 className="text-lg font-black text-amber-100 text-center mb-1">TapSentinel v5</h2>
-            <p className="text-[11px] text-amber-300/70 leading-relaxed mb-3">
-              Це поведінковий рейтинг акаунта — <b className="text-amber-200">карма 0–100</b>. Античит стежить за
-              ритмом натискань: люди тапають нерівно, з паузами й різними точками — боти рівно, як метроном.
-              Підозрілі патерни знижують карму, а чим менша карма — тим більше обмежень.
-            </p>
+            <h2 className="text-lg font-black text-amber-100 text-center mb-1">{t.karmaModalTitle}</h2>
+            <p className="text-[11px] text-amber-300/70 leading-relaxed mb-3" dangerouslySetInnerHTML={{ __html: t.karmaModalDesc }} />
             <div className="space-y-1.5 text-[11px] leading-relaxed mb-3">
               <div className="flex items-start gap-2">
                 <span>🟢</span>
-                <span><b className="text-emerald-300">75–100 — Чистий:</b> все доступно</span>
+                <span><b className="text-emerald-300">{t.karmaZoneClean}</b> {t.karmaZoneCleanDesc}</span>
               </div>
               <div className="flex items-start gap-2">
                 <span>🟡</span>
-                <span><b className="text-yellow-300">50–74 — Під підозрою:</b> ставки в казино максимум 1K</span>
+                <span><b className="text-yellow-300">{t.karmaZoneSuspicious}</b> {t.karmaZoneSuspiciousDesc}</span>
               </div>
               <div className="flex items-start gap-2">
                 <span>🟠</span>
-                <span><b className="text-orange-300">25–49 — Погана репутація:</b> казино закрите, офлайн-дохід −50%</span>
+                <span><b className="text-orange-300">{t.karmaZoneBad}</b> {t.karmaZoneBadDesc}</span>
               </div>
               <div className="flex items-start gap-2">
                 <span>🔴</span>
-                <span><b className="text-red-300">0–24 — Тінь бабусі:</b> кліки дають ×0.05, лідерборд заморожено, нагороди від адміна не видаються</span>
+                <span><b className="text-red-300">{t.karmaZoneShadow}</b> {t.karmaZoneShadowDesc}</span>
               </div>
             </div>
             <div className="bg-black/30 rounded-xl p-2.5 text-[11px] text-amber-300/70 leading-relaxed mb-3">
-              <div className="font-black text-amber-300/80 mb-1">Як відновити карму:</div>
-              <div>• Пройди випробування «Злови 3 фокачі» — <b className="text-amber-200">+10</b></div>
-              <div>• Грай чесно — <b className="text-amber-200">+1 за годину</b> гри</div>
+              <div className="font-black text-amber-300/80 mb-1">{t.karmaRestoreTitle}</div>
+              <div dangerouslySetInnerHTML={{ __html: t.karmaRestore1 }} />
+              <div dangerouslySetInnerHTML={{ __html: t.karmaRestore2 }} />
             </div>
             <button
               onClick={() => { setKarmaInfo(false); haptic.light(); }}
               className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-2.5 rounded-2xl transition active:scale-95 shadow-lg shadow-amber-500/25"
             >
-              Зрозуміло
+              {t.modalUnderstand}
             </button>
           </div>
         </div>
@@ -2172,13 +2224,13 @@ export default function App() {
               </div>
             </div>
             <div className="text-amber-400/60 text-[11px] font-medium mt-0.5">
-              {formatCps(cps * frenzyMult)}/с • {formatNum(clickPower * comboMult * frenzyMult)}/клік
+              {formatCps(cps * frenzyMult)}{t.topBarPerSec} • {formatNum(clickPower * comboMult * frenzyMult)}{t.topBarPerClick}
             </div>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
             {brokenBuilding && (
               <div onClick={() => { goPage('shop'); setShopTab('buildings'); }} className="cursor-pointer text-red-300 text-[10px] font-black bg-red-500/25 px-2 py-1 rounded-full border border-red-500/40 animate-pulse">
-                🔧 Зламано!
+                {t.topBarBroken}
               </div>
             )}
             {activeEvent && (
@@ -2196,7 +2248,7 @@ export default function App() {
             )}
             {state.prestige > 0 && frenzy <= 0 && !activeEvent && (
               <div className="text-fuchsia-300 text-[10px] font-bold bg-fuchsia-500/15 px-2 py-1 rounded-full border border-fuchsia-500/25">
-                🔄 {state.prestige} Ребіртх (+{state.prestige * 10}%)
+                {formatTemplate(t.topBarRebirth, state.prestige, state.prestige * 10)}
               </div>
             )}
           </div>
@@ -2222,7 +2274,7 @@ export default function App() {
             {boss ? (
               <div className="w-full max-w-xs glass border-2 border-red-500/60 rounded-2xl p-3 shadow-[0_0_30px_rgba(239,68,68,0.4)] text-center animate-boss">
                 <div className="flex items-center justify-between text-xs font-black text-red-300 mb-1">
-                  <span>🚨 {boss.name}</span>
+                  <span>🚨 {getBossName(boss.id, lang)}</span>
                   <span className={cn('tabular-nums font-mono', boss.timeLeft <= 5 && 'text-red-400 font-bold animate-bounce')}>
                     ⏱️ {boss.timeLeft}с
                   </span>
@@ -2238,7 +2290,7 @@ export default function App() {
                   className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white font-black py-2 rounded-xl text-sm transition active:scale-95 shadow-lg shadow-red-600/30 flex items-center justify-center gap-2"
                 >
                   <span className="text-xl">{boss.emoji}</span>
-                  <span>АТАКУВАТИ! ({boss.currentHp}/{boss.maxHp} HP)</span>
+                  <span>{formatTemplate(t.attackBtn, boss.currentHp, boss.maxHp)}</span>
                   <span className="text-xs opacity-75">{state.vipUpgrades?.includes('vip_knife') ? '⚔️ x2' : '⚔️ x1'}</span>
                 </button>
               </div>
@@ -2247,7 +2299,7 @@ export default function App() {
             {/* Combo */}
             <div className="w-full max-w-xs">
               <div className="flex justify-between text-[10px] font-bold text-amber-500/70 mb-0.5">
-                <span>КОМБО</span>
+                <span>{t.combo}</span>
                 <span className={cn(combo >= 25 && 'text-orange-400', combo >= 100 && 'text-red-400 animate-pulse', combo >= 50 && 'combo-flame')}>
                   x{combo} {comboMult > 1 && `(×${comboMult.toFixed(2)})`}
                 </span>
@@ -2261,7 +2313,7 @@ export default function App() {
             <div className="w-full max-w-xs">
               <div className="flex justify-between text-[10px] font-bold mb-0.5">
                 <span className={cn(recharging && state.energy <= 0 ? 'text-cyan-400 animate-pulse' : 'text-cyan-500/70')}>
-                  {state.energy <= 0 ? '⏳ ПЕРЕЗАРЯДКА' : '⚡ ЕНЕРГІЯ'}
+                  {state.energy <= 0 ? t.recharging : t.energy}
                 </span>
                 <span className="text-cyan-400/80 tabular-nums">{state.energy}/{maxEnergy}</span>
               </div>
@@ -2281,7 +2333,7 @@ export default function App() {
             {/* Speech */}
             <div className="relative">
               <div className="bg-white/95 text-amber-950 font-bold px-5 py-1.5 rounded-2xl shadow-xl text-sm animate-bob backdrop-blur">
-                <span key={phrase} className="animate-wobble-once inline-block">{state.energy <= 0 ? '⏳ Зачекай...' : phrase}</span>
+                <span key={phrase} className="animate-wobble-once inline-block">{state.energy <= 0 ? t.waitSpeech : phrase}</span>
               </div>
               <div className="absolute left-1/2 -bottom-1.5 -translate-x-1/2 w-3 h-3 bg-white/95 rotate-45 rounded-sm" />
             </div>
@@ -2353,9 +2405,9 @@ export default function App() {
 
             {/* Stats row */}
             <div className="flex gap-4 text-center text-[10px] mt-0.5">
-              <div><div className="text-amber-500/50">З'їдено</div><div className="font-black text-amber-200/80 text-sm tabular-nums">{formatNum(state.total)}</div></div>
-              <div><div className="text-amber-500/50">Кліків</div><div className="font-black text-amber-200/80 text-sm tabular-nums">{state.clicks.toLocaleString()}</div></div>
-              <div><div className="text-amber-500/50">Босів</div><div className="font-black text-red-300 text-sm tabular-nums">⚔️ {state.bossesDefeated}</div></div>
+              <div><div className="text-amber-500/50">{t.eaten}</div><div className="font-black text-amber-200/80 text-sm tabular-nums">{formatNum(state.total)}</div></div>
+              <div><div className="text-amber-500/50">{t.clicks}</div><div className="font-black text-amber-200/80 text-sm tabular-nums">{state.clicks.toLocaleString()}</div></div>
+              <div><div className="text-amber-500/50">{t.bosses}</div><div className="font-black text-red-300 text-sm tabular-nums">⚔️ {state.bossesDefeated}</div></div>
             </div>
           </div>
         )}
@@ -2365,10 +2417,10 @@ export default function App() {
           <div className={cn('h-full flex flex-col', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
             <div className="flex shrink-0 p-1.5 gap-1">
               {([
-                ['buildings', '🏗️', 'Будівлі', totalRegularBuildings],
-                ['upgrades', '⚡', 'Апгрейди', state.upgrades.length],
-                ['vip', '💎', 'ВІП', totalDiamondBuildings + (state.vipUpgrades?.length || 0)],
-                ['achievements', '🏆', 'Досягн.', state.achievements.length],
+                ['buildings', '🏗️', t.tabBuildings, totalRegularBuildings],
+                ['upgrades', '⚡', t.tabUpgrades, state.upgrades.length],
+                ['vip', '💎', t.tabVip, totalDiamondBuildings + (state.vipUpgrades?.length || 0)],
+                ['achievements', '🏆', t.tabAchievements, state.achievements.length],
               ] as [ShopTab, string, string, number][]).map(([id, icon, label, count]) => (
                 <button
                   key={id}
@@ -2395,13 +2447,14 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <span className="text-xl animate-diamond">💎</span>
                     <div>
-                      <div className="text-xs font-bold text-cyan-200">Діамантові будівлі</div>
-                      <div className="text-[10px] text-cyan-300/60">Постійний дохід та % бонуси до всього CPS</div>
+                      <div className="text-xs font-bold text-cyan-200">{t.diamondBuildingsBannerTitle}</div>
+                      <div className="text-[10px] text-cyan-300/60">{t.diamondBuildingsBannerDesc}</div>
                     </div>
                   </div>
-                  <span className="text-xs text-cyan-400 font-black">Перейти ➔</span>
+                  <span className="text-xs text-cyan-400 font-black">{t.goTo}</span>
                 </div>
                 {BUILDINGS.map((b, i) => {
+                const bText = getBuildingText(b.id, lang);
                 const owned = state.buildings[b.id] || 0;
                 const cost = buildingCost(b, owned);
                 const can = state.focaccia >= cost;
@@ -2420,11 +2473,11 @@ export default function App() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="font-bold text-amber-100/70 text-[13px] flex justify-between">
-                          <span className="truncate">{b.name}</span>
-                          <span className="text-fuchsia-400 text-xs font-bold">Ребіртх {b.requireRebirth} 🔄</span>
+                          <span className="truncate">{bText.name}</span>
+                          <span className="text-fuchsia-400 text-xs font-bold">{formatTemplate(t.rebirthLock, b.requireRebirth)}</span>
                         </div>
                         <div className="text-[10px] text-amber-500/50 truncate">
-                          Потрібен {b.requireRebirth} ребіртх для розблокування
+                          {formatTemplate(t.rebirthLockDesc, b.requireRebirth)}
                         </div>
                       </div>
                     </div>
@@ -2452,14 +2505,14 @@ export default function App() {
                       )}>{b.emoji}</div>
                       <div className="flex-1 min-w-0">
                         <div className="font-bold text-amber-100/90 text-[13px] flex justify-between">
-                          <span className="truncate">{b.name}</span>
+                          <span className="truncate">{bText.name}</span>
                           <span className="text-amber-400/60 tabular-nums ml-2 text-xs">{owned}</span>
                         </div>
-                        <div className="text-[10px] text-amber-400/40 truncate">{b.desc}</div>
+                        <div className="text-[10px] text-amber-400/40 truncate">{bText.desc}</div>
                         <div className="text-[10px] mt-0.5 flex justify-between">
                           <span className={cn('font-bold', can ? 'text-emerald-400' : 'text-red-400/70')}>🫓 {formatNum(cost)}</span>
                           <span className={cn(isBroken ? 'text-red-400 font-bold' : 'text-amber-300/50')}>
-                            {isBroken ? '⚠️ -50% CPS' : `+${formatCps(b.cps * prestigeMult)}/с`}
+                            {isBroken ? t.brokenWarning : `+${formatCps(b.cps * prestigeMult)}${t.topBarPerSec}`}
                           </span>
                         </div>
                       </div>
@@ -2467,13 +2520,13 @@ export default function App() {
 
                     {isBroken && (
                       <div className="mt-2 flex items-center justify-between pt-1 border-t border-red-500/20">
-                        <span className="text-[10px] text-red-300 font-bold">Зламано! Ефективність впала вдвічі</span>
+                        <span className="text-[10px] text-red-300 font-bold">{t.brokenNotice}</span>
                         <button
                           onClick={() => fixBuilding(b.id)}
                           disabled={!canRepair}
                           className="bg-red-500 hover:bg-red-400 disabled:opacity-50 text-white font-black text-[11px] px-3 py-1 rounded-lg shadow active:scale-95"
                         >
-                          🔧 Полагодити (🫓 {formatNum(repairCost)})
+                          {formatTemplate(t.repairBtn, formatNum(repairCost))}
                         </button>
                       </div>
                     )}
@@ -2491,7 +2544,7 @@ export default function App() {
                     if (u.requireBuilding) return (state.buildings[u.requireBuilding.id] || 0) >= u.requireBuilding.count;
                     return state.total >= u.cost * 0.3;
                   }).length === 0 && (
-                  <div className="text-center text-amber-500/30 py-8 text-xs">✨ Доступних прокачок на цьому ребіртху більше нема</div>
+                  <div className="text-center text-amber-500/30 py-8 text-xs">{t.noMoreUpgrades}</div>
                 )}
                 {CLICK_UPGRADES
                   .filter((u) => !state.upgrades.includes(u.id))
@@ -2500,6 +2553,7 @@ export default function App() {
                     if (u.requireBuilding) return (state.buildings[u.requireBuilding.id] || 0) >= u.requireBuilding.count;
                     return state.total >= u.cost * 0.3;
                   }).map((u, i) => {
+                  const uText = getUpgradeText(u.id, lang);
                   const can = state.focaccia >= u.cost;
                   const isEnergy = !!u.energyRegen;
                   return (
@@ -2511,8 +2565,8 @@ export default function App() {
                         isEnergy ? 'bg-cyan-500/15' : 'bg-sky-500/15',
                       )}>{u.emoji}</div>
                       <div className="flex-1">
-                        <div className={cn('font-bold text-[13px]', isEnergy ? 'text-cyan-100/90' : 'text-sky-100/90')}>{u.name}</div>
-                        <div className={cn('text-[10px]', isEnergy ? 'text-cyan-300/40' : 'text-sky-300/40')}>{u.desc}</div>
+                        <div className={cn('font-bold text-[13px]', isEnergy ? 'text-cyan-100/90' : 'text-sky-100/90')}>{uText.name}</div>
+                        <div className={cn('text-[10px]', isEnergy ? 'text-cyan-300/40' : 'text-sky-300/40')}>{uText.desc}</div>
                         <div className={cn('text-[10px] font-bold mt-0.5', can ? 'text-emerald-400' : 'text-red-400/70')}>🫓 {formatNum(u.cost)}</div>
                       </div>
                     </button>
@@ -2520,28 +2574,34 @@ export default function App() {
                 })}
 
                 {/* Locked upgrades preview */}
-                {CLICK_UPGRADES.filter((u) => (u.requireRebirth || 0) > state.prestige).slice(0, 4).map((u, i) => (
-                  <div key={u.id} style={{ animationDelay: `${i * 35}ms` }} className="glass-card rounded-xl p-2.5 flex items-center gap-2.5 opacity-40 border border-fuchsia-500/15 animate-card">
-                    <div className="w-10 h-10 rounded-xl bg-black/30 flex items-center justify-center text-xl shrink-0 grayscale">
-                      🔒
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-bold text-amber-100/60 text-[13px] flex justify-between">
-                        <span className="truncate">{u.name}</span>
-                        <span className="text-fuchsia-400 text-xs font-bold">Ребіртх {u.requireRebirth} 🔄</span>
+                {CLICK_UPGRADES.filter((u) => (u.requireRebirth || 0) > state.prestige).slice(0, 4).map((u, i) => {
+                  const uText = getUpgradeText(u.id, lang);
+                  return (
+                    <div key={u.id} style={{ animationDelay: `${i * 35}ms` }} className="glass-card rounded-xl p-2.5 flex items-center gap-2.5 opacity-40 border border-fuchsia-500/15 animate-card">
+                      <div className="w-10 h-10 rounded-xl bg-black/30 flex items-center justify-center text-xl shrink-0 grayscale">
+                        🔒
                       </div>
-                      <div className="text-[10px] text-amber-500/50 truncate">{u.desc}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-amber-100/60 text-[13px] flex justify-between">
+                          <span className="truncate">{uText.name}</span>
+                          <span className="text-fuchsia-400 text-xs font-bold">{formatTemplate(t.rebirthLock, u.requireRebirth)}</span>
+                        </div>
+                        <div className="text-[10px] text-amber-500/50 truncate">{uText.desc}</div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {state.upgrades.length > 0 && (
                   <div className="pt-3">
-                    <div className="text-[10px] uppercase font-bold text-amber-500/30 mb-2 tracking-widest">Куплено</div>
+                    <div className="text-[10px] uppercase font-bold text-amber-500/30 mb-2 tracking-widest">{t.boughtUpgrades}</div>
                     <div className="flex flex-wrap gap-1.5">
-                      {CLICK_UPGRADES.filter((u) => state.upgrades.includes(u.id)).map((u) => (
-                        <span key={u.id} title={`${u.name}: ${u.desc}`} className="text-lg glass-card rounded-lg w-9 h-9 flex items-center justify-center">{u.emoji}</span>
-                      ))}
+                      {CLICK_UPGRADES.filter((u) => state.upgrades.includes(u.id)).map((u) => {
+                        const uText = getUpgradeText(u.id, lang);
+                        return (
+                          <span key={u.id} title={`${uText.name}: ${uText.desc}`} className="text-lg glass-card rounded-lg w-9 h-9 flex items-center justify-center">{u.emoji}</span>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -2553,12 +2613,12 @@ export default function App() {
                   <div className="glass-card rounded-xl p-3 border-cyan-500/30 bg-cyan-950/20">
                     <div className="flex items-center justify-between mb-2.5">
                       <div>
-                        <div className="text-xs font-black text-cyan-200">💎 Твої діаманти: {state.diamonds}</div>
-                        <div className="text-[10px] text-cyan-300/60">Зберігаються при ребіртхах назавжди!</div>
+                        <div className="text-xs font-black text-cyan-200">{formatTemplate(t.yourDiamonds, state.diamonds)}</div>
+                        <div className="text-[10px] text-cyan-300/60">{t.diamondsKeepNotice}</div>
                       </div>
                       <div className="text-right">
-                        <div className="text-[10px] text-cyan-300/50">Діамантові будівлі:</div>
-                        <div className="text-xs font-bold text-cyan-300 tabular-nums">🏛️ {totalDiamondBuildings} шт.</div>
+                        <div className="text-[10px] text-cyan-300/50">{t.diamondBuildingsCount}</div>
+                        <div className="text-xs font-bold text-cyan-300 tabular-nums">🏛️ {totalDiamondBuildings} {t.pcs}</div>
                       </div>
                     </div>
 
@@ -2573,7 +2633,7 @@ export default function App() {
                             : 'text-cyan-400/50 hover:text-cyan-300',
                         )}
                       >
-                        🏛️ Будівлі ({totalDiamondBuildings})
+                        {t.vipBuildingsSubTab} ({totalDiamondBuildings})
                       </button>
                       <button
                         onClick={() => { setVipSubTab('upgrades'); haptic.light(); }}
@@ -2584,13 +2644,14 @@ export default function App() {
                             : 'text-cyan-400/50 hover:text-cyan-300',
                         )}
                       >
-                        ⚡ Апгрейди ({state.vipUpgrades?.length || 0})
+                        {t.vipUpgradesSubTab} ({state.vipUpgrades?.length || 0})
                       </button>
                     </div>
                   </div>
 
                   {/* DIAMOND BUILDINGS SUB-TAB */}
                   {vipSubTab === 'buildings' && DIAMOND_BUILDINGS.map((b, i) => {
+                    const dbText = getDiamondBuildingText(b.id, lang);
                     const owned = state.diamondBuildings?.[b.id] || 0;
                     const cost = diamondBuildingCost(b, owned);
                     const can = state.diamonds >= cost;
@@ -2606,11 +2667,11 @@ export default function App() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="font-bold text-cyan-100/70 text-[13px] flex justify-between">
-                              <span className="truncate">{b.name}</span>
-                              <span className="text-fuchsia-400 text-xs font-bold">Ребіртх {b.requireRebirth} 🔄</span>
+                              <span className="truncate">{dbText.name}</span>
+                              <span className="text-fuchsia-400 text-xs font-bold">{formatTemplate(t.rebirthLock, b.requireRebirth)}</span>
                             </div>
                             <div className="text-[10px] text-cyan-400/50 truncate">
-                              Потрібен {b.requireRebirth} ребіртх для розблокування
+                              {formatTemplate(t.rebirthLockDesc, b.requireRebirth)}
                             </div>
                           </div>
                         </div>
@@ -2633,16 +2694,16 @@ export default function App() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-cyan-100/90 text-[13px] flex justify-between">
-                            <span className="truncate">{b.name}</span>
+                            <span className="truncate">{dbText.name}</span>
                             <span className="text-cyan-300/80 tabular-nums ml-2 text-xs font-bold">{owned}</span>
                           </div>
-                          <div className="text-[10px] text-cyan-300/60 truncate">{b.desc}</div>
+                          <div className="text-[10px] text-cyan-300/60 truncate">{dbText.desc}</div>
                           <div className="text-[10px] mt-0.5 flex justify-between items-center">
                             <span className={cn('font-bold', can ? 'text-cyan-300' : 'text-red-400/70')}>
                               💎 {formatNum(cost)}
                             </span>
                             <span className="text-cyan-300/70 font-medium">
-                              +{formatCps(effectiveCps)}/с • +{(b.percentBonus * 100).toFixed(1)}%
+                              +{formatCps(effectiveCps)}{t.topBarPerSec} • +{(b.percentBonus * 100).toFixed(1)}%
                             </span>
                           </div>
                         </div>
@@ -2657,6 +2718,7 @@ export default function App() {
 
                   {/* DIAMOND UPGRADES SUB-TAB */}
                   {vipSubTab === 'upgrades' && VIP_UPGRADES.map((u, i) => {
+                    const vuText = getVipUpgradeText(u.id, lang);
                     const bought = state.vipUpgrades?.includes(u.id);
                     const can = state.diamonds >= u.cost && !bought;
                     return (
@@ -2679,13 +2741,13 @@ export default function App() {
                         </div>
                         <div className="flex-1">
                           <div className="font-bold text-[13px] text-cyan-100/90 flex justify-between">
-                            <span>{u.name}</span>
-                            {bought && <span className="text-emerald-400 text-xs">✓ Куплено</span>}
+                            <span>{vuText.name}</span>
+                            {bought && <span className="text-emerald-400 text-xs">{t.boughtCheck}</span>}
                           </div>
-                          <div className="text-[10px] text-cyan-300/60">{u.desc}</div>
+                          <div className="text-[10px] text-cyan-300/60">{vuText.desc}</div>
                           {!bought && (
                             <div className={cn('text-[10px] font-bold mt-0.5', can ? 'text-cyan-300' : 'text-red-400/70')}>
-                              💎 {u.cost} діамантів
+                              {formatTemplate(t.diamondsCost, u.cost)}
                             </div>
                           )}
                         </div>
@@ -2704,12 +2766,13 @@ export default function App() {
               {shopTab === 'achievements' && (
                 <div className="grid grid-cols-2 gap-1.5">
                   {ACHIEVEMENTS.map((a, i) => {
+                    const aText = getAchievementText(a.id, lang);
                     const done = state.achievements.includes(a.id);
                     return (
                       <div key={a.id} style={{ animationDelay: `${Math.min(i, 16) * 30}ms` }} className={cn('glass-card rounded-xl p-3 text-center transition-all animate-card', done && 'border-yellow-400/30 bg-yellow-500/5', !done && 'opacity-30')}>
                         <div className={cn('text-2xl', !done && 'grayscale')}>{a.emoji}</div>
-                        <div className="font-bold text-xs mt-1">{a.name}</div>
-                        <div className="text-[9px] text-amber-400/40 mt-0.5">{a.desc}</div>
+                        <div className="font-bold text-xs mt-1">{aText.name}</div>
+                        <div className="text-[9px] text-amber-400/40 mt-0.5">{aText.desc}</div>
                       </div>
                     );
                   })}
@@ -2721,7 +2784,7 @@ export default function App() {
 
         {/* --- CASINO --- */}
         {page === 'casino' && (() => {
-          const spinLabel = casinoGame === 'slots' ? '🎰 КРУТИТИ' : casinoGame === 'dice' ? '🎲 КИНУТИ КОСТІ' : '🎡 ОБЕРТИ КОЛЕСО';
+          const spinLabel = casinoGame === 'slots' ? t.spinSlots : casinoGame === 'dice' ? t.spinDice : t.spinWheel;
           const doSpin = casinoGame === 'slots' ? spinCasino : casinoGame === 'dice' ? rollDice : spinWheel;
           const setCustomBet = (raw: string) => {
             const digits = raw.replace(/\D/g, '').slice(0, 15);
@@ -2733,11 +2796,11 @@ export default function App() {
           const casinoLocked = karma < 50;
           return (
             <div className={cn('h-full overflow-y-auto p-4 space-y-3', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
-              <h2 className="text-base font-black text-amber-200/80 text-center tracking-wide">🎰 КАЗИНО «ОДНАРУКА БАБУСЯ»</h2>
+              <h2 className="text-base font-black text-amber-200/80 text-center tracking-wide">{t.casinoTitle}</h2>
 
               {/* Ігри */}
               <div className="flex gap-1.5">
-                {([['slots', '🎰', 'Автомат'], ['dice', '🎲', 'Кості'], ['wheel', '🎡', 'Колесо']] as const).map(([id, icon, label]) => (
+                {([['slots', '🎰', t.tabSlots], ['dice', '🎲', t.tabDice], ['wheel', '🎡', t.tabWheel]] as const).map(([id, icon, label]) => (
                   <button
                     key={id}
                     onClick={() => { setCasinoGame(id); haptic.light(); }}
@@ -2757,8 +2820,8 @@ export default function App() {
               {casinoLocked ? (
                 <div className="glass-card rounded-2xl p-6 text-center space-y-2">
                   <div className="text-5xl">🔒</div>
-                  <div className="font-black text-amber-100">Казино закрите</div>
-                  <div className="text-[11px] text-amber-300/60">Карма {karma}/100 — бабуся не довіряє тобі. Грай чесно, підніми карму вище 50, і двері відчиняться.</div>
+                  <div className="font-black text-amber-100">{t.casinoClosedTitle}</div>
+                  <div className="text-[11px] text-amber-300/60">{formatTemplate(t.casinoClosedDesc, karma)}</div>
                 </div>
               ) : (<>
               <div className="glass-card rounded-2xl p-4 border-amber-500/25 space-y-4">
@@ -2781,14 +2844,14 @@ export default function App() {
                 {casinoGame === 'dice' && (
                   <div className="flex items-center justify-center gap-5 py-1">
                     <div className="text-center">
-                      <div className="text-[10px] font-black text-amber-500/50 mb-1">ТИ</div>
+                      <div className="text-[10px] font-black text-amber-500/50 mb-1">{t.diceYou}</div>
                       <div className="w-20 h-20 rounded-xl bg-black/50 border-2 border-amber-500/30 flex items-center justify-center text-[3.4rem] leading-none">
                         {diceRoll ? DICE_FACES[diceRoll.mine - 1] : '🎲'}
                       </div>
                     </div>
                     <div className="text-2xl font-black text-amber-500/40">VS</div>
                     <div className="text-center">
-                      <div className="text-[10px] font-black text-red-400/60 mb-1">БАБУСЯ</div>
+                      <div className="text-[10px] font-black text-red-400/60 mb-1">{t.diceGranny}</div>
                       <div className="w-20 h-20 rounded-xl bg-black/50 border-2 border-red-500/30 flex items-center justify-center text-[3.4rem] leading-none">
                         {diceRoll ? DICE_FACES[diceRoll.house - 1] : '🎲'}
                       </div>
@@ -2837,13 +2900,13 @@ export default function App() {
                       : 'bg-gradient-to-r from-rose-600 via-red-500 to-amber-500 text-white shadow-red-500/30 animate-pulse',
                   )}
                 >
-                  {casinoSpinning ? '🎲 ГРАЄМО…' : `${spinLabel} — ${formatNum(casinoBet)} ${casinoCurSym}`}
+                  {casinoSpinning ? t.spinning : `${spinLabel} — ${formatNum(casinoBet)} ${casinoCurSym}`}
                 </button>
               </div>
 
               {/* Валюта ставки */}
               <div className="flex gap-1.5">
-                {([['foc', '🫓', 'Фокачі'], ['gem', '💎', 'Алмази']] as const).map(([id, icon, label]) => (
+                {([['foc', '🫓', t.curFocaccia], ['gem', '💎', t.curDiamonds]] as const).map(([id, icon, label]) => (
                   <button
                     key={id}
                     onClick={() => { setCasinoCur(id); setCasinoBet(id === 'gem' ? 1 : 100); haptic.light(); }}
@@ -2862,15 +2925,15 @@ export default function App() {
               {/* Ставки */}
               <div>
                 <div className="flex justify-between items-center mb-1.5">
-                  <div className="text-[10px] uppercase font-bold text-amber-500/30 tracking-widest">Ставка</div>
-                  <div className="text-[10px] font-bold text-amber-300/50 tabular-nums">Баланс: {formatNum(casinoBalance)} {casinoCurSym}</div>
+                  <div className="text-[10px] uppercase font-bold text-amber-500/30 tracking-widest">{t.betLabel}</div>
+                  <div className="text-[10px] font-bold text-amber-300/50 tabular-nums">{t.balanceLabel} {formatNum(casinoBalance)} {casinoCurSym}</div>
                 </div>
                 <div className="flex gap-1.5 mb-1.5">
                   <input
                     value={casinoCustomBet}
                     onChange={(e) => setCustomBet(e.target.value)}
                     inputMode="numeric"
-                    placeholder="Своя ставка…"
+                    placeholder={t.customBetPlaceholder}
                     className="flex-1 min-w-0 glass-card rounded-lg px-3 py-2.5 text-[13px] font-black text-amber-200 tabular-nums placeholder:text-amber-500/30 placeholder:font-bold outline-none border border-amber-500/15 focus:border-amber-400/60 transition-colors"
                   />
                   <div className="glass-card rounded-lg px-3 py-2.5 text-[13px] font-black text-amber-400/60">{casinoCurSym}</div>
@@ -2902,7 +2965,7 @@ export default function App() {
               {/* Правила / виплати */}
               {casinoGame === 'slots' && (
                 <div className="glass-card rounded-2xl p-3 space-y-1">
-                  <div className="text-[10px] uppercase font-bold text-amber-500/30 mb-1 tracking-widest">Виплати</div>
+                  <div className="text-[10px] uppercase font-bold text-amber-500/30 mb-1 tracking-widest">{t.payoutsLabel}</div>
                   {Object.entries(CASINO_PAYOUTS).map(([s, m]) => (
                     <div key={s} className="flex justify-between items-center text-[11px]">
                       <span className="tracking-widest">{s}{s}{s}</span>
@@ -2910,25 +2973,25 @@ export default function App() {
                     </div>
                   ))}
                   <div className="flex justify-between items-center text-[11px] pt-1 border-t border-amber-500/10">
-                    <span className="text-amber-400/60">Будь-які 2 однакові</span>
+                    <span className="text-amber-400/60">{t.anyPair}</span>
                     <span className="font-black text-amber-300/80">×{CASINO_PAIR_MULT}</span>
                   </div>
                 </div>
               )}
               {casinoGame === 'dice' && (
                 <div className="glass-card rounded-2xl p-3 text-[11px] text-amber-300/60 space-y-1">
-                  <div>• Кинув більший кістяк, ніж бабуся → <b className="text-amber-300">×1.9</b></div>
-                  <div>• Нічия → ставка повертається</div>
-                  <div>• Менший → ставка згоріла 🔥</div>
+                  <div>{t.diceRule1}<b className="text-amber-300">×1.9</b></div>
+                  <div>{t.diceRule2}</div>
+                  <div>{t.diceRule3}</div>
                 </div>
               )}
-                  {casinoGame === 'wheel' && (
-                    <div className="glass-card rounded-2xl p-3 text-[11px] text-amber-300/60">
-                      • 5 з 10 секторів порожні, але є ×2, ×5 і два ×0.5/×1.5. Вказівник зверху — куди впаде, те й твій множник.
-                    </div>
-                  )}
+              {casinoGame === 'wheel' && (
+                <div className="glass-card rounded-2xl p-3 text-[11px] text-amber-300/60">
+                  {t.wheelRule}
+                </div>
+              )}
               </>)}
-              <div className="text-center text-[9px] text-amber-500/30 pb-2">Виграш казино не додається до рейтингу «з'їдено»</div>
+              <div className="text-center text-[9px] text-amber-500/30 pb-2">{t.casinoDisclaimer}</div>
             </div>
           );
         })()}
@@ -2936,24 +2999,24 @@ export default function App() {
         {/* --- LEADERBOARD --- */}
         {page === 'leaders' && (
           <div className={cn('h-full overflow-y-auto p-4 space-y-2', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
-            <h2 className="text-base font-black text-amber-200/80 text-center tracking-wide">🏆 ЛІДЕРИ ФОКАЧІ</h2>
+            <h2 className="text-base font-black text-amber-200/80 text-center tracking-wide">{t.leadersTitle}</h2>
 
             <div className="glass-card rounded-xl p-2.5 text-center text-[11px] font-bold text-amber-300/70">
               <div>
-                {myRank ? <>Твоє місце: <span className="text-amber-200 font-black">#{myRank}</span></> : 'Залітай у топ — з\'їдь більше фокач! 🫓'}
+                {myRank ? <>{formatTemplate(t.yourRank, myRank)}</> : t.joinTop}
               </div>
               {leaders && (
                 <div className="text-[10px] text-emerald-300/80 mt-0.5 flex items-center justify-center gap-1">
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Онлайн: {leaders.filter((l) => l.online).length}
+                  {formatTemplate(t.online, leaders.filter((l) => l.online).length)}
                 </div>
               )}
             </div>
 
-            {leadersLoading && <div className="text-center text-amber-500/50 py-8 text-xs animate-pulse">⏳ Завантаження…</div>}
+            {leadersLoading && <div className="text-center text-amber-500/50 py-8 text-xs animate-pulse">{t.loadingLeaders}</div>}
 
             {!leadersLoading && leaders && leaders.length === 0 && (
-              <div className="text-center text-amber-500/40 py-8 text-xs">Поки що порожньо. Обганяй усіх! 🫓</div>
+              <div className="text-center text-amber-500/40 py-8 text-xs">{t.emptyLeaders}</div>
             )}
 
             {!leadersLoading && leaders && leaders.map((pl, i) => {
@@ -2974,20 +3037,20 @@ export default function App() {
                       {pl.online && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1 align-middle" title="Онлайн" />}
                       {pl.name}
                       {pl.username && <span className="text-amber-500/50 text-[11px] font-normal"> @{pl.username}</span>}
-                      {isMe && <span className="ml-1.5 text-[9px] bg-amber-500/25 text-amber-300 px-1.5 py-0.5 rounded-full font-black align-middle">ЦЕ ТИ</span>}
+                      {isMe && <span className="ml-1.5 text-[9px] bg-amber-500/25 text-amber-300 px-1.5 py-0.5 rounded-full font-black align-middle">{t.itsYou}</span>}
                     </div>
-                    <div className="text-[10px] text-fuchsia-300/60">🔄 {pl.prestige} ребіртх(ів)</div>
+                    <div className="text-[10px] text-fuchsia-300/60">{formatTemplate(t.rebirthsCount, pl.prestige)}</div>
                   </div>
                   {pl.flag && (
                     <button
-                      onClick={(ev) => { ev.stopPropagation(); addToast('⚠️ Можливо використовував авто-клікер', `${pl.name} — спрацював античит`, '⚠️'); haptic.light(); }}
+                      onClick={(ev) => { ev.stopPropagation(); addToast(t.toastFlagWarn, formatTemplate(t.toastFlagWarnDesc, pl.name), '⚠️'); haptic.light(); }}
                       className="shrink-0 w-6 h-6 rounded-full bg-amber-500/20 border border-amber-400/50 text-xs flex items-center justify-center animate-pulse"
-                      title="Можливо використовував авто-клікер"
+                      title={t.toastFlagWarn}
                     >⚠️</button>
                   )}
                   <div className="text-right shrink-0">
                     <div className="font-black text-amber-200 text-sm tabular-nums">{formatNum(pl.total)}</div>
-                    <div className="text-[9px] text-amber-500/40">з'їдено 🫓</div>
+                    <div className="text-[9px] text-amber-500/40">{t.eatenLabel}</div>
                   </div>
                 </div>
               );
@@ -2998,30 +3061,30 @@ export default function App() {
                 onClick={loadLeaders}
                 className="w-full glass-card glass-card-hover rounded-xl py-2.5 text-[11px] font-black text-amber-300/70 transition active:scale-95"
               >
-                🔄 Оновити
+                {t.refreshBtn}
               </button>
             )}
 
-            <div className="text-center text-[9px] text-amber-500/20 pb-2">Рейтинг за з'їденими фокачами за весь час</div>
+            <div className="text-center text-[9px] text-amber-500/20 pb-2">{t.leadersFooter}</div>
           </div>
         )}
 
         {/* --- SETTINGS --- */}
         {page === 'settings' && (
           <div className={cn('h-full overflow-y-auto p-4 space-y-3', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
-            <h2 className="text-base font-black text-amber-200/80 text-center tracking-wide">⚙️ НАЛАШТУВАННЯ ТА СТАТИСТИКА</h2>
+            <h2 className="text-base font-black text-amber-200/80 text-center tracking-wide">{t.settingsTitle}</h2>
 
             <div className="grid grid-cols-3 gap-1.5">
               {[
-                ['🫓', formatNum(state.total), "З'їдено"],
-                ['💎', String(state.diamonds), 'Діамантів'],
-                ['🔄', String(state.prestige), 'Ребіртхів'],
-                ['⚔️', String(state.bossesDefeated), 'Босів подолано'],
-                ['🪲', String(state.pestsSquashed), 'Шкідників знищено'],
-                ['👆', state.clicks.toLocaleString(), 'Кліків'],
-                ['⚡', `x${state.maxCombo}`, 'Макс комбо'],
-                ['✨', String(state.goldenCaught), 'Золотих'],
-                ['🏗️', String(totalBuildings), 'Будівель'],
+                ['🫓', formatNum(state.total), t.statEaten],
+                ['💎', String(state.diamonds), t.statDiamonds],
+                ['🔄', String(state.prestige), t.statRebirths],
+                ['⚔️', String(state.bossesDefeated), t.statBosses],
+                ['🪲', String(state.pestsSquashed), t.statPests],
+                ['👆', state.clicks.toLocaleString(), t.statClicks],
+                ['⚡', `x${state.maxCombo}`, t.statCombo],
+                ['✨', String(state.goldenCaught), t.statGolden],
+                ['🏗️', String(totalBuildings), t.statBuildings],
               ].map(([emoji, value, label], i) => (
                 <div key={label} style={{ animationDelay: `${Math.min(i, 9) * 40}ms` }} className="glass-card rounded-xl p-2.5 text-center animate-card">
                   <div className="text-base">{emoji}</div>
@@ -3035,12 +3098,12 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <span className="text-xl">🔄</span>
                 <div>
-                  <div className="font-black text-fuchsia-200 text-sm">Ребіртх: {state.prestige} рівень</div>
-                  <div className="text-[10px] text-fuchsia-400/70">+{state.prestige * 10}% доходу назавжди • +{state.prestige * 5} енергії</div>
+                  <div className="font-black text-fuchsia-200 text-sm">{formatTemplate(t.rebirthLevel, state.prestige)}</div>
+                  <div className="text-[10px] text-fuchsia-400/70">{formatTemplate(t.rebirthBonus, state.prestige * 10, state.prestige * 5)}</div>
                 </div>
                 {prestigeGain >= 1 && (
                   <span className="ml-auto px-2 py-0.5 rounded-full bg-fuchsia-500/20 border border-fuchsia-500/40 text-fuchsia-300 text-[10px] font-black animate-pulse">
-                    +{prestigeGain} Готово!
+                    {formatTemplate(t.rebirthReady, prestigeGain)}
                   </span>
                 )}
               </div>
@@ -3049,7 +3112,7 @@ export default function App() {
               <div className="bg-black/30 rounded-xl p-2.5 border border-fuchsia-500/20 space-y-1.5">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-fuchsia-300 font-bold flex items-center gap-1">
-                    {prestigeGain < 1 ? '🔒 Потрібно: 1 000 000 🫓 (1 млн / 1кк)' : `🎯 До наступного (+${prestigeGain + 1})`}
+                    {prestigeGain < 1 ? t.rebirthReq : formatTemplate(t.rebirthNext, prestigeGain + 1)}
                   </span>
                   <span className="font-black text-fuchsia-200 tabular-nums">
                     {rebirthProgress.toFixed(1)}%
@@ -3065,20 +3128,16 @@ export default function App() {
                 </div>
 
                 <div className="flex items-center justify-between text-[10px] text-fuchsia-400/60 tabular-nums">
-                  <span>Зароблено: {formatNum(state.total)} 🫓</span>
-                  <span>Ціль: {formatNum(nextRebirthTarget)} 🫓</span>
+                  <span>{formatTemplate(t.rebirthEarned, formatNum(state.total))}</span>
+                  <span>{formatTemplate(t.rebirthTarget, formatNum(nextRebirthTarget))}</span>
                 </div>
               </div>
 
               <div className="text-[10px] text-fuchsia-300/60 leading-relaxed">
                 {prestigeGain < 1 ? (
-                  <span>
-                    💡 Ребіртх відкривається при досягненні <b>1 000 000 фокач</b> (залишилось ще {formatNum(Math.max(0, 1e6 - state.total))}). Він розблокує нові будівлі та прокачки в магазині! 💎 Діаманти та ВІП зберігаються.
-                  </span>
+                  <span dangerouslySetInnerHTML={{ __html: formatTemplate(t.rebirthTipLocked, formatNum(Math.max(0, 1e6 - state.total))) }} />
                 ) : (
-                  <span>
-                    ✨ Скинь фокачі та будівлі → отримай <b className="text-fuchsia-200">+{prestigeGain} Ребіртх{prestigeGain > 1 ? 'ів' : ''}</b>! Відкриває нові будівлі та прокачки в магазині. 💎 Діаманти та ВІП залишаються.
-                  </span>
+                  <span dangerouslySetInnerHTML={{ __html: formatTemplate(t.rebirthTipReady, prestigeGain, lang === 'uk' ? (prestigeGain > 1 ? 'ів' : '') : (prestigeGain > 1 ? 'ов' : '')) }} />
                 )}
               </div>
 
@@ -3093,20 +3152,20 @@ export default function App() {
                 )}
               >
                 {prestigeGain >= 1
-                  ? `Зробити Ребіртх (+${prestigeGain} 🔄)`
-                  : `🔒 Потрібно 1 000 000 🫓 (ще ${formatNum(Math.max(0, 1e6 - state.total))})`}
+                  ? formatTemplate(t.rebirthBtnActive, prestigeGain)
+                  : formatTemplate(t.rebirthBtnLocked, formatNum(Math.max(0, 1e6 - state.total)))}
               </button>
             </div>
 
             {/* Статус акаунта — спідометр античиту */}
             <div className="glass-card rounded-2xl p-4 relative">
-              <div className="text-[11px] font-bold text-amber-400/50 mb-1 text-center tracking-widest">🛡 СТАТУС АКАУНТА</div>
+              <div className="text-[11px] font-bold text-amber-400/50 mb-1 text-center tracking-widest">{t.antiCheatStatusTitle}</div>
               <button
                 onClick={() => { setKarmaInfo(true); haptic.light(); }}
                 className="absolute right-3 top-3 w-6 h-6 rounded-full bg-black/40 border border-amber-400/40 text-amber-300/80 text-[11px] font-black flex items-center justify-center active:scale-90 transition-transform"
-                title="Що це і як працює?"
+                title={lang === 'uk' ? 'Що це і як працює?' : 'Что это и как работает?'}
               >?</button>
-              <div className="text-center text-[9px] font-bold text-emerald-300/60 mb-1 tracking-wide">ЗАХИЩЕНО TAPSENTINEL v5 — BEHAVIORAL ANTI-CHEAT</div>
+              <div className="text-center text-[9px] font-bold text-emerald-300/60 mb-1 tracking-wide">{t.antiCheatProtected}</div>
               <svg viewBox="0 0 200 112" className="w-44 mx-auto">
                 <path d="M 20 100 A 80 80 0 0 1 87.5 21" stroke="#34d399" strokeWidth="14" fill="none" strokeLinecap="round" />
                 <path d="M 87.5 21 A 80 80 0 0 1 164.7 53" stroke="#fbbf24" strokeWidth="14" fill="none" />
@@ -3120,23 +3179,23 @@ export default function App() {
                 className="text-center text-[13px] font-black mt-1"
                 style={{ color: karma < 25 ? '#fca5a5' : karma < 50 ? '#fcd34d' : karma < 75 ? '#fdba74' : '#6ee7b7' }}
               >
-                {challenge !== null ? '⚠️ Перевірка триває' : karma < 25 ? '🔴 Тінь бабусі' : karma < 50 ? '⚠️ Обмежений режим' : karma < 75 ? '🟡 Під підозрою' : 'Акаунт чистий ✅'}
+                {challenge !== null ? t.karmaChecking : karma < 25 ? t.karmaShadow : karma < 50 ? t.karmaRestricted : karma < 75 ? t.karmaSuspicious : t.karmaClean}
               </div>
               {(karma < 75 || Date.now() < suspicionCooldownUntil.current) && (
                 <div className="mt-2 space-y-0.5 text-[10px] text-amber-300/60 bg-black/30 rounded-xl p-2 border border-amber-500/10">
-                  {karma < 25 && <div>🚫 Фокачі пригорають — кліки дають ×0.05</div>}
-                  {karma < 75 && <div>🔒 Ставки в казино — максимум 1K</div>}
-                  {karma < 50 && <div>🔒 Казино закрите, офлайн-дохід −50%</div>}
-                  {karma < 25 && <div>🔒 Лідерборд заморожено, нагороди від адміна не видаються</div>}
-                  <div className="text-amber-500/40">Грай чесно — карма відновиться</div>
+                  {karma < 25 && <div>{t.karmaWarnBurnt}</div>}
+                  {karma < 75 && <div>{t.karmaWarnBetLimit}</div>}
+                  {karma < 50 && <div>{t.karmaWarnCasinoClosed}</div>}
+                  {karma < 25 && <div>{t.karmaWarnLeaderboardFrozen}</div>}
+                  <div className="text-amber-500/40">{t.karmaWarnPlayFair}</div>
                 </div>
               )}
-              <div className="text-center text-[9px] text-amber-500/30 mt-0.5">Античит стежить за ритмом кліків — грай чесно і стрілка буде в зелені</div>
+              <div className="text-center text-[9px] text-amber-500/30 mt-0.5">{t.karmaRhythmTip}</div>
             </div>
 
             {/* Мова інтерфейсу — sliding pill тумблер */}
             <div className="glass-card rounded-2xl p-4">
-              <div className="text-[11px] font-bold text-amber-400/50 mb-3 text-center tracking-widest">🌐 МОВА / ЯЗЫК</div>
+              <div className="text-[11px] font-bold text-amber-400/50 mb-3 text-center tracking-widest">{t.langTitle}</div>
               <div className="relative flex bg-black/40 rounded-2xl p-1 border border-amber-500/15">
                 {/* sliding pill */}
                 <div
@@ -3151,6 +3210,8 @@ export default function App() {
                   onClick={() => {
                     if (lang === 'uk') return;
                     setLang('uk');
+                    langRef.current = 'uk';
+                    setPhrase(PHRASES_I18N.uk[0]);
                     const next = { ...stateRef.current, lang: 'uk' as const };
                     stateRef.current = next;
                     setState(next);
@@ -3168,6 +3229,8 @@ export default function App() {
                   onClick={() => {
                     if (lang === 'ru') return;
                     setLang('ru');
+                    langRef.current = 'ru';
+                    setPhrase(PHRASES_I18N.ru[0]);
                     const next = { ...stateRef.current, lang: 'ru' as const };
                     stateRef.current = next;
                     setState(next);
@@ -3185,25 +3248,22 @@ export default function App() {
             </div>
 
             <div className="glass-card rounded-2xl p-4">
-              <div className="text-[11px] font-bold text-amber-400/50 mb-2">💡 Підказки та правила</div>
+              <div className="text-[11px] font-bold text-amber-400/50 mb-2">{t.tipsTitle}</div>
               <div className="text-[10px] text-amber-300/40 space-y-1 leading-relaxed">
-                <p>• 🔄 Ребіртх доступний від 1 000 000 фокач (1 млн / 1кк) — дає +10% доходу назавжди та відкриває нові товари!</p>
-                <p>• ⚔️ Бий босів швидко — вони тікають і крадуть 10% каси!</p>
-                <p>• 🪲 Тапай шкідників одразу, поки вони не поїли фокачі!</p>
-                <p>• 🔧 Лагодь зношені будівлі в магазині (-50% CPS)</p>
-                <p>• 👮 Плати податок або купуй Бухгалтера у ВІП за 💎</p>
-                <p>• 💎 Діаманти та ВІП-прокачки НЕ зникають після ребіртху</p>
+                {t.tips.map((tip, idx) => (
+                  <p key={idx}>{tip}</p>
+                ))}
               </div>
             </div>
 
             <div className="glass-card rounded-2xl p-4 border-red-500/15">
               <button onClick={resetGame} className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300/70 font-bold py-2.5 rounded-xl transition active:scale-95 text-sm">
-                🗑️ Скинути гру повністю
+                {t.resetBtn}
               </button>
             </div>
 
-            <div className="text-center text-[9px] text-amber-500/20 pb-1 tracking-wider">🛡 ЗАХИЩЕНО: TAPSENTINEL v5 — BEHAVIORAL ANTI-CHEAT</div>
-            <div className="text-center text-[9px] text-amber-500/20 pb-2 tracking-wider">ФОКАЧА КЛІКЕР v1.1</div>
+            <div className="text-center text-[9px] text-amber-500/20 pb-1 tracking-wider">{t.antiCheatProtected}</div>
+            <div className="text-center text-[9px] text-amber-500/20 pb-2 tracking-wider">{t.gameVersion}</div>
           </div>
         )}
       </div>
@@ -3212,11 +3272,11 @@ export default function App() {
       <nav className="relative z-10 shrink-0 glass border-t border-amber-500/10 safe-bottom">
         <div className="relative flex">
           {([
-            ['shop', '🏪', 'Прокачки'],
-            ['casino', '🎰', 'Казино'],
-            ['clicker', '🫓', 'Клікер'],
-            ['leaders', '🏆', 'Лідери'],
-            ['settings', '⚙️', 'Інше'],
+            ['shop', '🏪', t.navShop],
+            ['casino', '🎰', t.navCasino],
+            ['clicker', '🫓', t.navClicker],
+            ['leaders', '🏆', t.navLeaders],
+            ['settings', '⚙️', t.navSettings],
           ] as [Page, string, string][]).map(([id, icon, label]) => (
             <button
               key={id}
