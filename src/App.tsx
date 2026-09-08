@@ -422,6 +422,9 @@ export default function App() {
   const [cosmeticShopTab, setCosmeticShopTab] = useState<'frames' | 'colors'>('frames');
   const [showcasePickerSlot, setShowcasePickerSlot] = useState<number | null>(null);
   const [viewingProfile, setViewingProfile] = useState<LeaderRow | null>(null);
+  const [previewFrame, setPreviewFrame] = useState<string | null>(null);
+  const [previewColor, setPreviewColor] = useState<string | null>(null);
+  const [showPublicPreview, setShowPublicPreview] = useState(false);
 
   /* Hold-to-buy (затискання для швидкої покупки з прискоренням) */
   const [holdingBuyId, setHoldingBuyId] = useState<string | null>(null);
@@ -648,14 +651,18 @@ export default function App() {
   /* Sync Telegram WebApp BackButton with fullscreen modals */
   useEffect(() => {
     if (!tg?.BackButton) return;
-    if (profileModalOpen || viewingProfile !== null) {
+    if (showPublicPreview || profileModalOpen || viewingProfile !== null) {
       try {
         tg.BackButton.show();
         const handleBack = () => {
-          if (showcasePickerSlot !== null) {
+          if (showPublicPreview) {
+            setShowPublicPreview(false);
+          } else if (showcasePickerSlot !== null) {
             setShowcasePickerSlot(null);
           } else if (profileModalOpen) {
             setProfileModalOpen(false);
+            setPreviewFrame(null);
+            setPreviewColor(null);
           } else if (viewingProfile !== null) {
             setViewingProfile(null);
           }
@@ -671,7 +678,7 @@ export default function App() {
         tg.BackButton.hide();
       } catch (_) { /* ignore */ }
     }
-  }, [profileModalOpen, viewingProfile, showcasePickerSlot]);
+  }, [showPublicPreview, profileModalOpen, viewingProfile, showcasePickerSlot]);
 
   /* ---- Derived ---- */
   const prestigeMult = 1 + state.prestige * 0.1;
@@ -734,6 +741,12 @@ export default function App() {
     }
     return mult;
   }, [state.upgrades]);
+
+  /* ---- Active cosmetics & Live Try-on ---- */
+  const effectiveFrameId = previewFrame || state.cosmetics?.equippedFrame || 'frame_default';
+  const effectiveColorId = previewColor || state.cosmetics?.equippedNameColor || 'name_default';
+  const isTryingOn = (previewFrame !== null && previewFrame !== (state.cosmetics?.equippedFrame || 'frame_default')) ||
+                     (previewColor !== null && previewColor !== (state.cosmetics?.equippedNameColor || 'name_default'));
 
   /* ---- Helpers ---- */
   const addFloat = useCallback((x: number, y: number, text: string, color = 'text-amber-300') => {
@@ -2665,7 +2678,7 @@ export default function App() {
           <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-4 py-3 flex items-center justify-between">
             <button
               type="button"
-              onClick={() => { setProfileModalOpen(false); haptic.light(); }}
+              onClick={() => { setProfileModalOpen(false); setPreviewFrame(null); setPreviewColor(null); haptic.light(); }}
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm"
             >
               <span>←</span>
@@ -2677,23 +2690,43 @@ export default function App() {
               <span>{t.profileTitle}</span>
             </div>
 
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 text-xs font-black font-mono shadow-sm">
-              <span>💎</span>
-              <span className="tabular-nums">{formatNum(state.diamonds)}</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { setShowPublicPreview(true); haptic.light(); }}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 text-xs font-black border border-cyan-500/35 active:scale-95 transition-all cursor-pointer shadow-sm"
+                title={t.profilePreviewBtn}
+              >
+                <span>👁️</span>
+                <span className="hidden xs:inline">{t.profilePreviewBtn}</span>
+              </button>
+
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 text-xs font-black font-mono shadow-sm">
+                <span>💎</span>
+                <span className="tabular-nums">{formatNum(state.diamonds)}</span>
+              </div>
             </div>
           </div>
 
           {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 max-w-lg mx-auto w-full pb-10">
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 max-w-lg mx-auto w-full pb-16">
             {/* HERO PROFILE CARD */}
             <div className="glass rounded-3xl p-5 border border-amber-500/30 shadow-[0_0_50px_rgba(251,191,36,0.12)] relative overflow-hidden flex flex-col items-center text-center">
               {/* Subtle radiant background glow */}
               <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-48 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
 
+              {/* Try-on indicator badge */}
+              {isTryingOn && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/20 border border-cyan-400/50 text-cyan-200 text-xs font-black shadow-[0_0_15px_rgba(6,182,212,0.3)] animate-pulse mb-2.5">
+                  <span className="animate-spin text-sm">✨</span>
+                  <span>{t.profileTryOnBadge}: {getAvatarFrame(effectiveFrameId).name[lang]} {effectiveColorId !== (state.cosmetics?.equippedNameColor || 'name_default') ? `+ ${getNameColorStyle(effectiveColorId).name[lang]}` : ''}</span>
+                </div>
+              )}
+
               {/* Avatar Frame Container */}
               <div className={cn(
                 'w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden flex items-center justify-center relative shadow-2xl transition-all',
-                getAvatarFrame(state.cosmetics?.equippedFrame).frameClass
+                getAvatarFrame(effectiveFrameId).frameClass
               )}>
                 {tgUser?.photo_url ? (
                   <img src={tgUser.photo_url} alt="Avatar" className="w-full h-full object-cover" />
@@ -2702,9 +2735,9 @@ export default function App() {
                     {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
                   </span>
                 )}
-                {getAvatarFrame(state.cosmetics?.equippedFrame).cost > 0 && (
+                {getAvatarFrame(effectiveFrameId).cost > 0 && (
                   <div className="absolute -bottom-1 -right-1 text-xs bg-black/85 rounded-full px-2 py-0.5 border border-amber-500/40 shadow">
-                    {getAvatarFrame(state.cosmetics?.equippedFrame).emoji}
+                    {getAvatarFrame(effectiveFrameId).emoji}
                   </div>
                 )}
               </div>
@@ -2713,7 +2746,7 @@ export default function App() {
               <div className="flex items-center justify-center gap-2 mt-3 flex-wrap max-w-full">
                 <span className={cn(
                   'text-xl sm:text-2xl font-black text-center truncate max-w-full tracking-wide',
-                  getNameColorStyle(state.cosmetics?.equippedNameColor).colorClass
+                  getNameColorStyle(effectiveColorId).colorClass
                 )}>
                   {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
                 </span>
@@ -2737,11 +2770,22 @@ export default function App() {
 
               {/* Active Style Pill */}
               <div className="mt-2.5 px-3 py-1 rounded-full bg-black/40 border border-amber-500/25 text-[11px] text-amber-300/80 flex items-center gap-1.5 shadow-sm">
-                <span>{getAvatarFrame(state.cosmetics?.equippedFrame).emoji}</span>
-                <span>{getAvatarFrame(state.cosmetics?.equippedFrame).name[lang]}</span>
+                <span>{getAvatarFrame(effectiveFrameId).emoji}</span>
+                <span>{getAvatarFrame(effectiveFrameId).name[lang]}</span>
                 <span className="text-amber-500/40">•</span>
-                <span>{getNameColorStyle(state.cosmetics?.equippedNameColor).name[lang]}</span>
+                <span>{getNameColorStyle(effectiveColorId).name[lang]}</span>
               </div>
+
+              {/* Public Profile Preview Button */}
+              <button
+                type="button"
+                onClick={() => { setShowPublicPreview(true); haptic.light(); }}
+                className="mt-3.5 w-full py-2.5 px-3 rounded-2xl bg-gradient-to-r from-cyan-500/20 via-blue-500/20 to-purple-500/20 hover:from-cyan-500/30 hover:to-purple-500/30 border border-cyan-400/40 text-cyan-200 text-xs font-black flex items-center justify-center gap-2 active:scale-98 transition-all cursor-pointer shadow-sm group"
+              >
+                <span className="text-base group-hover:scale-110 transition-transform">👁️</span>
+                <span>{t.profilePreviewCardBtn}</span>
+                <span className="text-[11px] text-cyan-400/60 font-mono">→</span>
+              </button>
 
               {/* 3 Key Badges */}
               <div className="grid grid-cols-3 gap-2 w-full mt-4 pt-3 border-t border-amber-500/20">
@@ -2875,7 +2919,23 @@ export default function App() {
 
             {/* TAB 2: COSMETIC SHOP */}
             {profileTab === 'shop' && (
-              <div className="space-y-4 animate-fade-in">
+              <div className="space-y-4 animate-fade-in pb-12">
+                {/* Try-on Hint & Shortcut Banner */}
+                <div className="text-[11px] text-amber-300/80 font-medium px-3.5 py-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between gap-2 shadow-sm">
+                  <div className="flex items-center gap-1.5 min-w-0 truncate">
+                    <span className="text-base">💡</span>
+                    <span className="truncate">{t.profileTryOnHint}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setShowPublicPreview(true); haptic.light(); }}
+                    className="shrink-0 px-2.5 py-1 rounded-xl bg-cyan-500/20 text-cyan-200 hover:bg-cyan-500/30 text-xs font-black border border-cyan-500/40 active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+                  >
+                    <span>👁️</span>
+                    <span>{t.profileTryOnView}</span>
+                  </button>
+                </div>
+
                 {/* Shop Subtabs */}
                 <div className="flex gap-2 bg-black/40 p-1.5 rounded-2xl border border-amber-500/20">
                   <button
@@ -2913,17 +2973,25 @@ export default function App() {
                   <div className="space-y-2.5">
                     {AVATAR_FRAMES.map((f) => {
                       const isEquipped = (state.cosmetics?.equippedFrame || 'frame_default') === f.id;
+                      const isPreviewed = previewFrame === f.id;
                       const isOwned = (state.cosmetics?.ownedFrames || ['frame_default']).includes(f.id);
                       const canBuy = state.diamonds >= f.cost;
 
                       return (
                         <div
                           key={f.id}
+                          onClick={() => {
+                            if (isPreviewed) setPreviewFrame(null);
+                            else setPreviewFrame(f.id);
+                            haptic.selection();
+                          }}
                           className={cn(
-                            'glass-card rounded-2xl p-3 flex items-center justify-between gap-3 border transition-all',
+                            'glass-card rounded-2xl p-3 flex items-center justify-between gap-3 border transition-all cursor-pointer select-none active:scale-[0.99]',
                             isEquipped
                               ? 'border-emerald-400/60 bg-emerald-950/25 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
-                              : 'border-amber-500/20 hover:border-amber-500/35'
+                              : isPreviewed
+                                ? 'border-cyan-400 bg-cyan-950/35 shadow-[0_0_25px_rgba(6,182,212,0.35)] ring-2 ring-cyan-400/50'
+                                : 'border-amber-500/20 hover:border-amber-500/35 hover:bg-white/5'
                           )}
                         >
                           <div className="flex items-center gap-3 min-w-0">
@@ -2945,6 +3013,11 @@ export default function App() {
                               <div className="text-xs sm:text-sm font-black text-amber-100 flex items-center gap-1.5 truncate">
                                 <span>{f.emoji}</span>
                                 <span className="truncate">{f.name[lang]}</span>
+                                {isPreviewed && !isEquipped && (
+                                  <span className="shrink-0 px-2 py-0.5 rounded-full bg-cyan-400/20 border border-cyan-400/50 text-[10px] font-black text-cyan-200 animate-pulse">
+                                    👁️ {t.profileTryOnBadge}
+                                  </span>
+                                )}
                               </div>
                               <div className="text-[11px] text-amber-400/70 truncate mt-0.5">
                                 {f.desc[lang]}
@@ -2962,7 +3035,7 @@ export default function App() {
                           </div>
 
                           {/* Action Button */}
-                          <div className="shrink-0">
+                          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
                             {isEquipped ? (
                               <div className="px-3.5 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-black flex items-center gap-1">
                                 <span>✓</span>
@@ -2971,7 +3044,10 @@ export default function App() {
                             ) : isOwned ? (
                               <button
                                 type="button"
-                                onClick={() => equipCosmetic('frame', f.id)}
+                                onClick={() => {
+                                  equipCosmetic('frame', f.id);
+                                  if (previewFrame === f.id) setPreviewFrame(null);
+                                }}
                                 className="px-4 py-2 rounded-xl bg-amber-500/25 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 text-xs font-black active:scale-95 transition-all cursor-pointer shadow-sm"
                               >
                                 {t.btnEquip}
@@ -2980,7 +3056,10 @@ export default function App() {
                               <button
                                 type="button"
                                 disabled={!canBuy}
-                                onClick={() => buyCosmetic('frame', f.id, f.cost)}
+                                onClick={() => {
+                                  buyCosmetic('frame', f.id, f.cost);
+                                  if (previewFrame === f.id) setPreviewFrame(null);
+                                }}
                                 className={cn(
                                   'px-3.5 py-2 rounded-xl text-xs font-black active:scale-95 transition-all flex items-center gap-1.5 shadow-md',
                                   canBuy
@@ -3004,22 +3083,37 @@ export default function App() {
                   <div className="space-y-2.5">
                     {NAME_COLOR_STYLES.map((c) => {
                       const isEquipped = (state.cosmetics?.equippedNameColor || 'name_default') === c.id;
+                      const isPreviewed = previewColor === c.id;
                       const isOwned = (state.cosmetics?.ownedNameColors || ['name_default']).includes(c.id);
                       const canBuy = state.diamonds >= c.cost;
 
                       return (
                         <div
                           key={c.id}
+                          onClick={() => {
+                            if (isPreviewed) setPreviewColor(null);
+                            else setPreviewColor(c.id);
+                            haptic.selection();
+                          }}
                           className={cn(
-                            'glass-card rounded-2xl p-3 flex items-center justify-between gap-3 border transition-all',
+                            'glass-card rounded-2xl p-3 flex items-center justify-between gap-3 border transition-all cursor-pointer select-none active:scale-[0.99]',
                             isEquipped
                               ? 'border-emerald-400/60 bg-emerald-950/25 shadow-[0_0_20px_rgba(16,185,129,0.15)]'
-                              : 'border-amber-500/20 hover:border-amber-500/35'
+                              : isPreviewed
+                                ? 'border-fuchsia-400 bg-fuchsia-950/35 shadow-[0_0_25px_rgba(217,70,239,0.35)] ring-2 ring-fuchsia-400/50'
+                                : 'border-amber-500/20 hover:border-amber-500/35 hover:bg-white/5'
                           )}
                         >
                           <div className="min-w-0 flex-1">
-                            <div className={cn('text-base font-black truncate tracking-wide', c.colorClass)}>
-                              {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
+                            <div className="flex items-center gap-2">
+                              <span className={cn('text-base font-black truncate tracking-wide', c.colorClass)}>
+                                {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
+                              </span>
+                              {isPreviewed && !isEquipped && (
+                                <span className="shrink-0 px-2 py-0.5 rounded-full bg-fuchsia-400/20 border border-fuchsia-400/50 text-[10px] font-black text-fuchsia-200 animate-pulse">
+                                  👁️ {t.profileTryOnBadge}
+                                </span>
+                              )}
                             </div>
                             <div className="text-[11px] text-amber-500/90 font-bold mt-0.5">
                               {c.name[lang]}
@@ -3039,7 +3133,7 @@ export default function App() {
                           </div>
 
                           {/* Action Button */}
-                          <div className="shrink-0">
+                          <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
                             {isEquipped ? (
                               <div className="px-3.5 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-black flex items-center gap-1">
                                 <span>✓</span>
@@ -3048,7 +3142,10 @@ export default function App() {
                             ) : isOwned ? (
                               <button
                                 type="button"
-                                onClick={() => equipCosmetic('color', c.id)}
+                                onClick={() => {
+                                  equipCosmetic('color', c.id);
+                                  if (previewColor === c.id) setPreviewColor(null);
+                                }}
                                 className="px-4 py-2 rounded-xl bg-amber-500/25 hover:bg-amber-500/35 border border-amber-400/50 text-amber-200 text-xs font-black active:scale-95 transition-all cursor-pointer shadow-sm"
                               >
                                 {t.btnEquip}
@@ -3057,7 +3154,10 @@ export default function App() {
                               <button
                                 type="button"
                                 disabled={!canBuy}
-                                onClick={() => buyCosmetic('color', c.id, c.cost)}
+                                onClick={() => {
+                                  buyCosmetic('color', c.id, c.cost);
+                                  if (previewColor === c.id) setPreviewColor(null);
+                                }}
                                 className={cn(
                                   'px-3.5 py-2 rounded-xl text-xs font-black active:scale-95 transition-all flex items-center gap-1.5 shadow-md',
                                   canBuy
@@ -3077,6 +3177,271 @@ export default function App() {
                 )}
               </div>
             )}
+
+            {/* Sticky Try-On Action Bar */}
+            {isTryingOn && (
+              <div className="sticky bottom-2 z-40 mx-auto w-full">
+                <div className="p-3 rounded-2xl bg-[#140e08]/95 backdrop-blur-xl border border-cyan-400/60 shadow-[0_0_35px_rgba(6,182,212,0.35)] flex items-center justify-between gap-2.5 animate-slide-up">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-xl shrink-0 shadow-inner">
+                      👁️
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-cyan-200 truncate flex items-center gap-1.5">
+                        <span>{t.profileTryOnBarTitle}</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+                      </div>
+                      <div className="text-[10px] text-amber-300/80 truncate mt-0.5 font-medium">
+                        {getAvatarFrame(effectiveFrameId).emoji} {getAvatarFrame(effectiveFrameId).name[lang]} • {getNameColorStyle(effectiveColorId).name[lang]}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreviewFrame(null);
+                        setPreviewColor(null);
+                        haptic.light();
+                      }}
+                      className="px-2.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-amber-200 text-xs font-bold border border-white/10 active:scale-95 transition-all cursor-pointer"
+                    >
+                      {t.profileTryOnReset}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowPublicPreview(true);
+                        haptic.selection();
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-white text-xs font-black shadow-md shadow-cyan-500/25 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <span>👁️</span>
+                      <span>{t.profileTryOnView}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== PUBLIC PROFILE PREVIEW MODAL ("ЯК БАЧАТЬ ІНШІ") ===== */}
+      {showPublicPreview && (
+        <div className="fixed inset-0 z-[80] bg-[#0c0905] text-amber-100 flex flex-col overflow-hidden select-none safe-top safe-bottom animate-fade-in">
+          {/* Informative Top Notification Banner */}
+          <div className="bg-gradient-to-r from-cyan-950/90 via-blue-950/90 to-purple-950/90 border-b border-cyan-500/30 px-4 py-2 flex items-center justify-between gap-2 shrink-0">
+            <div className="flex items-center gap-2 min-w-0 text-left">
+              <span className="text-base shrink-0 animate-pulse">👁️</span>
+              <div className="min-w-0">
+                <div className="text-xs font-black text-cyan-200 truncate">
+                  {t.profilePreviewTitle}
+                </div>
+                <div className="text-[10px] text-cyan-300/70 truncate">
+                  {t.profilePreviewNotice}
+                </div>
+              </div>
+            </div>
+            {isTryingOn && (
+              <span className="shrink-0 px-2 py-0.5 rounded-full bg-cyan-400/20 border border-cyan-400/50 text-[10px] font-black text-cyan-200 animate-pulse">
+                {t.profileTryOnBadge}
+              </span>
+            )}
+          </div>
+
+          {/* Top Bar Header */}
+          <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-4 py-3 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => { setShowPublicPreview(false); haptic.light(); }}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm"
+            >
+              <span>←</span>
+              <span>{lang === 'uk' ? 'Назад' : 'Назад'}</span>
+            </button>
+
+            <div className="flex items-center gap-1.5 font-black text-amber-100 text-sm">
+              <span>👤</span>
+              <span>{t.profilePreviewTitle}</span>
+            </div>
+
+            <div className="text-[11px] text-amber-500/60 font-mono">
+              ID: {tgUser?.id || '—'}
+            </div>
+          </div>
+
+          {/* Scrollable Preview Content */}
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 max-w-lg mx-auto w-full pb-10">
+            {/* Try-on warning banner if trying on */}
+            {isTryingOn && (
+              <div className="glass-card rounded-2xl p-3 border border-cyan-400/40 bg-cyan-950/20 flex items-center gap-2.5 shadow-sm">
+                <span className="text-xl shrink-0">✨</span>
+                <div className="text-xs text-cyan-200">
+                  {t.profilePreviewTryOnNotice}
+                </div>
+              </div>
+            )}
+
+            {/* Hero Card */}
+            <div className="glass rounded-3xl p-5 border border-amber-500/30 shadow-[0_0_50px_rgba(251,191,36,0.12)] relative overflow-hidden flex flex-col items-center text-center">
+              <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-48 h-48 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
+
+              {/* Avatar with effective frame */}
+              <div className={cn(
+                'w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden flex items-center justify-center relative shadow-2xl transition-all',
+                getAvatarFrame(effectiveFrameId).frameClass
+              )}>
+                {tgUser?.photo_url ? (
+                  <img src={tgUser.photo_url} alt="Avatar" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-4xl font-black text-amber-200">
+                    {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
+                  </span>
+                )}
+                {getAvatarFrame(effectiveFrameId).cost > 0 && (
+                  <div className="absolute -bottom-1 -right-1 text-xs bg-black/85 rounded-full px-2 py-0.5 border border-amber-500/40 shadow">
+                    {getAvatarFrame(effectiveFrameId).emoji}
+                  </div>
+                )}
+              </div>
+
+              {/* Name & DEV Badge */}
+              <div className="flex items-center justify-center gap-2 mt-3 flex-wrap max-w-full">
+                <span className={cn(
+                  'text-xl sm:text-2xl font-black text-center truncate max-w-full tracking-wide',
+                  getNameColorStyle(effectiveColorId).colorClass
+                )}>
+                  {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
+                </span>
+                {isDevUser(tgUser?.id) && <DevBadge size="md" />}
+              </div>
+
+              {/* Developer Official Status */}
+              {isDevUser(tgUser?.id) && (
+                <div className="mt-1.5">
+                  <DevBadge size="lg" />
+                </div>
+              )}
+
+              {/* Username with TG link */}
+              {tgUser?.username ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `https://t.me/${tgUser.username}`;
+                    if (tg?.openTelegramLink) tg.openTelegramLink(url);
+                    else window.open(url, '_blank');
+                    haptic.light();
+                  }}
+                  className="mt-1 text-xs text-cyan-400 hover:text-cyan-300 font-mono flex items-center gap-1 bg-cyan-950/40 px-3 py-1 rounded-full border border-cyan-500/30 active:scale-95 transition-all cursor-pointer shadow-sm"
+                >
+                  <span>✈️</span>
+                  <span>@{tgUser.username}</span>
+                </button>
+              ) : null}
+
+              {/* Online status badge */}
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 text-xs font-bold mt-2.5 shadow-sm">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>{lang === 'uk' ? 'В мережі (грає зараз)' : 'В сети (играет сейчас)'}</span>
+              </div>
+
+              {/* Style pill */}
+              <div className="mt-3 px-3 py-1 rounded-full bg-black/40 border border-amber-500/25 text-[11px] text-amber-300/80 flex items-center gap-1.5 shadow-sm">
+                <span>{getAvatarFrame(effectiveFrameId).emoji}</span>
+                <span>{getAvatarFrame(effectiveFrameId).name[lang]}</span>
+                <span className="text-amber-500/40">•</span>
+                <span>{getNameColorStyle(effectiveColorId).name[lang]}</span>
+              </div>
+            </div>
+
+            {/* Showcase (Вітрина рекордів) */}
+            <div className="glass rounded-3xl p-4 border border-amber-500/20 shadow-md space-y-3">
+              <div className="text-sm font-black text-amber-200 flex items-center gap-1.5">
+                <span>✨</span>
+                <span>{t.profileShowcaseTitle}</span>
+              </div>
+
+              <div className="space-y-2.5">
+                {(state.cosmetics?.showcase || ['clicks', 'total', 'diamonds']).slice(0, 3).map((metricId, slotIdx) => {
+                  const metric = getShowcaseMetric(metricId);
+                  return (
+                    <div
+                      key={slotIdx}
+                      className="glass-card rounded-2xl p-3 flex items-center justify-between gap-3 border border-amber-500/20 shadow-sm"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-11 h-11 rounded-2xl bg-black/50 border border-amber-500/25 flex items-center justify-center text-2xl shrink-0 shadow-inner">
+                          {metric.emoji}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[10px] text-amber-500/80 font-bold uppercase tracking-wider truncate">
+                            {metric.name[lang]}
+                          </div>
+                          <div className="text-base font-black text-amber-100 tabular-nums truncate mt-0.5">
+                            {metric.getValue(state)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Full Statistics Grid */}
+            <div className="glass rounded-3xl p-4 border border-amber-500/20 shadow-md">
+              <div className="text-sm font-black text-amber-200 mb-3 flex items-center gap-1.5">
+                <span>📊</span>
+                <span>{lang === 'uk' ? 'Повна статистика гравця' : 'Полная статистика игрока'}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="glass-card rounded-2xl p-2.5 text-center border border-amber-500/15">
+                  <div className="text-lg">🫓</div>
+                  <div className="font-black text-amber-200 text-xs tabular-nums mt-0.5 truncate">{formatNum(state.total)}</div>
+                  <div className="text-[9px] text-amber-500/60 font-medium truncate">{t.statEaten}</div>
+                </div>
+                <div className="glass-card rounded-2xl p-2.5 text-center border border-amber-500/15">
+                  <div className="text-lg">🔄</div>
+                  <div className="font-black text-fuchsia-200 text-xs tabular-nums mt-0.5 truncate">{state.prestige}</div>
+                  <div className="text-[9px] text-fuchsia-400/60 font-medium truncate">{t.statRebirths}</div>
+                </div>
+                <div className="glass-card rounded-2xl p-2.5 text-center border border-amber-500/15">
+                  <div className="text-lg">💎</div>
+                  <div className="font-black text-cyan-200 text-xs tabular-nums mt-0.5 truncate">{formatNum(state.diamonds || 0)}</div>
+                  <div className="text-[9px] text-cyan-400/60 font-medium truncate">{t.statDiamonds}</div>
+                </div>
+                <div className="glass-card rounded-2xl p-2.5 text-center border border-amber-500/15">
+                  <div className="text-lg">🖱️</div>
+                  <div className="font-black text-amber-300 text-xs tabular-nums mt-0.5 truncate">{state.clicks.toLocaleString()}</div>
+                  <div className="text-[9px] text-amber-500/60 font-medium truncate">{t.statClicks}</div>
+                </div>
+                <div className="glass-card rounded-2xl p-2.5 text-center border border-amber-500/15">
+                  <div className="text-lg">⚔️</div>
+                  <div className="font-black text-red-300 text-xs tabular-nums mt-0.5 truncate">{state.bossesDefeated || 0}</div>
+                  <div className="text-[9px] text-red-400/60 font-medium truncate">{t.statBosses}</div>
+                </div>
+                <div className="glass-card rounded-2xl p-2.5 text-center border border-amber-500/15">
+                  <div className="text-lg">🏆</div>
+                  <div className="font-black text-yellow-300 text-xs tabular-nums mt-0.5 truncate">{state.achievements.length}/20</div>
+                  <div className="text-[9px] text-amber-500/60 font-medium truncate">{lang === 'uk' ? 'Досягнень' : 'Достижений'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={() => { setShowPublicPreview(false); haptic.light(); }}
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-black text-sm active:scale-95 transition-all shadow-lg shadow-amber-500/25 cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>✏️</span>
+                <span>{t.profilePreviewBackToEdit}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
