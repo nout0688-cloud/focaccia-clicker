@@ -1472,12 +1472,13 @@ export default function App() {
   /* ---- Achievements ---- */
   useEffect(() => {
     if (loading) return;
-    const achState = {
+    const achState: AchState = {
       total: state.total, clicks: state.clicks, cps,
       buildings: state.buildings, maxCombo: state.maxCombo,
       goldenCaught: state.goldenCaught, prestige: state.prestige,
       diamonds: state.diamonds, bossesDefeated: state.bossesDefeated,
       pestsSquashed: state.pestsSquashed,
+      diamondBuildings: state.diamondBuildings,
     };
     const newly = ACHIEVEMENTS.filter((a) => !state.achievements.includes(a.id) && a.check(achState));
     if (newly.length) {
@@ -1492,7 +1493,7 @@ export default function App() {
         haptic.success();
       });
     }
-  }, [loading, state.total, state.clicks, cps, state.buildings, state.maxCombo, state.goldenCaught, state.prestige, state.diamonds, state.bossesDefeated, state.pestsSquashed, state.achievements, addToast]);
+  }, [loading, state.total, state.clicks, cps, state.buildings, state.maxCombo, state.goldenCaught, state.prestige, state.diamonds, state.diamondBuildings, state.bossesDefeated, state.pestsSquashed, state.achievements, addToast]);
 
   /* ---- Випробування TapSentinel v5: таймер + авто-відкриття при підозрі ---- */
   const challengeActive = !!challenge && challenge.result === null;
@@ -3624,8 +3625,8 @@ export default function App() {
                 ['buildings', '🏗️', t.tabBuildings, totalRegularBuildings],
                 ['upgrades', '⚡', t.tabUpgrades, state.upgrades.length],
                 ['vip', '💎', t.tabVip, totalDiamondBuildings + (state.vipUpgrades?.length || 0)],
-                ['achievements', '🏆', t.tabAchievements, state.achievements.length],
-              ] as [ShopTab, string, string, number][]).map(([id, icon, label, count]) => (
+                ['achievements', '🏆', t.tabAchievements, `${state.achievements.length}/${ACHIEVEMENTS.length}`],
+              ] as [ShopTab, string, string, string | number][]).map(([id, icon, label, count]) => (
                 <button
                   key={id}
                   onClick={() => setShopTab(id)}
@@ -3636,7 +3637,7 @@ export default function App() {
                       : 'text-amber-500/50 active:text-amber-300',
                   )}
                 >
-                  {icon} {label} <span className="opacity-50">({count})</span>
+                  {icon} {label} <span className="opacity-50 font-mono">({count})</span>
                 </button>
               ))}
             </div>
@@ -4049,18 +4050,58 @@ export default function App() {
 
               {/* ACHIEVEMENTS */}
               {shopTab === 'achievements' && (
-                <div className="grid grid-cols-2 gap-1.5">
-                  {ACHIEVEMENTS.map((a, i) => {
-                    const aText = getAchievementText(a.id, lang);
-                    const done = state.achievements.includes(a.id);
-                    return (
-                      <div key={a.id} style={{ animationDelay: `${Math.min(i, 16) * 30}ms` }} className={cn('glass-card rounded-xl p-3 text-center transition-all animate-card', done && 'border-yellow-400/30 bg-yellow-500/5', !done && 'opacity-30')}>
-                        <div className={cn('text-2xl', !done && 'grayscale')}>{a.emoji}</div>
-                        <div className="font-bold text-xs mt-1">{aText.name}</div>
-                        <div className="text-[9px] text-amber-400/40 mt-0.5">{aText.desc}</div>
+                <div className="space-y-2">
+                  <div className="glass-card rounded-2xl p-3 border border-amber-500/25 flex items-center justify-between shadow-md">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-2xl">🏆</span>
+                      <div>
+                        <div className="text-xs font-black text-amber-100">
+                          {lang === 'uk' ? 'Список досягнень' : 'Список достижений'}
+                        </div>
+                        <div className="text-[10px] text-amber-500/70 font-medium">
+                          {lang === 'uk'
+                            ? `Розблоковано ${state.achievements.length} з ${ACHIEVEMENTS.length}`
+                            : `Разблокировано ${state.achievements.length} из ${ACHIEVEMENTS.length}`}
+                        </div>
                       </div>
-                    );
-                  })}
+                    </div>
+                    <div className="text-sm font-black text-amber-200 tabular-nums font-mono px-3 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 shadow-inner">
+                      {state.achievements.length} / {ACHIEVEMENTS.length}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {ACHIEVEMENTS.map((a, i) => {
+                      const aText = getAchievementText(a.id, lang);
+                      const done = state.achievements.includes(a.id);
+                      return (
+                        <div
+                          key={a.id}
+                          style={{ animationDelay: `${Math.min(i, 16) * 30}ms` }}
+                          className={cn(
+                            'glass-card rounded-xl p-3 text-center transition-all animate-card relative overflow-hidden',
+                            done
+                              ? 'border-yellow-400/40 bg-yellow-500/10 shadow-[0_0_12px_rgba(250,204,21,0.15)]'
+                              : 'opacity-40 grayscale'
+                          )}
+                        >
+                          <div className={cn('text-2xl transition-transform', done && 'scale-110')}>{a.emoji}</div>
+                          <div className={cn('font-bold text-xs mt-1 truncate', done ? 'text-amber-100' : 'text-amber-200/60')}>
+                            {aText.name}
+                          </div>
+                          <div className="text-[9px] text-amber-400/50 mt-0.5 leading-snug">
+                            {aText.desc}
+                          </div>
+                          {done && (
+                            <div className="mt-1 text-[9px] font-black text-emerald-400 flex items-center justify-center gap-0.5">
+                              <span>✓</span>
+                              <span>{lang === 'uk' ? 'Виконано' : 'Выполнено'}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
