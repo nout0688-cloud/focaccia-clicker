@@ -96,7 +96,9 @@ const haptic = {
   medium: () => tg?.HapticFeedback?.impactOccurred('medium'),
   heavy: () => tg?.HapticFeedback?.impactOccurred('heavy'),
   success: () => tg?.HapticFeedback?.notificationOccurred('success'),
+  warning: () => tg?.HapticFeedback?.notificationOccurred('warning'),
   error: () => tg?.HapticFeedback?.notificationOccurred('error'),
+  selection: () => tg?.HapticFeedback?.selectionChanged(),
 };
 
 /* ---- Types ---- */
@@ -2430,7 +2432,7 @@ export default function App() {
             {state.prestige > 0 && (
               <button
                 type="button"
-                onClick={() => goPage('other')}
+                onClick={() => goPage('settings')}
                 className="flex items-center gap-1 bg-fuchsia-500/15 hover:bg-fuchsia-500/25 active:scale-95 transition-all border border-fuchsia-500/30 px-2 py-0.5 rounded-lg text-xs font-black text-fuchsia-300 shadow-[0_0_8px_rgba(217,70,239,0.15)] whitespace-nowrap cursor-pointer"
                 title={lang === 'uk' 
                   ? `🔄 Ребіртх: ${state.prestige.toLocaleString()} (+${(state.prestige * 10).toLocaleString()}%)` 
@@ -2714,10 +2716,10 @@ export default function App() {
                       <div className="flex-1 min-w-0">
                         <div className="font-bold text-amber-100/70 text-[13px] flex justify-between">
                           <span className="truncate">{bText.name}</span>
-                          <span className="text-fuchsia-400 text-xs font-bold">{formatTemplate(t.rebirthLock, b.requireRebirth)}</span>
+                          <span className="text-fuchsia-400 text-xs font-bold">{formatTemplate(t.rebirthLock, b.requireRebirth || 0)}</span>
                         </div>
                         <div className="text-[10px] text-amber-500/50 truncate">
-                          {formatTemplate(t.rebirthLockDesc, b.requireRebirth)}
+                          {formatTemplate(t.rebirthLockDesc, b.requireRebirth || 0)}
                         </div>
                       </div>
                     </div>
@@ -2948,16 +2950,17 @@ export default function App() {
                           <div className="flex-1 min-w-0">
                             <div className="font-bold text-cyan-100/70 text-[13px] flex justify-between">
                               <span className="truncate">{dbText.name}</span>
-                              <span className="text-fuchsia-400 text-xs font-bold">{formatTemplate(t.rebirthLock, b.requireRebirth)}</span>
+                              <span className="text-fuchsia-400 text-xs font-bold">{formatTemplate(t.rebirthLock, b.requireRebirth || 0)}</span>
                             </div>
                             <div className="text-[10px] text-cyan-400/50 truncate">
-                              {formatTemplate(t.rebirthLockDesc, b.requireRebirth)}
+                              {formatTemplate(t.rebirthLockDesc, b.requireRebirth || 0)}
                             </div>
                           </div>
                         </div>
                       );
                     }
 
+                    const isJustBought = lastBoughtId === b.id;
                     const isHolding = holdingBuyId === b.id;
 
                     return (
