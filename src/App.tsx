@@ -2745,7 +2745,7 @@ export default function App() {
               {/* Player Name & DEV Badge */}
               <div className="flex items-center justify-center gap-2 mt-3 flex-wrap max-w-full">
                 <span className={cn(
-                  'text-xl sm:text-2xl font-black text-center truncate max-w-full tracking-wide',
+                  'text-xl sm:text-2xl font-black text-center max-w-full tracking-wide break-words leading-tight',
                   getNameColorStyle(effectiveColorId).colorClass
                 )}>
                   {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
@@ -3310,7 +3310,7 @@ export default function App() {
               {/* Name & DEV Badge */}
               <div className="flex items-center justify-center gap-2 mt-3 flex-wrap max-w-full">
                 <span className={cn(
-                  'text-xl sm:text-2xl font-black text-center truncate max-w-full tracking-wide',
+                  'text-xl sm:text-2xl font-black text-center max-w-full tracking-wide break-words leading-tight',
                   getNameColorStyle(effectiveColorId).colorClass
                 )}>
                   {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
@@ -3557,7 +3557,7 @@ export default function App() {
               {/* Name & DEV Badge */}
               <div className="flex items-center justify-center gap-2 mt-3 flex-wrap max-w-full">
                 <span className={cn(
-                  'text-xl sm:text-2xl font-black text-center truncate max-w-full tracking-wide',
+                  'text-xl sm:text-2xl font-black text-center max-w-full tracking-wide break-words leading-tight',
                   getNameColorStyle(viewingProfile.color).colorClass
                 )}>
                   {viewingProfile.name || (lang === 'uk' ? 'Гравець' : 'Игрок')}
@@ -4801,6 +4801,9 @@ export default function App() {
 
               const rowFrame = getAvatarFrame(isMe ? state.cosmetics?.equippedFrame : pl.frame);
               const rowColor = getNameColorStyle(isMe ? state.cosmetics?.equippedNameColor : pl.color);
+              const displayName = isMe
+                ? ([tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || pl.name || (lang === 'uk' ? 'Гравець' : 'Игрок'))
+                : (pl.name || (lang === 'uk' ? 'Гравець' : 'Игрок'));
 
               return (
                 <div
@@ -4837,7 +4840,7 @@ export default function App() {
                       <img src={isMe ? tgUser?.photo_url : pl.avatar} alt="Avatar" className="w-full h-full object-cover" />
                     ) : (
                       <span className="text-xs font-black text-amber-200">
-                        {pl.name ? pl.name[0].toUpperCase() : '👨‍🍳'}
+                        {displayName ? displayName[0].toUpperCase() : '👨‍🍳'}
                       </span>
                     )}
                     {rowFrame.cost > 0 && (
@@ -4848,21 +4851,33 @@ export default function App() {
                   </div>
 
                   {/* Player Details */}
-                  <div className="min-w-0 flex-1">
-                    <div className="font-bold text-[13px] truncate flex items-center gap-1.5">
+                  <div className="min-w-0 flex-1 flex flex-col justify-center">
+                    {/* Line 1: Online status indicator + Player Name (takes FULL width without badge competition!) */}
+                    <div className="flex items-center gap-1.5 min-w-0">
                       {pl.online && (
                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" title="Онлайн" />
                       )}
-                      <span className={cn('truncate', rowColor.colorClass)}>{pl.name}</span>
+                      <span
+                        className={cn('truncate font-bold text-[13px] leading-snug', rowColor.colorClass)}
+                        title={displayName}
+                      >
+                        {displayName}
+                      </span>
+                    </div>
+
+                    {/* Line 2: Username / ID + Badges (DEV, ЦЕ ТИ) */}
+                    <div className="text-[10px] text-amber-200/50 flex items-center gap-1.5 font-mono min-w-0 mt-0.5">
+                      {pl.username ? (
+                        <span className="truncate max-w-[85px] shrink-0">@{pl.username}</span>
+                      ) : (
+                        <span className="shrink-0 text-[9px]">ID: {pl.id}</span>
+                      )}
                       {(pl.isDev || isDevUser(pl.id)) && <DevBadge size="sm" />}
                       {isMe && (
-                        <span className="shrink-0 text-[9px] bg-gradient-to-r from-amber-500/30 to-amber-600/30 border border-amber-400/40 text-amber-200 px-1.5 py-0.2 rounded-full font-black">
+                        <span className="shrink-0 text-[8px] leading-tight bg-gradient-to-r from-amber-500/30 to-amber-600/30 border border-amber-400/40 text-amber-200 px-1.5 py-0.5 rounded-full font-black">
                           {t.itsYou}
                         </span>
                       )}
-                    </div>
-                    <div className="text-[10px] text-amber-200/50 truncate flex items-center gap-1.5 font-mono">
-                      {pl.username ? <span>@{pl.username}</span> : <span>ID: {pl.id}</span>}
                     </div>
                   </div>
 
@@ -4957,19 +4972,21 @@ export default function App() {
                     </div>
                   )}
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 truncate">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
                     <span className={cn('text-sm truncate font-bold', getNameColorStyle(state.cosmetics?.equippedNameColor).colorClass)}>
                       {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
                     </span>
+                  </div>
+                  <div className="text-[11px] text-amber-200/50 font-mono flex items-center gap-1.5 mt-0.5 min-w-0">
+                    {tgUser?.username ? (
+                      <span className="truncate max-w-[100px]">@{tgUser.username}</span>
+                    ) : (
+                      <span>ID: {tgUser?.id || '—'}</span>
+                    )}
                     {isDevUser(tgUser?.id) && <DevBadge size="sm" />}
                   </div>
-                  {tgUser?.username ? (
-                    <div className="text-[11px] text-amber-200/50 font-mono truncate">
-                      @{tgUser.username}
-                    </div>
-                  ) : null}
-                  <div className="text-[10px] text-amber-500/60 mt-0.5">
+                  <div className="text-[10px] text-amber-500/60 mt-0.5 truncate">
                     {t.profileCardDesc}
                   </div>
                 </div>
