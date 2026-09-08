@@ -235,6 +235,7 @@ const PEST_TYPES = [
 type Page = 'shop' | 'casino' | 'clicker' | 'leaders' | 'settings';
 const PAGE_ORDER: Page[] = ['shop', 'casino', 'clicker', 'leaders', 'settings'];
 type ShopTab = 'buildings' | 'upgrades' | 'vip' | 'achievements';
+type LeaderCategory = 'focaccia' | 'diamonds' | 'rebirth';
 
 interface LeaderRow {
   id: string;
@@ -242,6 +243,7 @@ interface LeaderRow {
   username: string;
   total: number;
   prestige: number;
+  diamonds?: number;
   flag?: boolean;
   online?: boolean;
 }
@@ -306,6 +308,7 @@ export default function App() {
   const [leaders, setLeaders] = useState<LeaderRow[] | null>(null);
   const [leadersLoading, setLeadersLoading] = useState(false);
   const [myRank, setMyRank] = useState<number | null>(null);
+  const [leaderCategory, setLeaderCategory] = useState<LeaderCategory>('focaccia');
 
   /* Античит v5: R/C/B evidence + challenge */
   const [challenge, setChallenge] = useState<null | { caught: number; x: number; y: number; timeLeft: number; result: null | 'pending' | 'win' | 'fail' | 'denied' }>(null);
@@ -971,7 +974,7 @@ export default function App() {
     setLeadersLoading(true);
     const syncPromise = tgUser?.id ? reportSync() : Promise.resolve(null);
     syncPromise.finally(() => {
-      fetch(`${API_BASE}/api/leaderboard`)
+      fetch(`${API_BASE}/api/leaderboard?sort=${leaderCategory}`)
         .then((r) => r.json())
         .then((data) => {
           const list: LeaderRow[] = data?.players || [];
@@ -984,7 +987,26 @@ export default function App() {
         .catch(() => setLeaders([]))
         .finally(() => setLeadersLoading(false));
     });
-  }, [reportSync, tgUser]);
+  }, [reportSync, tgUser, leaderCategory]);
+
+  const sortedLeaders = useMemo(() => {
+    if (!leaders) return null;
+    const list = [...leaders];
+    if (leaderCategory === 'diamonds') {
+      list.sort((a, b) => ((b.diamonds || 0) - (a.diamonds || 0)) || (b.total > a.total ? 1 : b.total < a.total ? -1 : 0) || (b.prestige - a.prestige));
+    } else if (leaderCategory === 'rebirth') {
+      list.sort((a, b) => (b.prestige - a.prestige) || (b.total > a.total ? 1 : b.total < a.total ? -1 : 0) || ((b.diamonds || 0) - (a.diamonds || 0)));
+    } else {
+      list.sort((a, b) => (b.total > a.total ? 1 : b.total < a.total ? -1 : (b.prestige - a.prestige) || ((b.diamonds || 0) - (a.diamonds || 0))));
+    }
+    return list;
+  }, [leaders, leaderCategory]);
+
+  const activeCategoryRank = useMemo(() => {
+    if (!tgUser?.id || !sortedLeaders) return myRank;
+    const idx = sortedLeaders.findIndex((p) => String(p.id) === String(tgUser.id));
+    return idx >= 0 ? idx + 1 : null;
+  }, [sortedLeaders, tgUser, myRank]);
 
   useEffect(() => {
     if (page === 'leaders') {
@@ -3074,49 +3096,146 @@ export default function App() {
 
         {/* --- LEADERBOARD --- */}
         {page === 'leaders' && (
-          <div className={cn('h-full overflow-y-auto p-4 space-y-2', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
-            <h2 className="text-base font-black text-amber-200/80 text-center tracking-wide">{t.leadersTitle}</h2>
+          <div className={cn('h-full overflow-y-auto p-4 space-y-2.5', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
+            <h2 className="text-base font-black text-amber-200/90 text-center tracking-wide">{t.leadersTitle}</h2>
 
-            <div className="glass-card rounded-xl p-2.5 text-center text-[11px] font-bold text-amber-300/70">
-              <div>
-                {myRank ? <>{formatTemplate(t.yourRank, myRank)}</> : t.joinTop}
-              </div>
-              {leaders && (
-                <div className="text-[10px] text-emerald-300/80 mt-0.5 flex items-center justify-center gap-1">
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  {formatTemplate(t.online, leaders.filter((l) => l.online).length)}
-                </div>
-              )}
+            {/* Category Selector Tabs */}
+            <div className="grid grid-cols-3 gap-1.5 p-1 glass-card rounded-2xl border border-amber-500/20 bg-black/40">
+              <button
+                onClick={() => { setLeaderCategory('focaccia'); haptic.selection(); }}
+                className={cn(
+                  'py-2 px-1 rounded-xl text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 border border-transparent',
+                  leaderCategory === 'focaccia'
+                    ? 'leader-tab-active-amber'
+                    : 'text-amber-300/60 hover:text-amber-200 active:scale-95'
+                )}
+              >
+                <span className="text-base leading-none">🫓</span>
+                <span className="truncate">{t.leaderTabFocaccia.replace('🫓 ', '')}</span>
+              </button>
+
+              <button
+                onClick={() => { setLeaderCategory('diamonds'); haptic.selection(); }}
+                className={cn(
+                  'py-2 px-1 rounded-xl text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 border border-transparent',
+                  leaderCategory === 'diamonds'
+                    ? 'leader-tab-active-cyan'
+                    : 'text-cyan-300/60 hover:text-cyan-200 active:scale-95'
+                )}
+              >
+                <span className="text-base leading-none">💎</span>
+                <span className="truncate">{t.leaderTabDiamonds.replace('💎 ', '')}</span>
+              </button>
+
+              <button
+                onClick={() => { setLeaderCategory('rebirth'); haptic.selection(); }}
+                className={cn(
+                  'py-2 px-1 rounded-xl text-xs font-black transition-all flex flex-col items-center justify-center gap-0.5 border border-transparent',
+                  leaderCategory === 'rebirth'
+                    ? 'leader-tab-active-fuchsia'
+                    : 'text-fuchsia-300/60 hover:text-fuchsia-200 active:scale-95'
+                )}
+              >
+                <span className="text-base leading-none">🔄</span>
+                <span className="truncate">{t.leaderTabRebirth.replace('🔄 ', '')}</span>
+              </button>
             </div>
 
-            {leadersLoading && <div className="text-center text-amber-500/50 py-8 text-xs animate-pulse">{t.loadingLeaders}</div>}
+            {/* Category Description Banner & My Rank */}
+            <div className={cn(
+              'glass-card rounded-xl p-3 text-center transition-all border shadow-sm',
+              leaderCategory === 'focaccia' && 'border-amber-500/30 bg-gradient-to-r from-amber-950/40 via-amber-900/20 to-amber-950/30',
+              leaderCategory === 'diamonds' && 'border-cyan-500/30 bg-gradient-to-r from-cyan-950/40 via-blue-950/20 to-cyan-950/30',
+              leaderCategory === 'rebirth' && 'border-fuchsia-500/30 bg-gradient-to-r from-fuchsia-950/40 via-purple-950/20 to-fuchsia-950/30',
+            )}>
+              <div className="flex items-center justify-between text-xs font-black mb-1">
+                <span className={cn(
+                  'flex items-center gap-1 font-black',
+                  leaderCategory === 'focaccia' && 'text-amber-200',
+                  leaderCategory === 'diamonds' && 'text-cyan-200',
+                  leaderCategory === 'rebirth' && 'text-fuchsia-200',
+                )}>
+                  {activeCategoryRank ? formatTemplate(t.yourRank, activeCategoryRank) : t.joinTop}
+                </span>
 
-            {!leadersLoading && leaders && leaders.length === 0 && (
-              <div className="text-center text-amber-500/40 py-8 text-xs">{t.emptyLeaders}</div>
+                <div className="text-[10px] text-emerald-300/90 flex items-center gap-1 font-semibold">
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  {formatTemplate(t.online, leaders ? leaders.filter((l) => l.online).length : 0)}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] pt-1.5 border-t border-white/5">
+                <span className="text-amber-200/50 text-[10px] truncate max-w-[200px] text-left">
+                  {leaderCategory === 'focaccia' && t.leaderSubFocaccia}
+                  {leaderCategory === 'diamonds' && t.leaderSubDiamonds}
+                  {leaderCategory === 'rebirth' && t.leaderSubRebirth}
+                </span>
+                <span className="font-black text-right tabular-nums text-xs shrink-0 pl-2">
+                  {leaderCategory === 'focaccia' && <span className="text-amber-300">🫓 {formatNum(state.total)}</span>}
+                  {leaderCategory === 'diamonds' && <span className="text-cyan-300">💎 {formatNum(state.diamonds)}</span>}
+                  {leaderCategory === 'rebirth' && <span className="text-fuchsia-300">🔄 {state.prestige} ур.</span>}
+                </span>
+              </div>
+            </div>
+
+            {leadersLoading && (
+              <div className="glass-card rounded-xl p-8 text-center text-amber-300/70 text-xs animate-pulse space-y-2">
+                <div className="text-2xl animate-spin inline-block">🫓</div>
+                <div>{t.loadingLeaders}</div>
+              </div>
             )}
 
-            {!leadersLoading && leaders && leaders.map((pl, i) => {
+            {!leadersLoading && sortedLeaders && sortedLeaders.length === 0 && (
+              <div className="glass-card rounded-xl py-10 text-center text-amber-500/40 text-xs">{t.emptyLeaders}</div>
+            )}
+
+            {!leadersLoading && sortedLeaders && sortedLeaders.map((pl, i) => {
               const isMe = !!tgUser?.id && String(pl.id) === String(tgUser.id);
-              const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`;
+              const isTop1 = i === 0;
+              const isTop2 = i === 1;
+              const isTop3 = i === 2;
+
+              let podiumClass = 'glass-card';
+              if (isTop1) podiumClass = 'leader-podium-1';
+              else if (isTop2) podiumClass = 'leader-podium-2';
+              else if (isTop3) podiumClass = 'leader-podium-3';
+
               return (
                 <div
-                  key={pl.id}
-                  style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
+                  key={`${leaderCategory}-${pl.id}`}
+                  style={{ animationDelay: `${Math.min(i, 12) * 30}ms` }}
                   className={cn(
-                    'rounded-xl p-2.5 flex items-center gap-3 animate-card',
-                    isMe ? 'border border-amber-400/50 bg-amber-500/10' : 'glass-card',
+                    'relative overflow-hidden rounded-xl p-2.5 flex items-center gap-2.5 transition-all animate-card',
+                    podiumClass,
+                    isMe && 'ring-1 ring-amber-400/70 shadow-[0_0_12px_rgba(245,158,11,0.2)]',
                   )}
                 >
-                  <div className={cn('shrink-0 text-center font-black w-8', i < 3 ? 'text-lg' : 'text-amber-500/50 text-sm')}>{medal}</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="font-bold text-[13px] text-amber-100/90 truncate">
-                      {pl.online && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-1 align-middle" title="Онлайн" />}
-                      {pl.name}
-                      {pl.username && <span className="text-amber-500/50 text-[11px] font-normal"> @{pl.username}</span>}
-                      {isMe && <span className="ml-1.5 text-[9px] bg-amber-500/25 text-amber-300 px-1.5 py-0.5 rounded-full font-black align-middle">{t.itsYou}</span>}
-                    </div>
-                    <div className="text-[10px] text-fuchsia-300/60">{formatTemplate(t.rebirthsCount, pl.prestige)}</div>
+                  {/* Rank Badge */}
+                  <div className={cn(
+                    'shrink-0 text-center font-black w-8 flex items-center justify-center select-none',
+                    i < 3 ? 'text-xl drop-shadow' : 'text-amber-500/60 text-xs font-extrabold',
+                  )}>
+                    {isTop1 ? '🥇' : isTop2 ? '🥈' : isTop3 ? '🥉' : `#${i + 1}`}
                   </div>
+
+                  {/* Player Details */}
+                  <div className="min-w-0 flex-1">
+                    <div className="font-bold text-[13px] text-amber-100/90 truncate flex items-center gap-1">
+                      {pl.online && (
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" title="Онлайн" />
+                      )}
+                      <span className="truncate">{pl.name}</span>
+                      {isMe && (
+                        <span className="shrink-0 text-[9px] bg-gradient-to-r from-amber-500/30 to-amber-600/30 border border-amber-400/40 text-amber-200 px-1.5 py-0.2 rounded-full font-black">
+                          {t.itsYou}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-amber-500/50 truncate flex items-center gap-1.5">
+                      {pl.username ? <span>@{pl.username}</span> : <span>ID: {pl.id}</span>}
+                    </div>
+                  </div>
+
                   {pl.flag && (
                     <button
                       onClick={(ev) => { ev.stopPropagation(); addToast(t.toastFlagWarn, formatTemplate(t.toastFlagWarnDesc, pl.name), '⚠️'); haptic.light(); }}
@@ -3124,9 +3243,44 @@ export default function App() {
                       title={t.toastFlagWarn}
                     >⚠️</button>
                   )}
+
+                  {/* Stats Section based on active Category */}
                   <div className="text-right shrink-0">
-                    <div className="font-black text-amber-200 text-sm tabular-nums">{formatNum(pl.total)}</div>
-                    <div className="text-[9px] text-amber-500/40">{t.eatenLabel}</div>
+                    {leaderCategory === 'focaccia' && (
+                      <>
+                        <div className="font-black text-amber-200 text-sm tabular-nums flex items-center justify-end gap-1">
+                          <span>🫓</span>
+                          <span>{formatNum(pl.total)}</span>
+                        </div>
+                        <div className="text-[9px] text-amber-500/50">
+                          🔄 {pl.prestige} • 💎 {formatNum(pl.diamonds || 0)}
+                        </div>
+                      </>
+                    )}
+
+                    {leaderCategory === 'diamonds' && (
+                      <>
+                        <div className="font-black text-cyan-200 text-sm tabular-nums flex items-center justify-end gap-1">
+                          <span>💎</span>
+                          <span>{formatNum(pl.diamonds || 0)}</span>
+                        </div>
+                        <div className="text-[9px] text-cyan-400/50">
+                          🫓 {formatNum(pl.total)} • 🔄 {pl.prestige}
+                        </div>
+                      </>
+                    )}
+
+                    {leaderCategory === 'rebirth' && (
+                      <>
+                        <div className="font-black text-fuchsia-200 text-sm tabular-nums flex items-center justify-end gap-1">
+                          <span>🔄</span>
+                          <span>{pl.prestige}</span>
+                        </div>
+                        <div className="text-[9px] text-fuchsia-400/50">
+                          🫓 {formatNum(pl.total)} • 💎 {formatNum(pl.diamonds || 0)}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -3135,13 +3289,14 @@ export default function App() {
             {!leadersLoading && (
               <button
                 onClick={loadLeaders}
-                className="w-full glass-card glass-card-hover rounded-xl py-2.5 text-[11px] font-black text-amber-300/70 transition active:scale-95"
+                className="w-full glass-card glass-card-hover rounded-xl py-2.5 text-[11px] font-black text-amber-300/80 transition active:scale-95 shadow-sm flex items-center justify-center gap-1.5"
               >
-                {t.refreshBtn}
+                <span>🔄</span>
+                <span>{t.refreshBtn}</span>
               </button>
             )}
 
-            <div className="text-center text-[9px] text-amber-500/20 pb-2">{t.leadersFooter}</div>
+            <div className="text-center text-[9px] text-amber-500/30 pb-2">{t.leadersFooter}</div>
           </div>
         )}
 
