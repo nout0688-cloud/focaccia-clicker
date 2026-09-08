@@ -286,6 +286,10 @@ interface LeaderRow {
   total: number;
   prestige: number;
   diamonds?: number;
+  clicks?: number;
+  bosses?: number;
+  achievements?: number;
+  showcase?: string[];
   flag?: boolean;
   online?: boolean;
   frame?: string;
@@ -439,6 +443,9 @@ export default function App() {
         clicks: Math.floor(cur.clicks),
         focaccia: Math.floor(cur.focaccia),
         diamonds: Math.floor(cur.diamonds),
+        bosses: cur.bossesDefeated || 0,
+        achievements: cur.achievements?.length || 0,
+        showcase: cur.cosmetics?.showcase || ['clicks', 'total', 'diamonds'],
         frame: cur.cosmetics?.equippedFrame || 'frame_default',
         color: cur.cosmetics?.equippedNameColor || 'name_default',
         avatar: tgUser.photo_url || '',
@@ -2984,87 +2991,206 @@ export default function App() {
       {/* ===== VIEWING OTHER PLAYER'S PROFILE MODAL ===== */}
       {viewingProfile !== null && (
         <div
-          className="fixed inset-0 z-[65] bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+          className="fixed inset-0 z-[65] bg-black/85 backdrop-blur-md flex items-center justify-center p-3"
           onClick={() => setViewingProfile(null)}
         >
           <div
-            className="glass border border-amber-500/40 rounded-3xl p-5 max-w-xs w-full text-center shadow-[0_0_60px_rgba(251,191,36,0.2)]"
+            className="glass border border-amber-500/30 rounded-3xl p-4 max-w-sm w-full max-h-[88vh] flex flex-col overflow-hidden shadow-[0_0_60px_rgba(251,191,36,0.25)]"
             style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header / Close */}
-            <div className="flex justify-end">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-amber-500/20 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">👤</span>
+                <div>
+                  <h3 className="font-black text-amber-100 text-sm tracking-wide">
+                    {lang === 'uk' ? 'Акаунт гравця' : 'Аккаунт игрока'}
+                  </h3>
+                  <div className="text-[10px] text-amber-500/50">
+                    ID: {viewingProfile.id}
+                  </div>
+                </div>
+              </div>
               <button
                 type="button"
-                onClick={() => setViewingProfile(null)}
-                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-amber-200/80 flex items-center justify-center text-xs font-bold"
+                onClick={() => { setViewingProfile(null); haptic.light(); }}
+                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-amber-200/80 flex items-center justify-center text-xs font-bold active:scale-95 transition-all cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {/* Avatar with Frame */}
-            <div className="flex justify-center mt-1">
-              <div className={cn(
-                'w-20 h-20 rounded-full overflow-hidden flex items-center justify-center relative shadow-xl',
-                getAvatarFrame(viewingProfile.frame).frameClass
-              )}>
-                {viewingProfile.avatar ? (
-                  <img src={viewingProfile.avatar} alt="Avatar" className="w-full h-full object-cover" />
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto pr-0.5 space-y-3 pt-3">
+              {/* Hero: Avatar with Frame, Name, Username */}
+              <div className="flex flex-col items-center">
+                <div className={cn(
+                  'w-20 h-20 rounded-full overflow-hidden flex items-center justify-center relative shadow-xl transition-all',
+                  getAvatarFrame(viewingProfile.frame).frameClass
+                )}>
+                  {viewingProfile.avatar ? (
+                    <img src={viewingProfile.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-3xl font-black text-amber-200">
+                      {(viewingProfile.name?.[0] || '👨‍🍳').toUpperCase()}
+                    </span>
+                  )}
+                  {getAvatarFrame(viewingProfile.frame).cost > 0 && (
+                    <div className="absolute -bottom-1 -right-1 text-xs bg-black/80 rounded-full px-1.5 py-0.5 border border-amber-500/30 shadow">
+                      {getAvatarFrame(viewingProfile.frame).emoji}
+                    </div>
+                  )}
+                </div>
+
+                {/* Nickname */}
+                <div className={cn('text-base font-black mt-2 text-center truncate max-w-[90%]', getNameColorStyle(viewingProfile.color).colorClass)}>
+                  {viewingProfile.name}
+                </div>
+
+                {/* Username with Telegram link */}
+                {viewingProfile.username ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const url = `https://t.me/${viewingProfile.username}`;
+                      if (tg?.openTelegramLink) tg.openTelegramLink(url);
+                      else window.open(url, '_blank');
+                      haptic.light();
+                    }}
+                    className="text-xs text-cyan-400 hover:text-cyan-300 font-mono mt-0.5 flex items-center gap-1 bg-cyan-950/30 px-2.5 py-0.5 rounded-full border border-cyan-500/20 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <span>✈️</span>
+                    <span>@{viewingProfile.username}</span>
+                  </button>
                 ) : (
-                  <span className="text-3xl font-black text-amber-200">
-                    {(viewingProfile.name?.[0] || '👨‍🍳').toUpperCase()}
-                  </span>
+                  <div className="text-xs text-amber-200/40 font-mono mt-0.5">
+                    ID: {viewingProfile.id}
+                  </div>
                 )}
-                {getAvatarFrame(viewingProfile.frame).cost > 0 && (
-                  <div className="absolute -bottom-1 -right-1 text-xs bg-black/80 rounded-full px-1.5 py-0.5 border border-amber-500/30">
-                    {getAvatarFrame(viewingProfile.frame).emoji}
+
+                {/* Online Status */}
+                {viewingProfile.online ? (
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold mt-2 shadow-sm">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>{lang === 'uk' ? 'В мережі (грає зараз)' : 'В сети (играет сейчас)'}</span>
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/5 text-amber-400/50 text-[10px] font-medium mt-2">
+                    <span>⚪</span>
+                    <span>{lang === 'uk' ? 'Був нещодавно' : 'Был недавно'}</span>
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Name & Username */}
-            <div className={cn('text-base font-black mt-2.5 truncate', getNameColorStyle(viewingProfile.color).colorClass)}>
-              {viewingProfile.name}
-            </div>
-            <div className="text-xs text-amber-200/50 font-mono mt-0.5">
-              {viewingProfile.username ? `@${viewingProfile.username}` : `ID: ${viewingProfile.id}`}
-            </div>
+              {/* Showcase (Вітрина рекордів) */}
+              <div>
+                <div className="text-xs font-black text-amber-200 flex items-center gap-1 mb-1.5 px-1">
+                  <span>✨</span>
+                  <span>{t.profileShowcaseTitle}</span>
+                </div>
 
-            {viewingProfile.online && (
-              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold mt-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Онлайн</span>
-              </div>
-            )}
+                <div className="space-y-1.5">
+                  {(viewingProfile.showcase || ['clicks', 'total', 'diamonds']).slice(0, 3).map((metricId, slotIdx) => {
+                    const metric = getShowcaseMetric(metricId);
+                    let val: string | number = '—';
+                    if (metric.id === 'clicks') val = (viewingProfile.clicks || 0).toLocaleString();
+                    else if (metric.id === 'total') val = formatNum(viewingProfile.total);
+                    else if (metric.id === 'prestige') val = (viewingProfile.prestige || 0).toLocaleString();
+                    else if (metric.id === 'diamonds') val = (viewingProfile.diamonds || 0).toLocaleString();
+                    else if (metric.id === 'bosses') val = (viewingProfile.bosses || 0).toLocaleString();
+                    else if (metric.id === 'achievements') val = `${viewingProfile.achievements || 0}/20`;
+                    else {
+                      val = metric.getValue({
+                        clicks: viewingProfile.clicks || 0,
+                        total: viewingProfile.total || 0,
+                        prestige: viewingProfile.prestige || 0,
+                        diamonds: viewingProfile.diamonds || 0,
+                        bossesDefeated: viewingProfile.bosses || 0,
+                        achievements: Array(viewingProfile.achievements || 0),
+                      });
+                    }
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-3 gap-1.5 mt-4">
-              <div className="glass-card rounded-xl p-2 text-center">
-                <div className="text-base">🫓</div>
-                <div className="font-black text-amber-200 text-xs tabular-nums mt-0.5">{formatNum(viewingProfile.total)}</div>
-                <div className="text-[8px] text-amber-500/50">{t.statEaten}</div>
+                    return (
+                      <div
+                        key={slotIdx}
+                        className="glass-card rounded-xl p-2.5 flex items-center justify-between gap-2.5 border border-amber-500/20 shadow-sm"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-lg bg-black/40 border border-amber-500/20 flex items-center justify-center text-lg shrink-0">
+                            {metric.emoji}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-[10px] text-amber-500/70 font-bold uppercase tracking-wide truncate">
+                              {metric.name[lang]}
+                            </div>
+                            <div className="text-xs font-black text-amber-100 tabular-nums truncate">
+                              {val}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="glass-card rounded-xl p-2 text-center">
-                <div className="text-base">🔄</div>
-                <div className="font-black text-fuchsia-200 text-xs tabular-nums mt-0.5">{viewingProfile.prestige}</div>
-                <div className="text-[8px] text-fuchsia-400/50">{t.statRebirths}</div>
+
+              {/* Full Statistics Grid */}
+              <div>
+                <div className="text-xs font-black text-amber-200 mb-1.5 px-1 flex items-center gap-1">
+                  <span>📊</span>
+                  <span>{lang === 'uk' ? 'Повна статистика' : 'Полная статистика'}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <div className="glass-card rounded-xl p-2 text-center border border-amber-500/15">
+                    <div className="text-base">🫓</div>
+                    <div className="font-black text-amber-200 text-xs tabular-nums mt-0.5">{formatNum(viewingProfile.total)}</div>
+                    <div className="text-[8px] text-amber-500/50">{t.statEaten}</div>
+                  </div>
+                  <div className="glass-card rounded-xl p-2 text-center border border-amber-500/15">
+                    <div className="text-base">🔄</div>
+                    <div className="font-black text-fuchsia-200 text-xs tabular-nums mt-0.5">{viewingProfile.prestige}</div>
+                    <div className="text-[8px] text-fuchsia-400/50">{t.statRebirths}</div>
+                  </div>
+                  <div className="glass-card rounded-xl p-2 text-center border border-amber-500/15">
+                    <div className="text-base">💎</div>
+                    <div className="font-black text-cyan-200 text-xs tabular-nums mt-0.5">{formatNum(viewingProfile.diamonds || 0)}</div>
+                    <div className="text-[8px] text-cyan-400/50">{t.statDiamonds}</div>
+                  </div>
+                  <div className="glass-card rounded-xl p-2 text-center border border-amber-500/15">
+                    <div className="text-base">🖱️</div>
+                    <div className="font-black text-amber-300 text-xs tabular-nums mt-0.5">{formatNum(viewingProfile.clicks || 0)}</div>
+                    <div className="text-[8px] text-amber-500/50">{t.statClicks}</div>
+                  </div>
+                  <div className="glass-card rounded-xl p-2 text-center border border-amber-500/15">
+                    <div className="text-base">⚔️</div>
+                    <div className="font-black text-red-300 text-xs tabular-nums mt-0.5">{viewingProfile.bosses || 0}</div>
+                    <div className="text-[8px] text-red-400/50">{t.statBosses}</div>
+                  </div>
+                  <div className="glass-card rounded-xl p-2 text-center border border-amber-500/15">
+                    <div className="text-base">🏆</div>
+                    <div className="font-black text-yellow-300 text-xs tabular-nums mt-0.5">{viewingProfile.achievements || 0}/20</div>
+                    <div className="text-[8px] text-amber-500/50">{lang === 'uk' ? 'Досягнень' : 'Достижений'}</div>
+                  </div>
+                </div>
               </div>
-              <div className="glass-card rounded-xl p-2 text-center">
-                <div className="text-base">💎</div>
-                <div className="font-black text-cyan-200 text-xs tabular-nums mt-0.5">{formatNum(viewingProfile.diamonds || 0)}</div>
-                <div className="text-[8px] text-cyan-400/50">{t.statDiamonds}</div>
+
+              {/* Equipped Cosmetics Badge */}
+              <div className="glass-card rounded-xl p-2.5 border border-amber-500/15 text-center text-[10px] text-amber-400/70">
+                <span>{getAvatarFrame(viewingProfile.frame).emoji} {getAvatarFrame(viewingProfile.frame).name[lang]}</span>
+                <span className="mx-1 text-amber-500/30">•</span>
+                <span>{getNameColorStyle(viewingProfile.color).name[lang]}</span>
               </div>
+
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => { setViewingProfile(null); haptic.light(); }}
+                className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-black font-black text-xs active:scale-95 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
+              >
+                {t.confirmOk}
+              </button>
             </div>
-
-            <button
-              type="button"
-              onClick={() => setViewingProfile(null)}
-              className="mt-5 w-full py-2.5 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-black font-black text-xs active:scale-95 transition-all shadow-md shadow-amber-500/20 cursor-pointer"
-            >
-              {t.confirmOk}
-            </button>
           </div>
         </div>
       )}
@@ -4085,6 +4211,12 @@ export default function App() {
               </div>
             </div>
 
+            {/* Click to inspect tip */}
+            <div className="text-center text-[10px] text-amber-300/70 font-medium py-1.5 px-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center gap-1.5 shadow-sm">
+              <span>👤</span>
+              <span>{lang === 'uk' ? 'Натисніть на будь-якого гравця, щоб відкрити його акаунт' : 'Нажмите на любого игрока, чтобы открыть его аккаунт'}</span>
+            </div>
+
             {leadersLoading && (
               <div className="glass-card rounded-xl p-8 text-center text-amber-300/70 text-xs animate-pulse space-y-2">
                 <div className="text-2xl animate-spin inline-block">🫓</div>
@@ -4218,6 +4350,11 @@ export default function App() {
                         </div>
                       </>
                     )}
+                  </div>
+
+                  {/* Open Profile indicator */}
+                  <div className="text-amber-500/40 text-sm pl-0.5 font-bold shrink-0 select-none">
+                    ›
                   </div>
                 </div>
               );
