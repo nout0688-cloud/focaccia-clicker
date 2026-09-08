@@ -8,50 +8,85 @@ import DuelApp from "./duel/DuelApp";
 // ?duel=<id> — отдельный экран дуэли (тот же мини-апп, отдельная страница)
 const duelId = new URLSearchParams(window.location.search).get("duel");
 
-// На дуэльной странице показываем ЛЮБУЮ ошибку прямо на экране (диагностика)
-if (duelId) {
-  const showErr = (msg: string) => {
-    try {
-      const d = document.createElement("pre");
-      d.style.cssText =
-        "position:fixed;inset:auto 0 0 0;background:#3a0d0d;color:#ffb4b4;padding:10px;font:10px monospace;white-space:pre-wrap;z-index:99999;max-height:50vh;overflow:auto";
-      d.textContent = "ОШИБКА: " + msg;
-      document.body.appendChild(d);
-    } catch { /* */ }
-  };
-  window.addEventListener("error", (e) => showErr(e.message));
-  window.addEventListener("unhandledrejection", (e) => showErr(String(e.reason)));
-}
-
-class DuelBoundary extends React.Component<{ duelId: string }, { err: string | null }> {
+class GlobalErrorBoundary extends React.Component<{ children: React.ReactNode }, { err: string | null }> {
   state = { err: null as string | null };
   static getDerivedStateFromError(e: unknown) {
-    return { err: String((e as Error)?.message || e) };
+    return { err: String((e as Error)?.stack || (e as Error)?.message || e) };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("Critical render error caught:", error, info);
   }
   render() {
     if (this.state.err) {
       return (
-        <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6">
-          <div className="text-center">
-            <div className="text-5xl mb-3">⚠️</div>
-            <p className="text-red-300 font-bold mb-2">Ошибка дуэли:</p>
-            <pre className="text-[10px] text-amber-300/70 whitespace-pre-wrap">{this.state.err}</pre>
-            <button
-              onClick={() => { window.location.href = window.location.pathname + '?v=' + Date.now() + '&duel=' + this.props.duelId; }}
-              className="mt-4 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold rounded-xl text-xs active:scale-95 cursor-pointer shadow-lg"
-            >
-              🔄 Оновити версію
-            </button>
-          </div>
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "#0d0b07",
+          color: "#fef3c7",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "20px",
+          zIndex: 999999,
+          fontFamily: "system-ui, -apple-system, sans-serif",
+          textAlign: "center",
+        }}>
+          <div style={{ fontSize: "48px", marginBottom: "8px" }}>⚠️</div>
+          <h2 style={{ fontSize: "18px", fontWeight: "bold", color: "#f87171", margin: "0 0 6px 0" }}>
+            Помилка відображення
+          </h2>
+          <p style={{ fontSize: "12px", opacity: 0.8, margin: "0 0 12px 0", maxWidth: "300px" }}>
+            Сталася помилка або застарів кеш Telegram. Натисніть кнопку нижче:
+          </p>
+          <pre style={{
+            fontSize: "10px",
+            color: "#fca5a5",
+            background: "rgba(0,0,0,0.6)",
+            border: "1px solid rgba(239,68,68,0.3)",
+            borderRadius: "10px",
+            padding: "10px",
+            maxWidth: "340px",
+            maxHeight: "120px",
+            overflow: "auto",
+            textAlign: "left",
+            margin: "0 0 16px 0",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-all",
+          }}>
+            {this.state.err}
+          </pre>
+          <button
+            type="button"
+            onClick={() => {
+              window.location.href = window.location.pathname + "?v=" + Date.now() + (duelId ? "&duel=" + duelId : "");
+            }}
+            style={{
+              background: "linear-gradient(to right, #f59e0b, #ea580c)",
+              color: "#451a03",
+              fontWeight: "900",
+              fontSize: "14px",
+              border: "none",
+              borderRadius: "14px",
+              padding: "12px 24px",
+              cursor: "pointer",
+              boxShadow: "0 4px 20px rgba(245, 158, 11, 0.4)",
+            }}
+          >
+            🔄 Перезавантажити з оновленням
+          </button>
         </div>
       );
     }
-    return <DuelApp duelId={this.props.duelId} />;
+    return this.props.children;
   }
 }
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {duelId ? <DuelBoundary duelId={duelId} /> : <App />}
+    <GlobalErrorBoundary>
+      {duelId ? <DuelApp duelId={duelId} /> : <App />}
+    </GlobalErrorBoundary>
   </StrictMode>
 );
