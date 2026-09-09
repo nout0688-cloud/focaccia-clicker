@@ -879,38 +879,42 @@ export default function App() {
     return Math.round(0.30 * speedScore + 0.20 * regularityScore + 0.15 * clusterScore + 0.25 * noiseStructure + 0.10 * pauseScore);
   };
 
-  // C — координаты 0..100: статистика движения. repeat ловит A→A→A и A→B→A→B,
-  // но только при наличии вариативности ритма (метроном ловится через R).
+  // C — координати 0..100: статистика руху.
+  // Клікання в 1 точку — це абсолютно нормальна людська поведінка в клікері (миша на ПК або палець на булку)!
   const coordScore = (taps: Tap[]): number => {
     if (taps.length < 60) return 0;
     const xs = taps.map((t) => t.x);
     const ys = taps.map((t) => t.y);
-    // cv этого окна: метроном (cv < 0.08) обрабатывается в R, здесь repeat = 0
+
+    const bbox = (Math.max(...xs) - Math.min(...xs)) + (Math.max(...ys) - Math.min(...ys));
+    const steps: number[] = [];
+    for (let i = 1; i < taps.length; i++) steps.push(Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]));
+    const stMean = steps.reduce((a, b) => a + b, 0) / steps.length;
+
+    // Якщо гравець клікає в одну точку (миша на ПК або палець на булку: bbox <= 35 або stMean < 2.5) —
+    // це звичайна нормальна гра, координати НЕ є підозрою на бота!
+    if (bbox <= 35 || stMean < 2.5) {
+      return 0;
+    }
+
     const ivsC: number[] = [];
     for (let i = 1; i < taps.length; i++) ivsC.push(taps[i].t - taps[i - 1].t);
     const cMean = ivsC.reduce((a, b) => a + b, 0) / ivsC.length;
     const cSd = Math.sqrt(ivsC.reduce((a, b) => a + (b - cMean) ** 2, 0) / ivsC.length);
     const cvHere = cMean > 0 ? cSd / cMean : 1;
+
+    // repeatScore: ловить виключно макроси-стрибуни між різними позиціями (A -> B -> A на відстані)
     const close = (i: number, j: number) => Math.abs(xs[i] - xs[j]) <= 8 && Math.abs(ys[i] - ys[j]) <= 8;
-    let rep1 = 0, rep2 = 0;
-    for (let i = 1; i < taps.length; i++) {
-      if (close(i, i - 1)) rep1++;
-      for (let k = 2; k <= 5 && i - k >= 0; k++) {
-        if (close(i, i - k)) { rep2++; break; }
+    let rep2 = 0;
+    for (let i = 2; i < taps.length; i++) {
+      if (close(i, i - 2) && !close(i, i - 1)) {
+        rep2++;
       }
     }
-    const frac1 = rep1 / (taps.length - 1);
-    const frac2 = rep2 / (taps.length - 1);
-    const patternFraction = Math.max(frac1, frac2);
-    let repeatScore = cvHere < 0.08 ? 0 : patternFraction > 0.90 ? 100 : patternFraction > 0.75 ? 70 : patternFraction > 0.55 ? 40 : 0;
+    const patternFraction = rep2 / (taps.length - 2);
+    let repeatScore = cvHere < 0.08 ? 0 : patternFraction > 0.60 ? 100 : patternFraction > 0.40 ? 60 : 0;
 
-    // movementScore: дисперсия длины шага (у бота шаг почти константный)
-    const steps: number[] = [];
-    for (let i = 1; i < taps.length; i++) steps.push(Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]));
-    const stMean = steps.reduce((a, b) => a + b, 0) / steps.length;
     const stVar = steps.reduce((a, b) => a + (b - stMean) ** 2, 0) / steps.length;
-
-    // directionScore: убогая палитра направлений или тряска на месте
     const dirs = new Set<number>();
     let flips = 0, lastSign = 0;
     for (let i = 1; i < taps.length; i++) {
@@ -920,18 +924,12 @@ export default function App() {
       const s = Math.sign(dx);
       if (s !== 0) { if (lastSign !== 0 && s !== lastSign) flips++; lastSign = s; }
     }
-    // pathScore: точка «ползёт» плавно при заметном общем смещении
-    const bbox = (Math.max(...xs) - Math.min(...xs)) + (Math.max(...ys) - Math.min(...ys));
 
-    // Клетки 16px: 2 пальца человека занимают 3-6 клеток (якоря раздельно + разброс),
-    // фиксированный бот — 1, плавная траектория бота — 10+. Стабильно к дрейфу пальцев.
     const cells = new Set<string>();
     for (let i = 0; i < taps.length; i++) {
       cells.add(`${Math.round(xs[i] / 16)}:${Math.round(ys[i] / 16)}`);
     }
     const cellCount = cells.size;
-    // Бимодальность: у двух пальцев позиции — 2 раздельные группы (провал ≥ 40% bbox),
-    // у дрожащего бота — сплошная клякса (макс gaps между соседними позициями мал).
     const sortedXs = [...xs].sort((a, b) => a - b);
     const sortedYs = [...ys].sort((a, b) => a - b);
     let gapX = 0, gapY = 0;
@@ -941,12 +939,11 @@ export default function App() {
     const bboxY = sortedYs[sortedYs.length - 1] - sortedYs[0];
     const multiFinger = cellCount <= 6 && bbox > 8 && ((bboxX > 0 && gapX > bboxX * 0.4) || (bboxY > 0 && gapY > bboxY * 0.4));
 
-    let movementScore = stVar < 4 && taps.length > 100 ? 80 : 0;
-    let directionScore = (dirs.size <= 2 && steps.length > 20) || (flips > 60 && stMean < 6) ? 70 : 0;
-    let pathScore = stMean < 4 && bbox > 15 ? 60 : 0;
+    let movementScore = stVar < 4 && taps.length > 100 && stMean >= 2.5 ? 80 : 0;
+    let directionScore = (dirs.size <= 2 && steps.length > 20 && stMean >= 2.5) || (flips > 60 && stMean >= 2.5 && stMean < 6) ? 70 : 0;
+    let pathScore = stMean >= 2.5 && stMean < 5 && bbox > 25 ? 60 : 0;
     if (multiFinger) {
-      // Человеческие пальцы: C ограничиваем — двухпальцевый тап не должен триггерить
-      repeatScore = Math.min(repeatScore, 40);
+      repeatScore = Math.min(repeatScore, 20);
       movementScore = Math.min(movementScore, 20);
       directionScore = Math.min(directionScore, 20);
       pathScore = Math.min(pathScore, 20);
@@ -974,7 +971,7 @@ export default function App() {
 
   // H — «человечность» 0..100: естественность снижает suspicion
   const humanScore = (taps: Tap[]): number => {
-    if (taps.length < 40) return 0;
+    if (taps.length < 20) return 45;
     const ivs: number[] = [];
     for (let i = 1; i < taps.length; i++) ivs.push(taps[i].t - taps[i - 1].t);
     const mean = ivs.reduce((a, b) => a + b, 0) / ivs.length;
@@ -982,7 +979,7 @@ export default function App() {
     const cv = sd / mean;
 
     // tempoDrift: дрейф средних темпов на подокнах
-    const subSize = Math.max(10, Math.min(25, Math.floor(ivs.length / 8)));
+    const subSize = Math.max(5, Math.min(25, Math.floor(ivs.length / 8)));
     const subMeans: number[] = [];
     for (let s = 0; s + subSize <= ivs.length; s += subSize) {
       const sub = ivs.slice(s, s + subSize);
@@ -996,23 +993,22 @@ export default function App() {
     }
     const intervalVariation = Math.min(100, cv * 400);
 
-    // pauseNaturalness: естественные паузы разной длины
+    // pauseNaturalness: природні паузи різної довжини (при активній серії тапів даємо базові 30)
     const pauses = ivs.filter((iv) => iv > 800);
-    const pauseNaturalness = pauses.length === 0 ? 0 : pauses.length === 1 ? 60 : Math.min(100, 40 + pauses.length * 10);
+    const pauseNaturalness = pauses.length === 0 ? 30 : pauses.length === 1 ? 60 : Math.min(100, 40 + pauses.length * 10);
 
-    // pathVariation: разброс точек (мобайл), десктоп — нейтрально
+    // pathVariation: клікання в 1 точку — стандартна норма, базовий нейтральний рівень 45
     const xs = taps.map((t) => t.x);
     const ys = taps.map((t) => t.y);
     const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
     const my = ys.reduce((a, b) => a + b, 0) / ys.length;
     const stdX = Math.sqrt(xs.reduce((a, b) => a + (b - mx) ** 2, 0) / xs.length);
     const stdY = Math.sqrt(ys.reduce((a, b) => a + (b - my) ** 2, 0) / ys.length);
-    const platform = tg?.platform || 'unknown';
-    const pathVariation = platform === 'ios' || platform === 'android' ? Math.min(100, (stdX + stdY) * 4) : 50;
+    const pathVariation = Math.min(100, 45 + (stdX + stdY) * 3);
 
     // sessionVariation: если окно растянуто по времени — были перерывы (настенные часы)
     const span = taps[taps.length - 1].wall - taps[0].wall;
-    const sessionVariation = span > 15 * 60000 ? 100 : span > 8 * 60000 ? 60 : 20;
+    const sessionVariation = span > 15 * 60000 ? 100 : span > 8 * 60000 ? 60 : 30;
 
     return Math.round(0.30 * tempoDrift + 0.20 * intervalVariation + 0.15 * pauseNaturalness + 0.20 * pathVariation + 0.15 * sessionVariation);
   };
@@ -1039,11 +1035,13 @@ export default function App() {
     const R = wSum > 0 ? rSum / wSum : 0;
     const C = coordScore(t300);
     const B = behaviourScore();
-    // H тоже мульти-масштаб: короткий эпизод не определяет человечность
-    const H40 = humanScore(t40.length >= 40 ? t40 : []);
-    const H100 = t100.length >= 100 ? humanScore(t100) : 0;
-    const H300 = t300.length >= 300 ? humanScore(t300) : 0;
-    const H = 0.20 * H40 + 0.35 * H100 + 0.45 * H300;
+
+    // Нормалізований мульти-масштаб H: захищає гравця з перших секунд гри
+    let hSum = 0, hwSum = 0;
+    if (t40.length >= 20) { hSum += 0.20 * humanScore(t40); hwSum += 0.20; }
+    if (t100.length >= 100) { hSum += 0.35 * humanScore(t100); hwSum += 0.35; }
+    if (t300.length >= 300) { hSum += 0.45 * humanScore(t300); hwSum += 0.45; }
+    const H = hwSum > 0 ? hSum / hwSum : 45;
 
     // Импульс за экстремальную скорость (22+/с на коротком окне), быстро забывается
     if (t10.length >= 10) {
@@ -1082,7 +1080,7 @@ export default function App() {
       cv40 = m40 > 0 ? s40 / m40 : 1;
     }
     const metronome = R >= 60 && cv40 < 0.08;
-    const independentSignals = (R >= 40 ? 1 : 0) + (C >= 45 ? 1 : 0) + (B >= 45 ? 1 : 0) + (metronome ? 1 : 0);
+    const independentSignals = (R >= 45 ? 1 : 0) + (C >= 45 ? 1 : 0) + (B >= 45 ? 1 : 0) + (metronome ? 1 : 0);
     const inCooldown = Date.now() < suspicionCooldownUntil.current;
     if (
       !inCooldown &&
