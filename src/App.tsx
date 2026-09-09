@@ -2421,7 +2421,15 @@ export default function App() {
 
     const srcSkin = SKINS[effectiveSourceId];
     if (!srcSkin) return;
-    const tgtSkin = SKINS[upgraderTargetId] || SKINS.skin_chef;
+
+    const eligibleTargetSkins = SKIN_LIST.filter(
+      (sk) => sk.id !== 'skin_classic' && sk.id !== srcSkin.id
+    );
+    const effectiveTargetId = eligibleTargetSkins.some((sk) => sk.id === upgraderTargetId)
+      ? upgraderTargetId
+      : (eligibleTargetSkins.find((sk) => !(state.skins?.owned || []).includes(sk.id))?.id || eligibleTargetSkins[0]?.id || 'skin_chef');
+    const tgtSkin = SKINS[effectiveTargetId];
+    if (!tgtSkin) return;
 
     if (tgtSkin.id === 'skin_classic' || tgtSkin.id === srcSkin.id) {
       addToast(
@@ -2475,8 +2483,9 @@ export default function App() {
       targetAngle = Math.floor(winSliceDeg + 6 + Math.random() * Math.max(1, 360 - winSliceDeg - 12));
     }
 
-    const fullSpins = 6 * 360;
-    const newAngle = spinnerAngle + fullSpins + targetAngle;
+    // Always do at least 6 full forward spins and land exactly at targetAngle in the circle
+    const currentSpins = Math.floor(spinnerAngle / 360);
+    const newAngle = (currentSpins + 6) * 360 + targetAngle;
     setSpinnerAngle(newAngle);
 
     setTimeout(() => {
@@ -5522,16 +5531,18 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Pixel-Perfect SVG Rotating Pointer (positioned ONLY in outer ring track) */}
-                        <svg
-                          viewBox="0 0 200 200"
-                          className="absolute inset-0 w-full h-full pointer-events-none z-20"
+                        {/* Pixel-Perfect CSS-Rotated Pointer Container */}
+                        <div
+                          className="absolute inset-0 pointer-events-none z-20"
+                          style={{
+                            transform: `rotate(${spinnerAngle}deg)`,
+                            transformOrigin: '50% 50%',
+                            transition: isUpgrading ? 'transform 3.6s cubic-bezier(0.12, 0.9, 0.18, 1)' : 'none',
+                          }}
                         >
-                          <g
-                            transform={`rotate(${spinnerAngle} 100 100)`}
-                            style={{
-                              transition: isUpgrading ? 'transform 3.6s cubic-bezier(0.12, 0.9, 0.18, 1)' : 'none',
-                            }}
+                          <svg
+                            viewBox="0 0 200 200"
+                            className="w-full h-full"
                           >
                             {/* Needle Shaft strictly along track */}
                             <line
@@ -5540,29 +5551,30 @@ export default function App() {
                               x2="100"
                               y2="18"
                               stroke="#f59e0b"
-                              strokeWidth="3.5"
+                              strokeWidth="4"
                               strokeLinecap="round"
-                              filter="drop-shadow(0 0 4px #f59e0b)"
+                              filter="drop-shadow(0 0 6px #f59e0b)"
                             />
                             {/* Arrow Pointer Head pointing outwards to rim */}
                             <polygon
-                              points="93,22 107,22 100,7"
+                              points="92,22 108,22 100,6"
                               fill="#f59e0b"
                               stroke="#fffbeb"
-                              strokeWidth="1"
-                              filter="drop-shadow(0 0 6px #f59e0b)"
+                              strokeWidth="1.5"
+                              filter="drop-shadow(0 0 8px #f59e0b)"
                             />
                             {/* Hub rivet dot */}
                             <circle
                               cx="100"
                               cy="64"
-                              r="4.5"
+                              r="5"
                               fill="#fbbf24"
                               stroke="#ffffff"
-                              strokeWidth="1.5"
+                              strokeWidth="2"
+                              filter="drop-shadow(0 0 4px rgba(0,0,0,0.6))"
                             />
-                          </g>
-                        </svg>
+                          </svg>
+                        </div>
                       </div>
 
                       {/* Boost with Diamonds */}
