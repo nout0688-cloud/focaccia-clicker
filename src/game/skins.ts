@@ -321,7 +321,7 @@ export const CASES: CaseItem[] = [
     descRu: 'Базовый деревянный сундук с ароматом свежей выпечки и шанс на эпический кибер-вкус.',
     icon: '🥖',
     priceType: 'focaccia',
-    price: 5000000,
+    price: 250000000,
     drops: [
       { skinId: 'skin_classic', weight: 42 },
       { skinId: 'skin_samurai', weight: 26 },
@@ -342,7 +342,7 @@ export const CASES: CaseItem[] = [
     descRu: 'Кованый золотом сундук из королевской сокровищницы с высоким шансом на редкие скины.',
     icon: '👑',
     priceType: 'focaccia',
-    price: 50000000,
+    price: 3000000000,
     drops: [
       { skinId: 'skin_chef', weight: 30 },
       { skinId: 'skin_samurai', weight: 28 },
@@ -363,7 +363,7 @@ export const CASES: CaseItem[] = [
     descRu: 'Высокотехнологичный кристалл-сейф с гарантированным эпическим или легендарным лутом.',
     icon: '💎',
     priceType: 'diamonds',
-    price: 35,
+    price: 120,
     drops: [
       { skinId: 'skin_cyber', weight: 30 },
       { skinId: 'skin_pirate', weight: 28 },
@@ -384,7 +384,7 @@ export const CASES: CaseItem[] = [
     descRu: 'Орбитальная капсула звёздной энергии с высочайшим шансом на Мифические шедевры!',
     icon: '🌌',
     priceType: 'diamonds',
-    price: 85,
+    price: 280,
     drops: [
       { skinId: 'skin_pirate', weight: 22 },
       { skinId: 'skin_royal', weight: 28 },

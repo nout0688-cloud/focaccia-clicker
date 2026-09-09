@@ -550,7 +550,7 @@ export default function App() {
 
   // ===== 🎨 SKINS, CASES & UPGRADER STATE =====
   const [showSkinsModal, setShowSkinsModal] = useState(false);
-  const [skinsTab, setSkinsTab] = useState<'inventory' | 'cases' | 'upgrader'>('inventory');
+  const [skinsTab, setSkinsTab] = useState<'cases' | 'inventory' | 'upgrader'>('cases');
   const [holdProgress, setHoldProgress] = useState(0);
   const [portalWarping, setPortalWarping] = useState(false);
   const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -2558,7 +2558,7 @@ export default function App() {
 
     const winningSkin = rollCaseDrop(c);
     const winningIdx = 32;
-    const totalCards = 40;
+    const totalCards = 42;
     const reel: SkinItem[] = [];
 
     for (let i = 0; i < totalCards; i++) {
@@ -2570,7 +2570,7 @@ export default function App() {
     }
 
     setActiveCase(c);
-    setIsOpeningCase(true);
+    setIsOpeningCase(false);
     setCaseWonResult(null);
     setCaseReel(reel);
     setCaseReelOffset(0);
@@ -2599,11 +2599,14 @@ export default function App() {
 
     haptic.heavy();
 
+    // 110px card width + 10px gap = 120px step
+    // Reel starts at left: 50% (center of pointer). Card 0 center is at +55px.
+    // To place winning card index center dead under pointer:
     const cardStep = 120;
-    const jitter = Math.floor((Math.random() - 0.5) * 50);
-    const targetOffset = -(winningIdx * cardStep + 56 - 160 + jitter);
+    const targetOffset = -(winningIdx * cardStep + 55);
 
     setTimeout(() => {
+      setIsOpeningCase(true);
       setCaseReelOffset(targetOffset);
     }, 60);
 
@@ -2629,7 +2632,7 @@ export default function App() {
           '⭐'
         );
       }
-    }, 4250);
+    }, 4150);
   };
 
   const handleUpgradeSkinLevel = (skinId: string) => {
@@ -5015,9 +5018,21 @@ export default function App() {
               <div className="grid grid-cols-3 p-1 rounded-xl bg-white/5 border border-white/10 text-xs font-bold">
                 <button
                   type="button"
+                  onClick={() => { setSkinsTab('cases'); haptic.selection(); }}
+                  className={cn(
+                    'py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 relative',
+                    skinsTab === 'cases' ? 'bg-amber-500 text-stone-950 font-black shadow' : 'text-stone-400 hover:text-white'
+                  )}
+                >
+                  <span>🎁</span>
+                  <span className="truncate">{lang === 'uk' ? 'Кейси' : 'Кейсы'}</span>
+                  <span className="text-[8px] px-1.5 rounded-full bg-amber-400 text-stone-950 font-black">4</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => { setSkinsTab('inventory'); haptic.selection(); }}
                   className={cn(
-                    'py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1',
+                    'py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5',
                     skinsTab === 'inventory' ? 'bg-amber-500 text-stone-950 font-black shadow' : 'text-stone-400 hover:text-white'
                   )}
                 >
@@ -5029,21 +5044,9 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { setSkinsTab('cases'); haptic.selection(); }}
-                  className={cn(
-                    'py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1 relative',
-                    skinsTab === 'cases' ? 'bg-amber-500 text-stone-950 font-black shadow' : 'text-stone-400 hover:text-white'
-                  )}
-                >
-                  <span>🎁</span>
-                  <span className="truncate">{lang === 'uk' ? 'Кейси' : 'Кейсы'}</span>
-                  <span className="text-[8px] px-1 rounded-full bg-amber-400 text-stone-950 font-black animate-pulse">4</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => { setSkinsTab('upgrader'); haptic.selection(); }}
                   className={cn(
-                    'py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1',
+                    'py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5',
                     skinsTab === 'upgrader' ? 'bg-amber-500 text-stone-950 font-black shadow' : 'text-stone-400 hover:text-white'
                   )}
                 >
@@ -5056,6 +5059,28 @@ export default function App() {
             {/* Tab 1: INVENTORY */}
             {skinsTab === 'inventory' && (
               <div className="p-4 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
+                {/* Quick Cases Banner */}
+                <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-500/20 via-yellow-500/10 to-stone-900 border border-amber-500/30 flex items-center justify-between gap-2 shadow-md">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="text-2xl animate-bounce">🎁</span>
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-amber-300 truncate">
+                        {lang === 'uk' ? 'Скрині зі скінами' : 'Сундуки со скинами'}
+                      </div>
+                      <div className="text-[10px] text-stone-300 truncate">
+                        {lang === 'uk' ? 'Відкривайте за фокачі або діаманти!' : 'Открывайте за фокаччи или алмазы!'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setSkinsTab('cases'); haptic.selection(); }}
+                    className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs transition active:scale-95 cursor-pointer shadow shrink-0"
+                  >
+                    {lang === 'uk' ? 'До кейсів →' : 'К кейсам →'}
+                  </button>
+                </div>
+
                 {/* Active Equipped Skin Showcase */}
                 <div className={cn(
                   'p-4 rounded-2xl border flex items-center gap-3.5 relative overflow-hidden bg-gradient-to-r',
@@ -5659,8 +5684,22 @@ export default function App() {
 
       {/* ===== 🎁 CASE UNBOXING ROULETTE OVERLAY ===== */}
       {activeCase && (
-        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-4 select-none safe-bottom animate-fade-in">
-          <div className="w-full max-w-sm sm:max-w-md flex flex-col items-center space-y-4">
+        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex flex-col items-center overflow-y-auto p-4 select-none safe-bottom animate-fade-in custom-scrollbar">
+          {/* Top Close button so player is never trapped */}
+          <button
+            type="button"
+            onClick={() => {
+              if (isOpeningCase) return;
+              setActiveCase(null);
+              setCaseWonResult(null);
+            }}
+            disabled={isOpeningCase}
+            className="absolute top-3 right-3 z-40 w-9 h-9 rounded-full bg-stone-900/90 hover:bg-stone-800 text-white/70 hover:text-white flex items-center justify-center text-base font-bold border border-white/10 transition cursor-pointer disabled:opacity-20 disabled:cursor-not-allowed"
+          >
+            ✕
+          </button>
+
+          <div className="w-full max-w-sm sm:max-w-md flex flex-col items-center space-y-3.5 my-auto py-4">
             {/* Header */}
             <div className="text-center space-y-1">
               <div className="flex items-center justify-center gap-2">
@@ -5679,45 +5718,47 @@ export default function App() {
             </div>
 
             {/* Roulette Track Viewport */}
-            <div className="relative w-full h-40 bg-stone-950 border-2 border-amber-500/60 rounded-3xl shadow-[0_0_40px_rgba(245,158,11,0.25),inset_0_0_30px_rgba(0,0,0,0.9)] overflow-hidden flex items-center justify-center">
+            <div className="relative w-full h-36 sm:h-40 bg-stone-950 border-2 border-amber-500/60 rounded-3xl shadow-[0_0_40px_rgba(245,158,11,0.25),inset_0_0_30px_rgba(0,0,0,0.9)] overflow-hidden flex items-center">
               {/* Top pointer */}
               <div className="absolute top-0 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none">
-                <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[14px] border-t-amber-400 filter drop-shadow-[0_0_8px_#f59e0b]" />
+                <div className="w-0 h-0 border-l-[9px] border-l-transparent border-r-[9px] border-r-transparent border-t-[16px] border-t-amber-400 filter drop-shadow-[0_0_8px_#f59e0b]" />
               </div>
               {/* Bottom pointer */}
               <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none">
-                <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[14px] border-b-amber-400 filter drop-shadow-[0_0_8px_#f59e0b]" />
+                <div className="w-0 h-0 border-l-[9px] border-l-transparent border-r-[9px] border-r-transparent border-b-[16px] border-b-amber-400 filter drop-shadow-[0_0_8px_#f59e0b]" />
               </div>
               {/* Center vertical beam line */}
-              <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-amber-400/90 shadow-[0_0_12px_#f59e0b] z-20 pointer-events-none" />
+              <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-gradient-to-b from-amber-400 via-yellow-300 to-amber-400 shadow-[0_0_12px_#f59e0b] z-20 pointer-events-none" />
 
               {/* Edge gradients */}
               <div className="absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-stone-950 via-stone-950/80 to-transparent z-20 pointer-events-none" />
               <div className="absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-stone-950 via-stone-950/80 to-transparent z-20 pointer-events-none" />
 
-              {/* Scrolling Cards Reel */}
+              {/* Scrolling Cards Reel (Starts at left-1/2, center aligned on card 32) */}
               <div
-                className="flex items-center gap-2 will-change-transform"
+                className="absolute top-0 bottom-0 left-1/2 flex items-center gap-[10px] will-change-transform"
                 style={{
                   transform: `translateX(${caseReelOffset}px)`,
-                  transition: isOpeningCase ? 'transform 4.2s cubic-bezier(0.12, 0.85, 0.15, 1)' : 'none',
+                  transition: isOpeningCase ? 'transform 4.0s cubic-bezier(0.08, 0.82, 0.17, 1)' : 'none',
                 }}
               >
                 {caseReel.map((sk, idx) => {
                   const r = RARITY_LABELS[sk.rarity];
+                  const isWinningTarget = !isOpeningCase && caseWonResult && idx === 32;
                   return (
                     <div
                       key={idx}
                       className={cn(
-                        'w-[112px] h-[132px] shrink-0 rounded-2xl border-2 flex flex-col items-center justify-between p-2 bg-gradient-to-b shadow-md relative overflow-hidden',
-                        r.border, sk.colorGrad
+                        'w-[110px] h-[126px] sm:h-[132px] shrink-0 rounded-2xl border-2 flex flex-col items-center justify-between p-2 bg-gradient-to-b shadow-md relative overflow-hidden transition-all duration-300',
+                        r.border, sk.colorGrad,
+                        isWinningTarget && 'ring-4 ring-amber-400 scale-105 shadow-[0_0_25px_#f59e0b] z-10'
                       )}
                       style={{ boxShadow: `0 0 15px ${sk.glowColor}` }}
                     >
                       <span className={cn('px-1.5 py-0.2 rounded text-[8px] font-black border', r.color, r.border)}>
                         {sk.badge}
                       </span>
-                      <div className="w-14 h-14 rounded-xl overflow-hidden border border-white/20 shadow my-0.5 bg-black/40">
+                      <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-xl overflow-hidden border border-white/20 shadow my-0.5 bg-black/40">
                         <img src={sk.img} alt="" className="w-full h-full object-cover" />
                       </div>
                       <div className="text-[10px] font-black text-white text-center truncate w-full">
@@ -5734,12 +5775,12 @@ export default function App() {
               <div className="w-full flex flex-col items-center space-y-3 animate-bounce-short">
                 <div
                   className={cn(
-                    'p-4 rounded-3xl border-2 flex flex-col items-center relative overflow-hidden w-full bg-gradient-to-b text-center',
+                    'p-3.5 rounded-3xl border-2 flex flex-col items-center relative overflow-hidden w-full bg-gradient-to-b text-center',
                     caseWonResult.skin.colorGrad, caseWonResult.skin.borderColor
                   )}
                   style={{ boxShadow: `0 0 45px ${caseWonResult.skin.glowColor}` }}
                 >
-                  <div className="flex items-center gap-1.5 mb-1.5">
+                  <div className="flex items-center gap-1.5 mb-1">
                     <span className={cn('px-2.5 py-0.5 rounded-full text-[10px] font-black border', RARITY_LABELS[caseWonResult.skin.rarity].color, RARITY_LABELS[caseWonResult.skin.rarity].border)}>
                       {caseWonResult.skin.badge}
                     </span>
@@ -5754,11 +5795,11 @@ export default function App() {
                     )}
                   </div>
 
-                  <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-white/40 shadow-2xl my-1 bg-black/50">
+                  <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 border-white/40 shadow-2xl my-1 bg-black/50">
                     <img src={caseWonResult.skin.img} alt="" className="w-full h-full object-cover" />
                   </div>
 
-                  <div className="text-base font-black text-white mt-1">
+                  <div className="text-base font-black text-white mt-0.5">
                     {lang === 'uk' ? caseWonResult.skin.name : caseWonResult.skin.nameRu}
                   </div>
 
@@ -5767,11 +5808,11 @@ export default function App() {
                   </div>
 
                   {caseWonResult.isNew ? (
-                    <div className="text-[10px] text-emerald-300 font-bold bg-emerald-950/60 px-2.5 py-1 rounded-xl border border-emerald-500/30 mt-2">
+                    <div className="text-[10px] text-emerald-300 font-bold bg-emerald-950/60 px-2.5 py-1 rounded-xl border border-emerald-500/30 mt-1.5">
                       {lang === 'uk' ? '✓ Скін додано до вашої колекції!' : '✓ Скин добавлен в вашу коллекцию!'}
                     </div>
                   ) : (
-                    <div className="text-[10px] text-amber-300 font-bold bg-amber-950/60 px-2.5 py-1 rounded-xl border border-amber-500/30 mt-2">
+                    <div className="text-[10px] text-amber-300 font-bold bg-amber-950/60 px-2.5 py-1 rounded-xl border border-amber-500/30 mt-1.5">
                       {lang === 'uk' ? `⭐ Дублікат! Рівень підвищено до ★ Lv.${caseWonResult.newLevel} (+15% до всіх характеристик)` : `⭐ Дубликат! Уровень повышен до ★ Lv.${caseWonResult.newLevel} (+15% ко всем характеристикам)`}
                     </div>
                   )}
@@ -5786,7 +5827,7 @@ export default function App() {
                       setActiveCase(null);
                       setCaseWonResult(null);
                     }}
-                    className="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-sm shadow-xl transition active:scale-95 cursor-pointer"
+                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:brightness-110 text-stone-950 font-black text-sm shadow-xl shadow-amber-500/30 transition active:scale-95 cursor-pointer"
                   >
                     {lang === 'uk' ? 'Вдягти зараз ✨' : 'Надеть сейчас ✨'}
                   </button>
@@ -5814,7 +5855,7 @@ export default function App() {
                       onClick={() => {
                         if (activeCase) handleOpenCase(activeCase);
                       }}
-                      className="py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 text-white font-black text-xs border border-amber-400/40 transition active:scale-95 cursor-pointer"
+                      className="py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 hover:brightness-110 text-white font-black text-xs border border-amber-400/40 transition active:scale-95 cursor-pointer"
                     >
                       {lang === 'uk' ? '🎁 Відкрити ще' : '🎁 Открыть ещё'}
                     </button>
