@@ -503,7 +503,7 @@ export const TRANSLATIONS = {
       '• 💎 Діаманти та ВІП-прокачки НЕ зникають після ребіртху',
     ],
     resetBtn: '🗑️ Скинути гру повністю',
-    gameVersion: 'ФОКАЧА КЛІКЕР v1.3.3',
+    gameVersion: 'ФОКАЧА КЛІКЕР v1.3.4',
 
     // Bottom Nav
     navShop: 'Прокачки',
@@ -814,7 +814,7 @@ export const TRANSLATIONS = {
       '• 💎 Алмазы и ВИП-прокачки НЕ пропадают после ребиртха',
     ],
     resetBtn: '🗑️ Сбросить игру полностью',
-    gameVersion: 'ФОКАЧЧА КЛИКЕР v1.3.3',
+    gameVersion: 'ФОКАЧЧА КЛИКЕР v1.3.4',
 
     // Bottom Nav
     navShop: 'Прокачки',
