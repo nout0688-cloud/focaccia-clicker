@@ -3143,35 +3143,24 @@ export default function App() {
 
       {/* ===== 💎 MONOBANK DONATE / DIAMOND STORE MODAL ===== */}
       {showDonateModal && (
-        <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
-          <div className="relative w-full max-w-lg bg-[#0c0905] border-t sm:border border-cyan-500/35 rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col shadow-[0_0_60px_rgba(6,182,212,0.25)] overflow-hidden">
-            {/* Top Ambient Glow */}
-            <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-80 h-32 bg-gradient-to-r from-cyan-500/20 via-blue-500/15 to-purple-500/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="fixed inset-0 z-[70] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
+          <div className="relative w-full max-w-md bg-[#12110e] border-t sm:border border-amber-500/30 rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Ambient Background Glow */}
+            <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-72 h-32 bg-amber-500/15 rounded-full blur-3xl pointer-events-none" />
 
-            {/* Header */}
-            <div className="relative shrink-0 px-4 py-3.5 border-b border-cyan-500/25 bg-gradient-to-r from-cyan-950/70 via-[#0c0905] to-blue-950/70 flex items-center justify-between z-10">
+            {/* Clean Header (No text cut-off, perfectly aligned) */}
+            <div className="relative shrink-0 px-4 py-3 border-b border-white/10 bg-zinc-950/80 flex items-center justify-between z-10">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="relative flex items-center justify-center shrink-0">
-                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 flex items-center justify-center text-xl shadow-[0_0_20px_rgba(6,182,212,0.45)] border border-cyan-300/40 animate-diamond">
-                    💎
-                  </div>
-                  <span className="absolute -bottom-1 -right-1 flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500 border-2 border-[#0c0905]" />
-                  </span>
+                <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-lg shrink-0 shadow-sm">
+                  💎
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="text-sm sm:text-base font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-white to-amber-200 truncate tracking-wide">
-                      {t.donateTitle || '💎 Банк Діамантів'}
-                    </h3>
-                    <span className="px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[9px] font-black uppercase tracking-wider border border-cyan-500/30 shrink-0 font-mono">
-                      MONO
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-emerald-300/90 font-medium flex items-center gap-1.5 mt-0.5 truncate">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                    <span>{lang === 'uk' ? 'Банка Monobank • Миттєве зарахування' : 'Банка Monobank • Мгновенное начисление'}</span>
+                  <h3 className="text-sm sm:text-base font-black text-white truncate tracking-wide">
+                    {lang === 'uk' ? 'Магазин Діамантів' : 'Магазин Алмазов'}
+                  </h3>
+                  <p className="text-[10px] sm:text-[11px] text-amber-400/90 font-medium flex items-center gap-1.5 truncate">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                    <span>Monobank • {lang === 'uk' ? 'Швидка видача' : 'Быстрая выдача'}</span>
                   </p>
                 </div>
               </div>
@@ -3179,20 +3168,11 @@ export default function App() {
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
-                  onClick={openSupport}
-                  className="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 hover:text-cyan-200 flex items-center gap-1 text-xs font-bold border border-cyan-500/35 transition active:scale-95 cursor-pointer shadow-sm"
-                  title="Підтримка @hhimd"
-                >
-                  <span>💬</span>
-                  <span className="hidden xs:inline font-mono">@{SUPPORT_USERNAME}</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => { setShowMonoHelp(true); haptic.selection(); }}
-                  className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-emerald-200 flex items-center gap-1 text-xs font-bold border border-emerald-500/30 transition active:scale-95 cursor-pointer shadow-sm"
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white flex items-center justify-center text-xs font-bold border border-white/10 transition active:scale-95 cursor-pointer"
+                  title={lang === 'uk' ? 'Інструкція' : 'Инструкция'}
                 >
-                  <span>❓</span>
-                  <span className="hidden xs:inline">{lang === 'uk' ? 'Допомога' : 'Помощь'}</span>
+                  ?
                 </button>
                 <button
                   type="button"
@@ -3204,15 +3184,15 @@ export default function App() {
               </div>
             </div>
 
-            {/* Navigation Tabs (Магазин, Кошик, Очікують) */}
-            <div className="shrink-0 p-1.5 mx-3.5 my-2 rounded-2xl bg-black/60 border border-white/10 flex gap-1 shadow-inner z-10">
+            {/* Segmented Tabs (Native iOS / Telegram feel) */}
+            <div className="grid grid-cols-3 gap-1 p-1 mx-3.5 my-2.5 rounded-2xl bg-white/5 border border-white/10 text-xs font-bold z-10">
               <button
                 type="button"
                 onClick={() => { setDonateTab('shop'); haptic.selection(); }}
                 className={cn(
-                  'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                  'py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer',
                   donateTab === 'shop'
-                    ? 'bg-gradient-to-r from-cyan-500/30 to-blue-500/30 text-cyan-200 border border-cyan-400/50 shadow-[0_0_15px_rgba(6,182,212,0.25)]'
+                    ? 'bg-amber-500 text-stone-950 font-black shadow-sm'
                     : 'text-white/60 hover:text-white hover:bg-white/5'
                 )}
               >
@@ -3224,16 +3204,21 @@ export default function App() {
                 type="button"
                 onClick={() => { setDonateTab('cart'); haptic.selection(); }}
                 className={cn(
-                  'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer relative',
+                  'py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer relative',
                   donateTab === 'cart'
-                    ? 'bg-gradient-to-r from-pink-500/30 to-rose-500/30 text-pink-200 border border-pink-400/50 shadow-[0_0_15px_rgba(236,72,153,0.25)]'
+                    ? 'bg-amber-500 text-stone-950 font-black shadow-sm'
                     : 'text-white/60 hover:text-white hover:bg-white/5'
                 )}
               >
-                <span className={cn(cartSummary.itemsCount > 0 && 'animate-bounce-scale')}>🛒</span>
+                <span>🛒</span>
                 <span>{t.donateTabCart || 'Кошик'}</span>
                 {cartSummary.itemsCount > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 text-white font-mono text-[9px] font-black leading-none shadow-sm animate-badge-pop">
+                  <span className={cn(
+                    'px-1.5 py-0.5 rounded-full text-[9px] font-black font-mono leading-none shadow-sm',
+                    donateTab === 'cart'
+                      ? 'bg-stone-950 text-amber-400'
+                      : 'bg-amber-500 text-stone-950'
+                  )}>
                     {cartSummary.itemsCount}
                   </span>
                 )}
@@ -3243,16 +3228,21 @@ export default function App() {
                 type="button"
                 onClick={() => { setDonateTab('pending'); haptic.selection(); }}
                 className={cn(
-                  'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer relative',
+                  'py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer relative',
                   donateTab === 'pending'
-                    ? 'bg-gradient-to-r from-amber-500/30 to-yellow-500/30 text-amber-200 border border-amber-400/50 shadow-[0_0_15px_rgba(245,158,11,0.25)]'
+                    ? 'bg-amber-500 text-stone-950 font-black shadow-sm'
                     : 'text-white/60 hover:text-white hover:bg-white/5'
                 )}
               >
                 <span>⏳</span>
-                <span>{t.donateTabPending || 'Очікують'}</span>
+                <span>{t.donateTabPending || 'Замовлення'}</span>
                 {savedOrders.filter((o) => o.status === 'pending').length > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-mono text-[9px] font-black leading-none animate-pulse shadow-sm">
+                  <span className={cn(
+                    'px-1.5 py-0.5 rounded-full text-[9px] font-black font-mono leading-none shadow-sm',
+                    donateTab === 'pending'
+                      ? 'bg-stone-950 text-amber-400'
+                      : 'bg-amber-500 text-stone-950'
+                  )}>
                     {savedOrders.filter((o) => o.status === 'pending').length}
                   </span>
                 )}
@@ -3262,107 +3252,93 @@ export default function App() {
             {/* Modal Body Tabs */}
             {donateTab === 'shop' && (
               /* ===== TAB 1: SHOP PRODUCTS ===== */
-              <div className="p-4 space-y-3.5 overflow-y-auto flex-1 custom-scrollbar">
-                {/* Monobank Trust Banner */}
-                <div className="px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-[#0c0905] to-teal-950/30 border border-emerald-500/30 flex items-center justify-between gap-2.5 text-[11px] shadow-sm">
+              <div className="p-3.5 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
+                {/* Monobank Info Strip (Clean & Non-intrusive) */}
+                <div className="px-3 py-2 rounded-xl bg-zinc-900/60 border border-white/10 flex items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-base shrink-0 shadow-inner">
-                      💳
-                    </div>
-                    <div className="min-w-0 leading-tight">
-                      <div className="font-black text-emerald-200 truncate">
-                        {lang === 'uk' ? 'Оплата на Банку Monobank' : 'Оплата на Банку Monobank'}
+                    <span className="text-lg shrink-0">💳</span>
+                    <div className="min-w-0">
+                      <div className="font-bold text-white text-[11px] flex items-center gap-1.5">
+                        <span>Оплата через Monobank</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
                       </div>
-                      <div className="text-[10px] text-emerald-300/70 truncate mt-0.5">
-                        {lang === 'uk' ? 'Скопіюйте код замовлення та вкажіть у коментарі' : 'Скопируйте код заказа и укажите в комментарии'}
+                      <div className="text-[10px] text-white/50 truncate">
+                        Вказуйте код замовлення у призначенні платежу
                       </div>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => { setShowMonoHelp(true); haptic.selection(); }}
-                    className="shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-500/25 hover:bg-emerald-500/35 text-emerald-200 font-black text-[10px] border border-emerald-500/35 active:scale-95 transition cursor-pointer flex items-center gap-1 shadow-sm"
+                    className="shrink-0 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-amber-300 hover:text-amber-200 text-[10px] font-bold border border-white/10 transition active:scale-95 cursor-pointer"
                   >
-                    <span>❓</span>
-                    <span>{lang === 'uk' ? 'Як оплатити' : 'Как платить'}</span>
+                    Інструкція ➔
                   </button>
                 </div>
 
-                {/* Hero Starter Pack Spotlight */}
+                {/* Hero Starter Pack (Clean, High Quality, No AI Glare Lines) */}
                 {(() => {
                   const starterPkg = DONATE_PACKAGES.find((p) => p.id === 'starter_pack');
                   if (!starterPkg) return null;
                   const isBuying = buyingPackageId === starterPkg.id;
                   const inCartItem = cart.find((it) => it.packageId === starterPkg.id);
                   const title = lang === 'uk' ? starterPkg.titleUk : starterPkg.titleRu;
-                  const desc = lang === 'uk' ? starterPkg.descUk : starterPkg.descRu;
 
                   return (
-                    <div className="relative overflow-hidden rounded-3xl p-4 donate-card-starter shadow-[0_0_30px_rgba(245,158,11,0.18)] border border-amber-400/50 group transition-all duration-300">
-                      {/* Animated light sweep */}
-                      <div className="animate-sheen-fast" />
-
-                      {/* Header Badge */}
-                      <div className="flex items-center justify-between gap-2 mb-3 relative z-10">
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-black text-[10px] tracking-wider uppercase shadow-sm shadow-amber-500/30 animate-float-badge">
-                          <span>👑</span>
-                          <span>{starterPkg.badge || 'ВИГІДА -70%'}</span>
-                        </div>
-                        <span className="text-[10px] text-amber-300/80 font-mono font-bold bg-black/40 px-2.5 py-0.5 rounded-full border border-amber-500/20">
-                          {lang === 'uk' ? 'Тільки для новачків' : 'Только для новичков'}
+                    <div className="relative rounded-2xl p-4 store-card-starter transition-all">
+                      {/* Top Badges */}
+                      <div className="flex items-center justify-between gap-2 mb-3">
+                        <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-black uppercase tracking-wider">
+                          ⚡ Стартовий набір
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-black uppercase tracking-wider">
+                          ЗНИЖКА -70%
                         </span>
                       </div>
 
-                      {/* Main info row */}
-                      <div className="flex items-start gap-3.5 mb-3 relative z-10">
-                        <div className="w-13 h-13 rounded-2xl bg-gradient-to-br from-amber-400/25 via-yellow-500/15 to-transparent border border-amber-400/40 flex items-center justify-center text-3xl shadow-inner shrink-0 group-hover:scale-105 transition-transform">
+                      {/* Main Info */}
+                      <div className="flex items-center gap-3.5 mb-3.5">
+                        <div className="w-12 h-12 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-2xl shrink-0">
                           ⚡
                         </div>
                         <div className="min-w-0 flex-1">
-                          <h4 className="text-sm font-black text-amber-100 flex items-center gap-1.5">
-                            <span>{title}</span>
+                          <h4 className="text-sm font-black text-white">
+                            {title}
                           </h4>
-                          <p className="text-[11px] text-amber-200/70 leading-snug mt-0.5">
-                            {desc}
-                          </p>
-                          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 text-cyan-200 border border-cyan-400/30 text-[10px] font-black">
+                          <div className="text-[11px] text-white/70 space-y-0.5 mt-1">
+                            <div className="flex items-center gap-1.5 font-bold text-amber-200">
                               <span>💎</span>
                               <span>+100 Діамантів</span>
-                            </span>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-200 border border-amber-400/30 text-[10px] font-black">
+                            </div>
+                            <div className="flex items-center gap-1.5 text-white/60 text-[10px]">
                               <span>🪵</span>
-                              <span>Бойова скалка</span>
-                            </span>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 text-[10px] font-black">
-                              <span>⚔️</span>
-                              <span>x2 шкоди босам</span>
-                            </span>
+                              <span>Бойова скалка (x2 шкоди босам)</span>
+                            </div>
                           </div>
                         </div>
                       </div>
 
-                      {/* Action footer */}
-                      <div className="flex items-center justify-between pt-3 border-t border-amber-500/20 gap-3 relative z-10">
-                        <div>
-                          <div className="text-[10px] text-amber-400/60 uppercase font-bold tracking-wider">
-                            {lang === 'uk' ? 'Ціна набору:' : 'Цена набора:'}
-                          </div>
-                          <div className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-300 to-amber-400 font-mono">
+                      {/* Action Footer */}
+                      <div className="flex items-center justify-between pt-3 border-t border-white/10 gap-3">
+                        <div className="flex items-baseline gap-2">
+                          <div className="text-xl font-black text-amber-400 font-mono">
                             {starterPkg.priceUah} ₴
+                          </div>
+                          <div className="text-xs text-white/40 line-through font-mono">
+                            35 ₴
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           {inCartItem ? (
-                            <div className="flex items-center gap-1.5 bg-black/70 rounded-xl px-2.5 py-1.5 border border-pink-500/50 shadow-sm">
-                              <span className="text-xs font-bold text-pink-300">
+                            <div className="flex items-center gap-1.5 bg-zinc-900 rounded-xl px-2.5 py-1.5 border border-amber-500/40">
+                              <span className="text-xs font-bold text-amber-300">
                                 ✓ {lang === 'uk' ? 'У кошику' : 'В корзине'}
                               </span>
                               <button
                                 type="button"
                                 onClick={() => removeFromCart(starterPkg.id)}
-                                className="text-[10px] text-white/50 hover:text-red-300 px-1 cursor-pointer"
+                                className="text-[11px] text-white/40 hover:text-rose-400 pl-1 cursor-pointer"
                               >
                                 ✕
                               </button>
@@ -3371,11 +3347,10 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => addToCart(starterPkg.id)}
-                              className="px-3.5 py-2 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border border-pink-500/40 text-xs font-black active:scale-95 transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+                              className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 flex items-center justify-center text-sm active:scale-95 transition cursor-pointer"
                               title="Додати в кошик"
                             >
-                              <span>🛒</span>
-                              <span>{lang === 'uk' ? 'В кошик' : 'В корзину'}</span>
+                              🛒
                             </button>
                           )}
 
@@ -3383,7 +3358,7 @@ export default function App() {
                             type="button"
                             onClick={() => handleBuyMono(starterPkg.id)}
                             disabled={!!buyingPackageId}
-                            className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:brightness-110 text-amber-950 font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-amber-500/25 flex items-center gap-1.5"
+                            className="store-btn-gold px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
                           >
                             <span>⚡</span>
                             <span>{isBuying ? '...' : (lang === 'uk' ? 'Купити зараз' : 'Купить сейчас')}</span>
@@ -3395,99 +3370,69 @@ export default function App() {
                 })()}
 
                 {/* Diamond Bundles Grid */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs font-black text-amber-200/80 px-1 pt-1">
-                    <span className="flex items-center gap-1.5">
-                      <span>💎</span>
-                      <span>{lang === 'uk' ? 'Набори діамантів' : 'Наборы алмазов'}</span>
-                    </span>
-                    <span className="text-[10px] font-medium text-emerald-400/80 flex items-center gap-1">
-                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      <span>{lang === 'uk' ? 'Миттєве зарахування' : 'Мгновенное зачисление'}</span>
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between text-xs font-bold text-white/70 px-1">
+                    <span>{lang === 'uk' ? '💎 Набори діамантів' : '💎 Наборы алмазов'}</span>
+                    <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                      <span>{lang === 'uk' ? 'Швидка видача' : 'Быстрая выдача'}</span>
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {DONATE_PACKAGES.filter((p) => p.id !== 'tip_dev' && p.id !== 'starter_pack').map((pkg, idx) => {
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {DONATE_PACKAGES.filter((p) => p.id !== 'tip_dev' && p.id !== 'starter_pack').map((pkg) => {
                       const title = lang === 'uk' ? pkg.titleUk : pkg.titleRu;
-                      const desc = lang === 'uk' ? pkg.descUk : pkg.descRu;
                       const isBuying = buyingPackageId === pkg.id;
                       const inCartItem = cart.find((it) => it.packageId === pkg.id);
-
-                      // Card styling variant based on tier
-                      let cardClass = 'donate-card-cyan';
-                      if (pkg.id === 'gems_50') cardClass = 'donate-card-emerald';
-                      else if (pkg.id === 'gems_150') cardClass = 'donate-card-cyan';
-                      else if (pkg.id === 'gems_500') cardClass = 'donate-card-purple';
-                      else if (pkg.id === 'gems_1500') cardClass = 'donate-card-starter';
 
                       return (
                         <div
                           key={pkg.id}
-                          style={{ animationDelay: `${idx * 60}ms` }}
-                          className={cn(
-                            'relative overflow-hidden rounded-2xl p-3.5 transition-all duration-200 flex flex-col justify-between group animate-card hover:scale-[1.01] active:scale-[0.99]',
-                            cardClass
-                          )}
+                          className="store-card rounded-2xl p-3 flex flex-col justify-between relative"
                         >
-                          {/* Sheen sweep effect on high tiers */}
-                          {(pkg.id === 'gems_500' || pkg.id === 'gems_1500') && (
-                            <div className="animate-sheen-fast" />
-                          )}
-
                           {pkg.badge && (
-                            <div className={cn(
-                              'absolute top-0 right-0 px-2 py-0.5 rounded-bl-xl text-[9px] font-black tracking-wider shadow-sm uppercase z-10',
-                              pkg.id === 'gems_1500'
-                                ? 'bg-amber-400 text-amber-950'
-                                : pkg.id === 'gems_500'
-                                  ? 'bg-purple-500 text-white'
-                                  : 'bg-cyan-500 text-slate-950'
-                            )}>
+                            <span className="absolute top-2.5 right-2.5 px-1.5 py-0.5 rounded-md text-[9px] font-black tracking-wider uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
                               {pkg.badge}
-                            </div>
+                            </span>
                           )}
 
-                          <div className="flex items-start gap-3 mb-2.5 relative z-10">
-                            <div className="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-2xl shrink-0 group-hover:scale-110 transition-transform shadow-inner">
+                          <div className="flex items-start gap-2.5 mb-2.5">
+                            <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-xl shrink-0">
                               {pkg.emoji}
                             </div>
-                            <div className="flex-1 pr-6 min-w-0">
-                              <div className="text-xs font-black text-white/90 truncate">
+                            <div className="min-w-0 pr-12">
+                              <div className="text-xs font-black text-white truncate">
                                 {title}
                               </div>
-                              <div className="text-[10px] text-white/50 leading-snug mt-0.5 line-clamp-2">
-                                {desc}
+                              <div className="text-xs font-bold text-amber-300 font-mono mt-0.5">
+                                +{pkg.diamonds} 💎
                               </div>
                             </div>
                           </div>
 
-                          <div className="flex items-center justify-between pt-2 border-t border-white/5 mt-1 gap-2 relative z-10">
-                            <div>
-                              <div className="text-sm font-black text-cyan-300 flex items-center gap-1 font-mono">
-                                <span>+{pkg.diamonds}</span>
-                                <span className="text-xs">💎</span>
-                              </div>
+                          <div className="flex items-center justify-between pt-2 border-t border-white/5 gap-2">
+                            <div className="text-xs font-bold text-white/50 font-mono">
+                              {pkg.diamonds} шт.
                             </div>
 
                             <div className="flex items-center gap-1.5">
-                              {/* Cart stepper or add button */}
+                              {/* Cart button or stepper */}
                               {inCartItem ? (
-                                <div className="flex items-center gap-1 bg-black/70 rounded-xl p-0.5 border border-pink-500/40 shadow-sm">
+                                <div className="flex items-center gap-1 bg-black/60 rounded-xl p-0.5 border border-amber-500/40">
                                   <button
                                     type="button"
                                     onClick={() => updateCartCount(pkg.id, -1)}
-                                    className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95"
+                                    className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-bold cursor-pointer active:scale-95"
                                   >
                                     -
                                   </button>
-                                  <span className="text-xs font-black text-pink-300 px-1.5 font-mono">
+                                  <span className="text-xs font-bold text-amber-300 px-1 font-mono">
                                     {inCartItem.count}
                                   </span>
                                   <button
                                     type="button"
                                     onClick={() => updateCartCount(pkg.id, 1)}
-                                    className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95"
+                                    className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-bold cursor-pointer active:scale-95"
                                   >
                                     +
                                   </button>
@@ -3496,26 +3441,21 @@ export default function App() {
                                 <button
                                   type="button"
                                   onClick={() => addToCart(pkg.id)}
-                                  className="px-2.5 py-1.5 rounded-xl bg-pink-500/15 hover:bg-pink-500/25 text-pink-200 border border-pink-500/35 font-bold text-xs active:scale-95 transition cursor-pointer flex items-center gap-1"
+                                  className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10 flex items-center justify-center text-xs font-bold active:scale-95 transition cursor-pointer"
                                   title="Додати в кошик"
                                 >
-                                  <span>🛒</span>
-                                  <span className="text-[10px] font-black">+</span>
+                                  🛒
                                 </button>
                               )}
 
-                              {/* Direct Buy button */}
+                              {/* Price / Buy Button */}
                               <button
                                 type="button"
                                 onClick={() => handleBuyMono(pkg.id)}
                                 disabled={!!buyingPackageId}
-                                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:brightness-110 text-white font-black text-xs transition-all active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20 flex items-center gap-1"
+                                className="store-btn-gold px-3 py-1.5 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer"
                               >
-                                {isBuying ? (
-                                  <span>...</span>
-                                ) : (
-                                  <span>{pkg.priceUah} ₴</span>
-                                )}
+                                {isBuying ? '...' : `${pkg.priceUah} ₴`}
                               </button>
                             </div>
                           </div>
@@ -3525,62 +3465,53 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* ===== INTERACTIVE CUSTOM TIP SECTION (1 - 9999 ₴) ===== */}
-                <div className="p-4 rounded-3xl bg-gradient-to-br from-pink-950/40 via-[#0c0905] to-purple-950/30 border border-pink-500/35 space-y-3.5 relative overflow-hidden shadow-[0_0_30px_rgba(236,72,153,0.12)]">
-                  {/* Subtle ambient rose blur */}
-                  <div className="absolute -top-12 -right-12 w-32 h-32 bg-pink-500/15 rounded-full blur-2xl pointer-events-none" />
-
-                  <div className="flex items-start justify-between gap-2 relative z-10">
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-pink-500/20 to-purple-500/20 border border-pink-500/35 flex items-center justify-center text-2xl shadow-inner shrink-0 animate-bounce-scale">
+                {/* ===== TIPS / DONATE SECTION (1 - 9999 ₴) ===== */}
+                <div className="p-3.5 rounded-2xl store-card space-y-3 relative overflow-hidden">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-xl shrink-0">
                         💖
                       </div>
                       <div>
-                        <div className="text-xs font-black text-pink-200 flex items-center gap-1.5">
-                          <span>{lang === 'uk' ? 'Чайові розробнику на Банку' : 'Чаевые разработчику на Банку'}</span>
+                        <div className="text-xs font-black text-white">
+                          {lang === 'uk' ? 'Підтримати автора (Чайові)' : 'Поддержать автора (Чаевые)'}
                         </div>
-                        <div className="text-[10px] text-pink-300/70 leading-snug mt-0.5">
+                        <div className="text-[10px] text-white/50 mt-0.5">
                           {lang === 'uk'
-                            ? '+2.5 💎 за кожну 1 ₴ та титул «Меценат» у профілі!'
-                            : '+2.5 💎 за каждую 1 ₴ и титул «Меценат» в профиле!'}
+                            ? '+2.5 💎 за кожну 1 ₴ та титул «Меценат»'
+                            : '+2.5 💎 за каждую 1 ₴ и титул «Меценат»'}
                         </div>
                       </div>
                     </div>
-                    <span className="px-2.5 py-1 rounded-full bg-pink-500/20 border border-pink-500/35 text-pink-300 text-[10px] font-black font-mono shrink-0">
+                    <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-white/60 text-[10px] font-mono font-bold">
                       1–9999 ₴
                     </span>
                   </div>
 
-                  {/* Quick Preset Buttons */}
-                  <div className="space-y-1.5 relative z-10">
-                    <div className="text-[10px] font-bold text-pink-300/60 flex items-center justify-between">
-                      <span>{lang === 'uk' ? 'Швидкий вибір суми:' : 'Быстрый выбор суммы:'}</span>
-                      <span className="font-mono text-pink-300">{tipAmount} ₴</span>
-                    </div>
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-                      {[10, 25, 50, 100, 250, 500].map((preset) => {
-                        const isActive = tipAmount === preset;
-                        return (
-                          <button
-                            key={preset}
-                            type="button"
-                            onClick={() => { setTipAmount(preset); haptic.selection(); }}
-                            className={cn(
-                              'py-1.5 px-2 rounded-xl text-[11px] font-black font-mono transition-all active:scale-95 cursor-pointer border',
-                              isActive
-                                ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white border-pink-300 shadow-md shadow-pink-500/30'
-                                : 'bg-black/50 hover:bg-white/10 text-pink-200/80 border-pink-500/20 hover:border-pink-500/40'
-                            )}
-                          >
-                            {preset} ₴
-                          </button>
-                        );
-                      })}
-                    </div>
+                  {/* Preset Buttons */}
+                  <div className="grid grid-cols-6 gap-1">
+                    {[10, 25, 50, 100, 250, 500].map((preset) => {
+                      const isActive = tipAmount === preset;
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => { setTipAmount(preset); haptic.selection(); }}
+                          className={cn(
+                            'py-1.5 rounded-lg text-[11px] font-bold font-mono transition active:scale-95 cursor-pointer border',
+                            isActive
+                              ? 'bg-amber-500 text-stone-950 border-amber-400 font-black shadow-sm'
+                              : 'bg-white/5 hover:bg-white/10 text-white/70 border-white/10'
+                          )}
+                        >
+                          {preset}₴
+                        </button>
+                      );
+                    })}
                   </div>
 
-                  {/* Slider and Input row */}
-                  <div className="space-y-2.5 relative z-10 pt-1">
+                  {/* Slider & Input */}
+                  <div className="space-y-2">
                     <div className="flex items-center gap-3">
                       <input
                         type="range"
@@ -3589,12 +3520,9 @@ export default function App() {
                         step={1}
                         value={tipAmount}
                         onChange={(e) => setTipAmount(Math.max(1, Math.min(9999, parseInt(e.target.value, 10) || 1)))}
-                        style={{
-                          background: `linear-gradient(to right, #ec4899 0%, #a855f7 ${((tipAmount - 1) / 9998) * 100}%, rgba(255,255,255,0.1) ${((tipAmount - 1) / 9998) * 100}%, rgba(255,255,255,0.1) 100%)`,
-                        }}
-                        className="flex-1 accent-pink-500 cursor-pointer h-2.5 rounded-lg appearance-none"
+                        className="flex-1 accent-amber-500 cursor-pointer h-2 bg-white/10 rounded-lg appearance-none"
                       />
-                      <div className="flex items-center gap-1.5 bg-black/70 border border-pink-500/40 rounded-xl px-3 py-1.5 shrink-0 shadow-inner">
+                      <div className="flex items-center gap-1 bg-black/60 border border-white/15 rounded-xl px-2.5 py-1 shrink-0">
                         <input
                           type="number"
                           min={1}
@@ -3604,68 +3532,67 @@ export default function App() {
                             const v = parseInt(e.target.value, 10);
                             setTipAmount(isNaN(v) ? 1 : Math.max(1, Math.min(9999, v)));
                           }}
-                          className="w-16 bg-transparent text-pink-100 font-black text-sm text-right focus:outline-none font-mono"
+                          className="w-14 bg-transparent text-white font-black text-xs text-right focus:outline-none font-mono"
                         />
-                        <span className="text-xs font-black text-pink-400">₴</span>
+                        <span className="text-xs font-bold text-amber-400">₴</span>
                       </div>
                     </div>
 
-                    {/* Live Reward Calculation Banner */}
-                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/40 border border-pink-500/20 text-xs">
-                      <span className="text-white/60 font-medium">
-                        {lang === 'uk' ? 'Ваша винагорода:' : 'Ваша награда:'}
+                    {/* Reward preview */}
+                    <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-white/[0.03] border border-white/5 text-[11px]">
+                      <span className="text-white/50">
+                        {lang === 'uk' ? 'Ви отримаєте:' : 'Вы получите:'}
                       </span>
-                      <div className="flex items-center gap-2 font-black">
-                        <span className="text-cyan-300 font-mono flex items-center gap-1">
-                          <span>+{Math.max(1, Math.round(tipAmount * 2.5))}</span>
-                          <span>💎</span>
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <span className="text-amber-300 font-mono">
+                          +{Math.max(1, Math.round(tipAmount * 2.5))} 💎
                         </span>
-                        <span className="text-pink-300 text-[11px] bg-pink-500/15 px-2 py-0.5 rounded-md border border-pink-500/30">
-                          💖 {lang === 'uk' ? 'Титул «Меценат»' : 'Титул «Меценат»'}
+                        <span className="text-white/30">•</span>
+                        <span className="text-rose-300 text-[10px]">
+                          Титул «Меценат»
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Tip Donate Button */}
+                  {/* Tip Action Button */}
                   <button
                     type="button"
                     onClick={() => handleBuyMono('custom_tip', tipAmount)}
                     disabled={!!buyingPackageId}
-                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-purple-600 hover:brightness-110 text-white font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-pink-500/25 flex items-center justify-center gap-2 relative overflow-hidden"
+                    className="w-full store-btn-gold py-2.5 rounded-xl text-xs font-black transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    <span className="animate-bounce-scale">💖</span>
+                    <span>💖</span>
                     <span>
                       {buyingPackageId === 'custom_tip'
                         ? (lang === 'uk' ? 'Створення замовлення…' : 'Создание заказа…')
                         : (lang === 'uk' ? `Надіслати ${tipAmount} ₴ на Банку` : `Отправить ${tipAmount} ₴ на Банку`)}
                     </span>
-                    <span>➔</span>
                   </button>
                 </div>
 
                 {/* Sticky Bottom Cart Floating Bar */}
                 {cartSummary.itemsCount > 0 && (
-                  <div className="sticky bottom-0 p-3 rounded-2xl bg-[#0c0905]/95 border border-pink-500/50 flex items-center justify-between gap-3 shadow-[0_0_30px_rgba(236,72,153,0.3)] animate-slide-up backdrop-blur-md z-20">
+                  <div className="sticky bottom-0 p-3 rounded-2xl bg-zinc-950/95 border border-amber-500/40 flex items-center justify-between gap-3 shadow-2xl backdrop-blur-md z-20">
                     <div className="min-w-0 flex items-center gap-2.5">
-                      <div className="w-10 h-10 rounded-xl bg-pink-500/20 border border-pink-500/40 flex items-center justify-center text-lg shrink-0 animate-bounce-scale">
+                      <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-base shrink-0">
                         🛒
                       </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-black text-pink-200 flex items-center gap-1.5 truncate">
-                          <span>{lang === 'uk' ? `У кошику ${cartSummary.itemsCount} тов.` : `В корзине ${cartSummary.itemsCount} тов.`}</span>
-                          <span className="text-white/40">•</span>
-                          <span className="text-emerald-400 font-mono font-black">{cartSummary.totalUah} ₴</span>
+                        <div className="text-xs font-black text-white truncate">
+                          <span>{cartSummary.itemsCount} {lang === 'uk' ? 'тов.' : 'тов.'}</span>
+                          <span className="text-white/40 mx-1">•</span>
+                          <span className="text-amber-400 font-mono">{cartSummary.totalUah} ₴</span>
                         </div>
-                        <div className="text-[10px] text-cyan-300 font-bold font-mono truncate">
-                          +{cartSummary.totalDiamonds} 💎 {cartSummary.hasStarter ? '• 🪵 Скалка' : ''}
+                        <div className="text-[10px] text-white/50 font-mono truncate">
+                          +{cartSummary.totalDiamonds} 💎
                         </div>
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => { setDonateTab('cart'); haptic.selection(); }}
-                      className="shrink-0 px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 via-rose-500 to-purple-600 hover:brightness-110 text-white text-xs font-black active:scale-95 transition cursor-pointer shadow-md shadow-pink-500/30 flex items-center gap-1.5"
+                      className="store-btn-gold px-3.5 py-2 rounded-xl text-xs font-black active:scale-95 transition cursor-pointer flex items-center gap-1"
                     >
                       <span>{lang === 'uk' ? 'До кошика' : 'В корзину'}</span>
                       <span>➔</span>
@@ -4081,15 +4008,15 @@ export default function App() {
             )}
 
             {/* Bottom Guarantee notice */}
-            <div className="text-center pt-2.5 pb-2.5 px-4 border-t border-white/5 bg-black/50 flex items-center justify-between text-[10px] text-amber-400/60 z-10">
+            <div className="text-center pt-2.5 pb-2.5 px-4 border-t border-white/10 bg-zinc-950/80 flex items-center justify-between text-[11px] text-white/50 z-10">
               <span className="flex items-center gap-1.5">
                 <span>🔒</span>
-                <span>{t.donateThanks || 'Дякуємо за підтримку! ❤️'}</span>
+                <span>{lang === 'uk' ? 'Банка Monobank' : 'Банка Monobank'}</span>
               </span>
               <button
                 type="button"
                 onClick={openSupport}
-                className="text-cyan-400 hover:text-cyan-300 font-bold underline cursor-pointer flex items-center gap-1 font-mono"
+                className="text-amber-400 hover:text-amber-300 font-bold cursor-pointer flex items-center gap-1 font-mono"
               >
                 <span>💬</span>
                 <span>@{SUPPORT_USERNAME}</span>
