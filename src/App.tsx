@@ -1122,11 +1122,12 @@ export default function App() {
     const curT = TRANSLATIONS[langRef.current];
     addToast(curT.toastBotDetect, curT.toastBotDetectDesc, '👵');
     haptic.error();
-    if (tgUser?.id) {
+    const uid = tgUser?.id || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id);
+    if (uid) {
       fetch(`${API_BASE}/api/leaderboard`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: tgUser.id, event: 'flag', debug: debugSnap }),
+        body: JSON.stringify({ userId: uid, event: 'flag', debug: debugSnap }),
       })
         .then((r) => r.json())
         .then((data) => {
@@ -1553,17 +1554,18 @@ export default function App() {
     return () => clearInterval(iv);
   }, [challengeActive]);
 
-  // Challenge провалено → карма −5 на сервері + cooldown 90с (не можна спамити спробами)
+  // Challenge провалено → карма −5 на сервері + cooldown 45с (не можна спамити спробами)
   useEffect(() => {
     if (challenge?.result !== 'fail') return;
     suspicion.current = Math.max(0, suspicion.current * 0.50);
     recentEvidence.current = [];
-    suspicionCooldownUntil.current = Date.now() + 90 * 1000;
-    if (tgUser?.id) {
+    suspicionCooldownUntil.current = Date.now() + 45 * 1000;
+    const uid = tgUser?.id || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id);
+    if (uid) {
       fetch(`${API_BASE}/api/leaderboard`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: tgUser.id, event: 'fail' }),
+        body: JSON.stringify({ userId: uid, event: 'fail' }),
       })
         .then((r) => r.json())
         .then((data) => { if (typeof data?.karma === 'number') setKarma(data.karma); })
@@ -1591,20 +1593,21 @@ export default function App() {
     if (caught >= 3) {
       setChallenge((c) => (c ? { ...c, caught, result: 'pending' } : c));
       const finishLocal = () => {
-        // Cooldown PASS: suspicion гасится, повышенная чувствительность выключена на 7 хв
+        // Cooldown PASS: suspicion гаситься, таймер кулдауну 60с
         suspicion.current *= 0.25;
         recentEvidence.current = [];
-        suspicionCooldownUntil.current = Date.now() + 7 * 60 * 1000;
+        suspicionCooldownUntil.current = Date.now() + 60 * 1000;
         setChallenge((c) => (c ? { ...c, result: 'win' } : c));
         const curT = TRANSLATIONS[langRef.current];
         addToast(curT.toastChallengeSuccess, curT.toastChallengeSuccessDesc, '🫓');
         haptic.success();
       };
-      if (tgUser?.id) {
+      const uid = tgUser?.id || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id);
+      if (uid) {
         fetch(`${API_BASE}/api/leaderboard`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: tgUser.id, event: 'clear' }),
+          body: JSON.stringify({ userId: uid, event: 'clear' }),
         })
           .then((r) => r.json())
           .then((data) => {
