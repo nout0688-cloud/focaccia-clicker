@@ -49,7 +49,7 @@ import {
 import focacciaImg from './assets/focaccia.png';
 import goldenImg from './assets/golden.png';
 import monoGuideImg from './assets/mono-guide.jpg';
-import catImg from './assets/cat.jpg';
+import catImg from './assets/cat.png';
 import {
   SKINS,
   SKIN_LIST,
@@ -3422,8 +3422,8 @@ export default function App() {
               onClick={() => { setShowCatModal(true); haptic.selection(); }}
               className="fixed right-3 bottom-20 z-35 p-2 rounded-2xl bg-zinc-950/80 hover:bg-zinc-900 border border-amber-500/40 text-amber-300 shadow-xl flex items-center gap-2 cursor-pointer transition active:scale-95 group"
             >
-              <div className="w-9 h-9 rounded-xl overflow-hidden border border-amber-500/50 bg-amber-500/10 flex items-center justify-center text-lg shrink-0">
-                <img src={catImg} alt="" className="w-full h-full object-cover" />
+              <div className="w-9 h-9 rounded-xl overflow-hidden border border-amber-500/50 bg-amber-500/10 flex items-center justify-center text-lg shrink-0 p-0.5">
+                <img src={catImg} alt="" className="w-full h-full object-contain" />
               </div>
               <div className="text-left">
                 <div className="text-[11px] font-black text-white flex items-center gap-1">
@@ -4641,8 +4641,8 @@ export default function App() {
             <div className="p-4 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
               {/* Cat Showcase Card */}
               <div className="relative p-4 rounded-2xl bg-gradient-to-b from-amber-950/40 to-stone-900 border border-amber-500/30 flex flex-col items-center text-center overflow-hidden">
-                <div className="w-32 h-32 rounded-2xl overflow-hidden border-2 border-amber-400/60 shadow-[0_0_30px_rgba(245,158,11,0.25)] relative mb-2 bg-stone-950">
-                  <img src={catImg} alt="" className="w-full h-full object-cover" />
+                <div className="w-32 h-32 rounded-2xl overflow-hidden border-2 border-amber-400/60 shadow-[0_0_30px_rgba(245,158,11,0.25)] relative mb-2 bg-gradient-to-b from-amber-500/10 to-black/40 p-2 flex items-center justify-center">
+                  <img src={catImg} alt="" className="w-full h-full object-contain" />
                   {state.cat?.unlocked && (
                     <div className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-full bg-black/80 border border-amber-400/60 text-[10px] text-amber-300 font-black">
                       Lv.{state.cat.level}
