@@ -36,6 +36,7 @@ import {
   getShowcaseMetric,
 } from './game/cosmetics';
 import type { AvatarFrame, NameColorStyle, ShowcaseMetric } from './game/cosmetics';
+import { DONATE_PACKAGES, type DonatePackage } from './game/donate';
 import focacciaImg from './assets/focaccia.png';
 import goldenImg from './assets/golden.png';
 
@@ -450,6 +451,8 @@ export default function App() {
   const [previewFrame, setPreviewFrame] = useState<string | null>(null);
   const [previewColor, setPreviewColor] = useState<string | null>(null);
   const [showPublicPreview, setShowPublicPreview] = useState(false);
+  const [showDonateModal, setShowDonateModal] = useState(false);
+  const [buyingPackageId, setBuyingPackageId] = useState<string | null>(null);
 
   /* Hold-to-buy (затискання для швидкої покупки з прискоренням) */
   const [holdingBuyId, setHoldingBuyId] = useState<string | null>(null);
@@ -630,11 +633,24 @@ export default function App() {
                   return next;
                 });
                 const isDuel = data?.gemSource === 'duel';
-                const toastTitle = isDuel ? curT.toastDuelReward : curT.toastDiamondReward;
-                const toastDesc = isDuel ? curT.toastDuelRewardDesc : curT.toastDiamondRewardDesc;
-                addToast(toastTitle, formatTemplate(toastDesc, formatNum(data.diamonds)), '💎');
+                const isDonate = data?.gemSource === 'donate';
+                const toastTitle = isDonate ? (curT.toastDonateReward || '🌟 Покупка успішна!') : (isDuel ? curT.toastDuelReward : curT.toastDiamondReward);
+                const toastDesc = isDonate ? (curT.toastDonateRewardDesc || '+{0} 💎 зараховано!') : (isDuel ? curT.toastDuelRewardDesc : curT.toastDiamondRewardDesc);
+                addToast(toastTitle, formatTemplate(toastDesc, formatNum(data.diamonds)), isDonate ? '🌟' : '💎');
                 haptic.success();
                 setTimeout(reportSync, 100);
+              }
+              if (data?.extraUpgrade) {
+                setState((p) => {
+                  const curVip = p.vipUpgrades || [];
+                  if (!curVip.includes(data.extraUpgrade)) {
+                    const next = { ...p, vipUpgrades: [...curVip, data.extraUpgrade] };
+                    stateRef.current = next;
+                    saveNow(next);
+                    return next;
+                  }
+                  return p;
+                });
               }
               if (data?.rebirth && data.rebirth > 0) {
                 setState((p) => {
@@ -2126,6 +2142,97 @@ export default function App() {
     return true;
   };
 
+  const handleBuyDonate = async (pkg: DonatePackage) => {
+    const curUserId = tgUser?.id || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    if (!curUserId) {
+      addToast(
+        lang === 'uk' ? '⚠️ Помилка' : '⚠️ Ошибка',
+        lang === 'uk' ? 'Не вдалося визначити Telegram ID' : 'Не удалось определить Telegram ID',
+        '❌',
+      );
+      return;
+    }
+
+    setBuyingPackageId(pkg.id);
+    haptic.selection();
+
+    try {
+      const res = await fetch(`https://focaccia-bot.vercel.app/api/donate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: String(curUserId), packageId: pkg.id }),
+      });
+      const data = await res.json();
+
+      if (!data?.ok || !data?.invoiceLink) {
+        addToast(
+          lang === 'uk' ? '⚠️ Помилка' : '⚠️ Ошибка',
+          data?.error || (lang === 'uk' ? 'Не вдалося створити рахунок' : 'Не удалось создать счёт'),
+          '❌',
+        );
+        haptic.error();
+        return;
+      }
+
+      if (window.Telegram?.WebApp?.openInvoice) {
+        window.Telegram.WebApp.openInvoice(data.invoiceLink, (status) => {
+          if (status === 'paid') {
+            burstConfetti(['💎', '⭐', '✨', '👑', '🎉']);
+            haptic.success();
+            setShowDonateModal(false);
+
+            setTimeout(() => {
+              fetch(`https://focaccia-bot.vercel.app/api/reward?userId=${curUserId}&lastReset=${stateRef.current.lastReset || 0}`)
+                .then((r) => r.json())
+                .then((rewardData) => {
+                  if (rewardData?.diamonds && rewardData.diamonds > 0) {
+                    setState((p) => {
+                      const next = { ...p, diamonds: (p.diamonds || 0) + rewardData.diamonds };
+                      stateRef.current = next;
+                      saveNow(next);
+                      return next;
+                    });
+                    const curT = TRANSLATIONS[langRef.current];
+                    addToast(curT.toastDonateReward, formatTemplate(curT.toastDonateRewardDesc, formatNum(rewardData.diamonds)), '🌟');
+                  }
+                  if (rewardData?.extraUpgrade) {
+                    setState((p) => {
+                      const curVip = p.vipUpgrades || [];
+                      if (!curVip.includes(rewardData.extraUpgrade)) {
+                        const next = { ...p, vipUpgrades: [...curVip, rewardData.extraUpgrade] };
+                        stateRef.current = next;
+                        saveNow(next);
+                        return next;
+                      }
+                      return p;
+                    });
+                  }
+                  reportSync();
+                })
+                .catch(() => {});
+            }, 600);
+          } else if (status === 'failed') {
+            addToast(
+              lang === 'uk' ? '❌ Помилка' : '❌ Ошибка',
+              lang === 'uk' ? 'Оплату не було завершено' : 'Оплата не была завершена',
+              '⚠️',
+            );
+          }
+        });
+      } else {
+        window.open(data.invoiceLink, '_blank');
+      }
+    } catch {
+      addToast(
+        lang === 'uk' ? '⚠️ Помилка' : '⚠️ Ошибка',
+        lang === 'uk' ? 'Помилка зв’язку з сервером оплати' : 'Ошибка связи с сервером оплаты',
+        '❌',
+      );
+    } finally {
+      setBuyingPackageId(null);
+    }
+  };
+
   const buyCosmetic = useCallback((type: 'frame' | 'color', id: string, cost: number) => {
     const cur = stateRef.current;
     const curT = TRANSLATIONS[langRef.current];
@@ -2699,6 +2806,121 @@ export default function App() {
             >
               {t.modalUnderstand}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 💎 TELEGRAM STARS DONATE / DIAMOND STORE MODAL ===== */}
+      {showDonateModal && (
+        <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
+          <div className="relative w-full max-w-lg bg-[#0c0905] border-t sm:border border-cyan-500/30 rounded-t-3xl sm:rounded-3xl max-h-[90vh] flex flex-col shadow-[0_0_50px_rgba(6,182,212,0.2)] overflow-hidden">
+            {/* Header */}
+            <div className="shrink-0 px-5 py-4 border-b border-cyan-500/20 bg-gradient-to-r from-cyan-950/60 via-[#0c0905] to-blue-950/60 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center text-xl shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+                  💎
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-white to-amber-200">
+                    {t.donateTitle || '💎 Банк Діамантів'}
+                  </h3>
+                  <p className="text-[11px] text-cyan-300/70 font-medium">
+                    {t.donateSubtitle || 'Офіційна покупка за Telegram Stars ⭐'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowDonateModal(false); haptic.light(); }}
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white flex items-center justify-center text-sm font-bold border border-white/10 transition active:scale-95 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content List */}
+            <div className="p-4 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {DONATE_PACKAGES.map((pkg) => {
+                  const title = lang === 'uk' ? pkg.titleUk : pkg.titleRu;
+                  const desc = lang === 'uk' ? pkg.descUk : pkg.descRu;
+                  const isBuying = buyingPackageId === pkg.id;
+                  const isStarter = !!pkg.isStarter;
+
+                  return (
+                    <div
+                      key={pkg.id}
+                      className={cn(
+                        'relative overflow-hidden rounded-2xl p-3 border transition-all flex flex-col justify-between',
+                        isStarter
+                          ? 'bg-gradient-to-br from-amber-950/40 via-yellow-950/20 to-[#0c0905] border-amber-400/50 shadow-[0_0_15px_rgba(251,191,36,0.15)] col-span-1 sm:col-span-2'
+                          : 'bg-gradient-to-br from-cyan-950/30 to-[#0c0905] border-cyan-500/25 hover:border-cyan-400/40'
+                      )}
+                    >
+                      {/* Badge if any */}
+                      {pkg.badge && (
+                        <div className={cn(
+                          'absolute top-0 right-0 px-2 py-0.5 rounded-bl-xl text-[9px] font-black tracking-wider shadow-sm uppercase',
+                          isStarter ? 'bg-amber-400 text-black font-extrabold' : 'bg-cyan-500/80 text-white'
+                        )}>
+                          {pkg.badge}
+                        </div>
+                      )}
+
+                      <div className="flex items-start gap-3 mb-2">
+                        <div className="text-2xl p-2 rounded-xl bg-white/5 border border-white/10 shrink-0">
+                          {pkg.emoji}
+                        </div>
+                        <div className="flex-1 pr-8">
+                          <div className="text-xs font-black text-amber-100 flex items-center gap-1.5">
+                            {title}
+                          </div>
+                          <div className="text-[10px] text-amber-200/60 leading-snug mt-0.5">
+                            {desc}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-white/5 mt-1">
+                        <div className="text-xs font-black text-cyan-300 flex items-center gap-1">
+                          <span>+{pkg.diamonds}</span>
+                          <span>💎</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleBuyDonate(pkg)}
+                          disabled={!!buyingPackageId}
+                          className={cn(
+                            'px-3.5 py-1.5 rounded-xl font-black text-xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer shadow-md',
+                            isStarter
+                              ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 hover:brightness-110 shadow-amber-500/20'
+                              : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:brightness-110 shadow-cyan-500/25',
+                            buyingPackageId && 'opacity-60 cursor-not-allowed'
+                          )}
+                        >
+                          {isBuying ? (
+                            <span>{t.donateLoading || 'Завантаження…'}</span>
+                          ) : (
+                            <>
+                              <span>{pkg.stars}</span>
+                              <span>⭐</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Bottom Guarantee notice */}
+              <div className="text-center pt-2 pb-1">
+                <p className="text-[10px] text-amber-400/50 flex items-center justify-center gap-1">
+                  <span>🔒</span>
+                  <span>{t.donateThanks || 'Дякуємо за підтримку Фокача Клікер! ❤️'}</span>
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -3789,12 +4011,13 @@ export default function App() {
             {/* Diamonds Pill */}
             <button
               type="button"
-              onClick={() => { goPage('shop'); setShopTab('vip'); }}
-              className="flex items-center gap-1 bg-cyan-500/15 hover:bg-cyan-500/25 active:scale-95 transition-all border border-cyan-500/30 px-2 py-0.5 rounded-lg text-xs font-black text-cyan-300 shadow-[0_0_8px_rgba(6,182,212,0.15)] whitespace-nowrap cursor-pointer"
-              title={lang === 'uk' ? '💎 Алмази (ВІП Магазин)' : '💎 Алмазы (ВИП Магазин)'}
+              onClick={() => { setShowDonateModal(true); haptic.selection(); }}
+              className="flex items-center gap-1.5 bg-gradient-to-r from-cyan-500/20 via-blue-500/15 to-indigo-500/20 hover:from-cyan-500/30 hover:to-indigo-500/30 active:scale-95 transition-all border border-cyan-400/40 px-2 py-0.5 rounded-lg text-xs font-black text-cyan-200 shadow-[0_0_10px_rgba(6,182,212,0.2)] whitespace-nowrap cursor-pointer group"
+              title={lang === 'uk' ? '💎 Банк Діамантів (Stars)' : '💎 Банк Алмазов (Stars)'}
             >
               <span className="animate-diamond">💎</span>
               <span className="tabular-nums font-mono">{formatNum(state.diamonds)}</span>
+              <span className="text-[10px] bg-cyan-400/25 text-cyan-200 px-1 rounded font-bold border border-cyan-400/30 group-hover:scale-110 transition-transform leading-none">+</span>
             </button>
 
             {/* Rebirth Pill */}
@@ -4310,9 +4533,19 @@ export default function App() {
                         <div className="text-xs font-black text-cyan-200">{formatTemplate(t.yourDiamonds, state.diamonds)}</div>
                         <div className="text-[10px] text-cyan-300/60">{t.diamondsKeepNotice}</div>
                       </div>
-                      <div className="text-right">
-                        <div className="text-[10px] text-cyan-300/50">{t.diamondBuildingsCount}</div>
-                        <div className="text-xs font-bold text-cyan-300 tabular-nums">🏛️ {totalDiamondBuildings} {t.pcs}</div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setShowDonateModal(true); haptic.selection(); }}
+                          className="flex items-center gap-1 bg-gradient-to-r from-amber-500/25 via-cyan-500/25 to-blue-500/25 hover:from-amber-500/35 hover:to-cyan-500/35 border border-cyan-400/40 text-cyan-200 font-black text-[11px] px-2.5 py-1 rounded-xl shadow-[0_0_10px_rgba(6,182,212,0.2)] active:scale-95 transition cursor-pointer"
+                        >
+                          <span className="animate-diamond">💎</span>
+                          <span>{t.donateOpenBtn || '💎 Банк 💎'}</span>
+                        </button>
+                        <div className="text-right">
+                          <div className="text-[10px] text-cyan-300/50">{t.diamondBuildingsCount}</div>
+                          <div className="text-xs font-bold text-cyan-300 tabular-nums">🏛️ {totalDiamondBuildings} {t.pcs}</div>
+                        </div>
                       </div>
                     </div>
 
