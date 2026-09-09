@@ -3558,7 +3558,7 @@ export default function App() {
                       <span className="font-mono text-pink-300">{tipAmount} ₴</span>
                     </div>
                     <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-                      {[25, 50, 100, 250, 500, 1000].map((preset) => {
+                      {[10, 25, 50, 100, 250, 500].map((preset) => {
                         const isActive = tipAmount === preset;
                         return (
                           <button
