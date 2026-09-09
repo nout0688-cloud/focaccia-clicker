@@ -1021,7 +1021,7 @@ export const TRANSLATIONS = {
 export function formatTemplate(tmpl: string, ...args: (string | number)[]): string {
   let res = tmpl;
   args.forEach((val, idx) => {
-    res = res.replaceAll(`{${idx}}`, String(val));
+    res = res.split(`{${idx}}`).join(String(val));
   });
   return res;
 }

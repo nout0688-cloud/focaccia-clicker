@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { formatNum } from '../game/data';
 import { cn } from '../utils/cn';
 
@@ -9,11 +9,15 @@ type Snap = {
   error?: string;
   stage: 'challenge' | 'accepted' | 'countdown' | 'live' | 'paused' | 'finished' | 'cancelled';
   me?: { id: string; name: string; score: number };
-  opp?: { id: string; name: string; score: number; missing?: boolean };
+  opp?: { id: string; name: string; score: number; missing?: boolean; u?: string };
   goal?: number;
   startTs?: number;
   elapsed?: number;
   limit?: number;
+  stake?: number;
+  pot?: number;
+  myPaid?: number;
+  stakeCur?: 'gem' | 'foc';
   serverNow?: number;
   winner?: string | null;
   reason?: string | null;
@@ -58,12 +62,12 @@ const storage = {
     const localVal = getLocal();
 
     let cloudVal: string | null = null;
-    const wTg = (window as unknown as { Telegram?: { WebApp?: { CloudStorage?: { getItem: (k: string, cb: (e: any, v: string) => void) => void } } } }).Telegram?.WebApp;
-    if (wTg?.CloudStorage) {
+    const cs = (window as unknown as { Telegram?: { WebApp?: { CloudStorage?: { getItem: (k: string, cb: (e: any, v: string) => void) => void } } } }).Telegram?.WebApp?.CloudStorage;
+    if (cs) {
       try {
         cloudVal = await new Promise<string | null>((resolve) => {
           const timer = setTimeout(() => resolve(null), 1200);
-          wTg.CloudStorage.getItem(key, (err: any, value: string) => {
+          cs.getItem(key, (err: any, value: string) => {
             clearTimeout(timer);
             if (!err && value) resolve(value);
             else resolve(null);
@@ -113,7 +117,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
   const [oppName, setOppName] = useState('Соперник');
   const [oppU, setOppU] = useState('');
   const [pending, setPending] = useState(0);
-  const [offset, setOffset] = useState(0);
+  const [, setOffset] = useState(0);
   const [pausedLeft, setPausedLeft] = useState(0);
   const [winner, setWinner] = useState<string | null>(null);
   const [reason, setReason] = useState<string | null>(null);

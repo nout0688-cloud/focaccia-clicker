@@ -20,8 +20,27 @@ interface TelegramWebApp {
     notificationOccurred(type: 'error' | 'success' | 'warning'): void;
     selectionChanged(): void;
   };
+  BackButton?: {
+    isVisible: boolean;
+    show(): void;
+    hide(): void;
+    onClick(callback: () => void): void;
+    offClick(callback: () => void): void;
+  };
+  openTelegramLink?(url: string): void;
+  openLink?(url: string, options?: { try_instant_view?: boolean }): void;
   initData: string;
-  initDataUnsafe: Record<string, unknown>;
+  initDataUnsafe: {
+    user?: {
+      id?: number;
+      first_name?: string;
+      last_name?: string;
+      username?: string;
+      photo_url?: string;
+      language_code?: string;
+    };
+    [key: string]: unknown;
+  };
 }
 
 interface Window {

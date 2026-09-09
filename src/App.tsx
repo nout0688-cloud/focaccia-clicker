@@ -10,6 +10,7 @@ import {
   formatCps,
   formatNum,
   getBossDamage,
+  type AchState,
 } from './game/data';
 import {
   Lang,
@@ -35,16 +36,13 @@ import {
   getNameColorStyle,
   getShowcaseMetric,
 } from './game/cosmetics';
-import type { AvatarFrame, NameColorStyle, ShowcaseMetric } from './game/cosmetics';
 import {
   DONATE_PACKAGES,
   MONOBANK_JAR_URL,
   SUPPORT_URL,
   SUPPORT_USERNAME,
-  type DonatePackage,
   type CartItem,
   type JarOrderRecord,
-  type JarOrderItem,
 } from './game/donate';
 import focacciaImg from './assets/focaccia.png';
 import goldenImg from './assets/golden.png';
@@ -63,7 +61,6 @@ import {
   getSkinLevelMultiplier,
   getSkinLevelUpgradeCost,
   type SkinItem,
-  type SkinRarity,
   type CaseItem,
 } from './game/skins';
 import {
@@ -159,7 +156,7 @@ const storage = {
       try {
         cloudVal = await new Promise<string | null>((resolve) => {
           const timer = setTimeout(() => resolve(null), 1200);
-          tg.CloudStorage.getItem(key, (err: any, value: string) => {
+          tg.CloudStorage.getItem(key, (err: string | null, value?: string) => {
             clearTimeout(timer);
             if (!err && value) resolve(value);
             else resolve(null);
@@ -567,6 +564,7 @@ export default function App() {
   const [activeCase, setActiveCase] = useState<CaseItem | null>(null);
   const [caseOddsModal, setCaseOddsModal] = useState<CaseItem | null>(null);
   const [isOpeningCase, setIsOpeningCase] = useState(false);
+  const caseOpeningLock = useRef(false);
   const [caseReel, setCaseReel] = useState<SkinItem[]>([]);
   const [caseReelOffset, setCaseReelOffset] = useState<number>(0);
   const [caseWonResult, setCaseWonResult] = useState<{ skin: SkinItem; isNew: boolean; newLevel: number } | null>(null);
@@ -824,10 +822,11 @@ export default function App() {
 
   /* Sync Telegram WebApp BackButton with fullscreen modals */
   useEffect(() => {
-    if (!tg?.BackButton) return;
+    const bb = tg?.BackButton;
+    if (!bb) return;
     if (showPublicPreview || profileModalOpen || viewingProfile !== null) {
       try {
-        tg.BackButton.show();
+        bb.show();
         const handleBack = () => {
           if (showPublicPreview) {
             setShowPublicPreview(false);
@@ -841,15 +840,15 @@ export default function App() {
             setViewingProfile(null);
           }
         };
-        tg.BackButton.onClick(handleBack);
+        bb.onClick(handleBack);
         return () => {
-          tg.BackButton.offClick(handleBack);
-          tg.BackButton.hide();
+          bb.offClick(handleBack);
+          bb.hide();
         };
       } catch (_) { /* ignore */ }
     } else {
       try {
-        tg.BackButton.hide();
+        bb.hide();
       } catch (_) { /* ignore */ }
     }
   }, [showPublicPreview, profileModalOpen, viewingProfile, showcasePickerSlot]);
@@ -1645,6 +1644,7 @@ export default function App() {
         rewardFocaccia: Math.max(100, Math.floor(currentCps * bType.timeCps)),
         difficulty: bType.difficulty,
       });
+      const curT = TRANSLATIONS[langRef.current];
       addToast(curT.toastBossArrived, formatTemplate(curT.toastBossArrivedDesc, bName), bType.emoji);
       haptic.heavy();
     }, 180000);
@@ -2350,6 +2350,7 @@ export default function App() {
         unlocked: true,
         level: 1,
         pestsCaught: 0,
+        skin: 'murchik',
       },
     };
     stateRef.current = next;
@@ -2402,7 +2403,7 @@ export default function App() {
   };
 
   // ===== 🔮 SKINS & UPGRADER LOGIC =====
-  const startHoldFocaccia = (e: React.PointerEvent) => {
+  const startHoldFocaccia = (e: React.PointerEvent<HTMLButtonElement>) => {
     markRawTap(e);
     if (e.button && e.button !== 0) return;
 
@@ -2550,6 +2551,7 @@ export default function App() {
         const next: SaveState = {
           ...curState,
           skins: {
+            ...curState.skins,
             owned: nextOwned,
             equipped: tgtSkin.id,
           },
@@ -2592,9 +2594,11 @@ export default function App() {
   };
 
   const handleOpenCase = (c: CaseItem) => {
-    if (isOpeningCase) return;
+    if (isOpeningCase || caseOpeningLock.current) return;
+    caseOpeningLock.current = true;
 
     if (c.priceType === 'focaccia' && state.focaccia < c.price) {
+      caseOpeningLock.current = false;
       addToast(
         lang === 'uk' ? 'Недостатньо фокач!' : 'Недостаточно фокачч!',
         lang === 'uk' ? `Потрібно ${formatNum(c.price)} 🫓` : `Нужно ${formatNum(c.price)} 🫓`,
@@ -2603,6 +2607,7 @@ export default function App() {
       return;
     }
     if (c.priceType === 'diamonds' && state.diamonds < c.price) {
+      caseOpeningLock.current = false;
       addToast(
         lang === 'uk' ? 'Недостатньо діамантів!' : 'Недостаточно алмазов!',
         lang === 'uk' ? `Потрібно ${c.price} 💎` : `Нужно ${c.price} 💎`,
@@ -2673,6 +2678,7 @@ export default function App() {
     }, 60);
 
     setTimeout(() => {
+      caseOpeningLock.current = false;
       setIsOpeningCase(false);
       setCaseWonResult({
         skin: winningSkin,
@@ -5572,7 +5578,7 @@ export default function App() {
 
                 const effectiveBoostDiamonds = isForbidden ? 0 : Math.min(upgraderBoostDiamonds, state.diamonds);
                 const { boostChance, totalChance } = isForbidden
-                  ? { baseChance: 0, boostChance: 0, totalChance: 0 }
+                  ? { boostChance: 0, totalChance: 0 }
                   : calculateUpgradeChance(srcSkin, tgtSkin, effectiveBoostDiamonds);
                 const winSliceDeg = Math.round(totalChance * 3.6);
 
@@ -7748,7 +7754,7 @@ export default function App() {
                       <div className="flex-1 min-w-0">
                         <div className="font-bold text-amber-100/60 text-[13px] flex justify-between">
                           <span className="truncate">{uText.name}</span>
-                          <span className="text-fuchsia-400 text-xs font-bold">{formatTemplate(t.rebirthLock, u.requireRebirth)}</span>
+                          <span className="text-fuchsia-400 text-xs font-bold">{formatTemplate(t.rebirthLock, u.requireRebirth ?? 1)}</span>
                         </div>
                         <div className="text-[10px] text-amber-500/50 truncate">{uText.desc}</div>
                       </div>
