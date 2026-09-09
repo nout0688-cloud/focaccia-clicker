@@ -92,3 +92,80 @@ export function getCatLevelInfo(level: number): CatLevelInfo {
   const lvl = Math.max(1, Math.min(CAT_LEVELS.length, level || 1));
   return CAT_LEVELS[lvl - 1];
 }
+
+export interface CatSkin {
+  id: string;
+  nameUk: string;
+  nameRu: string;
+  breedUk: string;
+  breedRu: string;
+  descUk: string;
+  descRu: string;
+  minLevel: number;
+  pounceBubble: string;
+  chaseBubbleUk: string;
+  chaseBubbleRu: string;
+  rainBubbleUk: string;
+  rainBubbleRu: string;
+  purrsUk: string[];
+  purrsRu: string[];
+}
+
+export const CAT_SKINS: CatSkin[] = [
+  {
+    id: 'murchik',
+    nameUk: 'Мурчик',
+    nameRu: 'Мурчик',
+    breedUk: 'Класичний рудий',
+    breedRu: 'Классический рыжий',
+    descUk: 'Вірний та працьовитий захисник пекарні від жуків.',
+    descRu: 'Верный и трудолюбивый защитник пекарни от жуков.',
+    minLevel: 1,
+    pounceBubble: '🐾 ХАП!',
+    chaseBubbleUk: '😼 Бачу жука!',
+    chaseBubbleRu: '😼 Вижу жука!',
+    rainBubbleUk: '🙀 Дощ! Тікаю!',
+    rainBubbleRu: '🙀 Дождь! Убегаю!',
+    purrsUk: ['Муррр... ❤️', 'Мяу! 😻', 'Мур-мур! 🐾', 'Люблю фокачу! 🫓', 'Пекарня в безпеці! 🛡️'],
+    purrsRu: ['Муррр... ❤️', 'Мяу! 😻', 'Мур-мур! 🐾', 'Люблю фокаччу! 🫓', 'Пекарня в безопасности! 🛡️'],
+  },
+  {
+    id: 'bonya',
+    nameUk: 'Боня',
+    nameRu: 'Боня',
+    breedUk: 'Шокована британка',
+    breedRu: 'Шокированная британка',
+    descUk: 'Британка з вічно очманілим, широко розкритим поглядом. Жуки самі тікають від її очей!',
+    descRu: 'Британка с вечно ошарашенным взглядом. Жуки сами разбегаются от её глаз!',
+    minLevel: 3,
+    pounceBubble: '👀 ШО ЦЕ БУЛО?!',
+    chaseBubbleUk: '😳 ТИ ХТО ТАКИЙ?!',
+    chaseBubbleRu: '😳 ТЫ КТО ТАКОЙ?!',
+    rainBubbleUk: '😱 ВОДА?! ЗАКРИЙТЕ НЕБО!',
+    rainBubbleRu: '😱 ВОДА?! ЗАКРОЙТЕ НЕБО!',
+    purrsUk: ['👀 Що ти робиш?!', '😳 Оце так погладив...', '🐾 Очманіти яка фокача!', '😹 Мене контузило любов\'ю!'],
+    purrsRu: ['👀 Что ты делаешь?!', '😳 Вот это погладил...', '🐾 Обалдеть какая фокачча!', '😹 Меня контузило любовью!'],
+  },
+  {
+    id: 'bambass',
+    nameUk: 'Бамбасс',
+    nameRu: 'Бамбасс',
+    breedUk: 'Харизматичний дворовий пухнастик',
+    breedRu: 'Харизматичный дворовый пушистик',
+    descUk: 'Сірий кіт із пухнастою шерстю та характером міського боса. Ловить жуків з фірмовою незворушністю.',
+    descRu: 'Серый кот с пушистой шерстью и характером городского босса. Ловит жуков с фирменным спокойствием.',
+    minLevel: 3,
+    pounceBubble: '💥 НА БАЗУ!',
+    chaseBubbleUk: '😼 Стояти, дрібний!',
+    chaseBubbleRu: '😼 Стоять, мелкий!',
+    rainBubbleUk: '😼 Дощ? Я й не таке бачив!',
+    rainBubbleRu: '😼 Дождь? Я и не такое видел!',
+    purrsUk: ['😎 Повага пекарю!', '🐾 Двір під контролем.', '🥐 Насип ще фокачі, бро.', '😺 Нормально чухаєш!'],
+    purrsRu: ['😎 Уважуха пекарю!', '🐾 Двор под контролем.', '🥐 Насыпь ещё фокаччи, бро.', '😺 Нормально чешешь!'],
+  },
+];
+
+export function getCatSkin(skinId?: string): CatSkin {
+  const found = CAT_SKINS.find((s) => s.id === skinId);
+  return found || CAT_SKINS[0];
+}
