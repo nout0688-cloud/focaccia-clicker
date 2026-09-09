@@ -453,7 +453,6 @@ export default function App() {
   const [showPublicPreview, setShowPublicPreview] = useState(false);
   const [showDonateModal, setShowDonateModal] = useState(false);
   const [buyingPackageId, setBuyingPackageId] = useState<string | null>(null);
-  const [donateTab, setDonateTab] = useState<'mono' | 'stars'>('mono');
   const [tipAmount, setTipAmount] = useState<number>(25);
   const [activeJarOrder, setActiveJarOrder] = useState<{
     orderId: string;
@@ -2156,97 +2155,6 @@ export default function App() {
     return true;
   };
 
-  const handleBuyDonate = async (pkg: DonatePackage) => {
-    const curUserId = tgUser?.id || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id;
-    if (!curUserId) {
-      addToast(
-        lang === 'uk' ? '⚠️ Помилка' : '⚠️ Ошибка',
-        lang === 'uk' ? 'Не вдалося визначити Telegram ID' : 'Не удалось определить Telegram ID',
-        '❌',
-      );
-      return;
-    }
-
-    setBuyingPackageId(pkg.id);
-    haptic.selection();
-
-    try {
-      const res = await fetch(`https://focaccia-bot.vercel.app/api/donate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: String(curUserId), packageId: pkg.id }),
-      });
-      const data = await res.json();
-
-      if (!data?.ok || !data?.invoiceLink) {
-        addToast(
-          lang === 'uk' ? '⚠️ Помилка' : '⚠️ Ошибка',
-          data?.error || (lang === 'uk' ? 'Не вдалося створити рахунок' : 'Не удалось создать счёт'),
-          '❌',
-        );
-        haptic.error();
-        return;
-      }
-
-      if (window.Telegram?.WebApp?.openInvoice) {
-        window.Telegram.WebApp.openInvoice(data.invoiceLink, (status) => {
-          if (status === 'paid') {
-            burstConfetti(['💎', '⭐', '✨', '👑', '🎉']);
-            haptic.success();
-            setShowDonateModal(false);
-
-            setTimeout(() => {
-              fetch(`https://focaccia-bot.vercel.app/api/reward?userId=${curUserId}&lastReset=${stateRef.current.lastReset || 0}`)
-                .then((r) => r.json())
-                .then((rewardData) => {
-                  if (rewardData?.diamonds && rewardData.diamonds > 0) {
-                    setState((p) => {
-                      const next = { ...p, diamonds: (p.diamonds || 0) + rewardData.diamonds };
-                      stateRef.current = next;
-                      saveNow(next);
-                      return next;
-                    });
-                    const curT = TRANSLATIONS[langRef.current];
-                    addToast(curT.toastDonateReward, formatTemplate(curT.toastDonateRewardDesc, formatNum(rewardData.diamonds)), '🌟');
-                  }
-                  if (rewardData?.extraUpgrade) {
-                    setState((p) => {
-                      const curVip = p.vipUpgrades || [];
-                      if (!curVip.includes(rewardData.extraUpgrade)) {
-                        const next = { ...p, vipUpgrades: [...curVip, rewardData.extraUpgrade] };
-                        stateRef.current = next;
-                        saveNow(next);
-                        return next;
-                      }
-                      return p;
-                    });
-                  }
-                  reportSync();
-                })
-                .catch(() => {});
-            }, 600);
-          } else if (status === 'failed') {
-            addToast(
-              lang === 'uk' ? '❌ Помилка' : '❌ Ошибка',
-              lang === 'uk' ? 'Оплату не було завершено' : 'Оплата не была завершена',
-              '⚠️',
-            );
-          }
-        });
-      } else {
-        window.open(data.invoiceLink, '_blank');
-      }
-    } catch {
-      addToast(
-        lang === 'uk' ? '⚠️ Помилка' : '⚠️ Ошибка',
-        lang === 'uk' ? 'Помилка зв’язку з сервером оплати' : 'Ошибка связи с сервером оплаты',
-        '❌',
-      );
-    } finally {
-      setBuyingPackageId(null);
-    }
-  };
-
   const handleBuyMono = async (pkgId: string, customVal?: number) => {
     const curUserId = tgUser?.id || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id;
     const curUsername = tgUser?.username || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.username || '';
@@ -3007,8 +2915,8 @@ export default function App() {
                   <h3 className="text-base font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-white to-amber-200">
                     {t.donateTitle || '💎 Банк Діамантів'}
                   </h3>
-                  <p className="text-[11px] text-cyan-300/70 font-medium">
-                    {lang === 'uk' ? 'Підтримка гри: Монобанк 💳 та Stars ⭐' : 'Поддержка игры: Монобанк 💳 и Stars ⭐'}
+                  <p className="text-[11px] text-emerald-300/80 font-medium">
+                    {lang === 'uk' ? 'Офіційна підтримка гри через Банку Monobank 💳' : 'Официальная поддержка игры через Банку Monobank 💳'}
                   </p>
                 </div>
               </div>
@@ -3020,39 +2928,6 @@ export default function App() {
                 ✕
               </button>
             </div>
-
-            {/* Switcher tabs (only when no active pending order screen) */}
-            {!activeJarOrder && (
-              <div className="px-4 pt-3 pb-1 shrink-0 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setDonateTab('mono'); haptic.selection(); }}
-                  className={cn(
-                    'flex-1 py-2 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border',
-                    donateTab === 'mono'
-                      ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white border-emerald-400/50 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
-                      : 'bg-white/5 hover:bg-white/10 text-white/60 border-white/10'
-                  )}
-                >
-                  <span>💳</span>
-                  <span>{lang === 'uk' ? 'Монобанк (₴)' : 'Монобанк (₴)'}</span>
-                  <span className="px-1.5 py-0.5 rounded-md bg-emerald-400 text-emerald-950 text-[9px] font-black">0%</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setDonateTab('stars'); haptic.selection(); }}
-                  className={cn(
-                    'flex-1 py-2 px-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer border',
-                    donateTab === 'stars'
-                      ? 'bg-gradient-to-r from-amber-500 to-yellow-600 text-amber-950 border-amber-400/50 shadow-[0_0_15px_rgba(245,158,11,0.3)]'
-                      : 'bg-white/5 hover:bg-white/10 text-white/60 border-white/10'
-                  )}
-                >
-                  <span>⭐</span>
-                  <span>Telegram Stars</span>
-                </button>
-              </div>
-            )}
 
             {/* Content Body */}
             {activeJarOrder ? (
@@ -3146,8 +3021,8 @@ export default function App() {
                   </div>
                 </div>
               </div>
-            ) : donateTab === 'mono' ? (
-              /* ===== MONOBANK TAB ===== */
+            ) : (
+              /* ===== MONOBANK SHOP ===== */
               <div className="p-4 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
                 <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center gap-2 text-[11px] text-emerald-300/90">
                   <span>💳</span>
@@ -3306,88 +3181,6 @@ export default function App() {
                 </div>
 
                 {/* Bottom Guarantee notice */}
-                <div className="text-center pt-2 pb-1">
-                  <p className="text-[10px] text-amber-400/50 flex items-center justify-center gap-1">
-                    <span>🔒</span>
-                    <span>{t.donateThanks || 'Дякуємо за підтримку Фокача Клікер! ❤️'}</span>
-                  </p>
-                </div>
-              </div>
-            ) : (
-              /* ===== STARS TAB ===== */
-              <div className="p-4 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {DONATE_PACKAGES.map((pkg) => {
-                    const title = lang === 'uk' ? pkg.titleUk : pkg.titleRu;
-                    const desc = lang === 'uk' ? pkg.descUk : pkg.descRu;
-                    const isBuying = buyingPackageId === pkg.id;
-                    const isStarter = !!pkg.isStarter;
-
-                    return (
-                      <div
-                        key={pkg.id}
-                        className={cn(
-                          'relative overflow-hidden rounded-2xl p-3 border transition-all flex flex-col justify-between',
-                          isStarter
-                            ? 'bg-gradient-to-br from-amber-950/40 via-yellow-950/20 to-[#0c0905] border-amber-400/50 shadow-[0_0_15px_rgba(251,191,36,0.15)] col-span-1 sm:col-span-2'
-                            : 'bg-gradient-to-br from-cyan-950/30 to-[#0c0905] border-cyan-500/25 hover:border-cyan-400/40'
-                        )}
-                      >
-                        {pkg.badge && (
-                          <div className={cn(
-                            'absolute top-0 right-0 px-2 py-0.5 rounded-bl-xl text-[9px] font-black tracking-wider shadow-sm uppercase',
-                            isStarter ? 'bg-amber-400 text-black font-extrabold' : 'bg-cyan-500/80 text-white'
-                          )}>
-                            {pkg.badge}
-                          </div>
-                        )}
-
-                        <div className="flex items-start gap-3 mb-2">
-                          <div className="text-2xl p-2 rounded-xl bg-white/5 border border-white/10 shrink-0">
-                            {pkg.emoji}
-                          </div>
-                          <div className="flex-1 pr-8">
-                            <div className="text-xs font-black text-amber-100 flex items-center gap-1.5">
-                              {title}
-                            </div>
-                            <div className="text-[10px] text-amber-200/60 leading-snug mt-0.5">
-                              {desc}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-1 border-t border-white/5 mt-1">
-                          <div className="text-xs font-black text-cyan-300 flex items-center gap-1">
-                            <span>+{pkg.diamonds}</span>
-                            <span>💎</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleBuyDonate(pkg)}
-                            disabled={!!buyingPackageId}
-                            className={cn(
-                              'px-3.5 py-1.5 rounded-xl font-black text-xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer shadow-md',
-                              isStarter
-                                ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 hover:brightness-110 shadow-amber-500/20'
-                                : 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:brightness-110 shadow-cyan-500/25',
-                              buyingPackageId && 'opacity-60 cursor-not-allowed'
-                            )}
-                          >
-                            {isBuying ? (
-                              <span>{t.donateLoading || 'Завантаження…'}</span>
-                            ) : (
-                              <>
-                                <span>{pkg.stars}</span>
-                                <span>⭐</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
                 <div className="text-center pt-2 pb-1">
                   <p className="text-[10px] text-amber-400/50 flex items-center justify-center gap-1">
                     <span>🔒</span>
