@@ -3271,33 +3271,32 @@ export default function App() {
       {profileModalOpen && (
         <div className="fixed inset-0 z-[65] bg-[#0c0905] text-amber-100 flex flex-col overflow-hidden select-none safe-top safe-bottom animate-fade-in">
           {/* Top Bar Header */}
-          <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-4 py-3 flex items-center justify-between">
+          <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-3 py-2.5 grid grid-cols-[auto_1fr_auto] items-center gap-2">
             <button
               type="button"
               onClick={() => { setProfileModalOpen(false); setPreviewFrame(null); setPreviewColor(null); haptic.light(); }}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm shrink-0"
             >
               <span>←</span>
               <span>{lang === 'uk' ? 'Назад' : 'Назад'}</span>
             </button>
 
-            <div className="flex items-center gap-1.5 font-black text-amber-100 text-sm">
+            <div className="flex items-center justify-center gap-1.5 font-black text-amber-100 text-xs sm:text-sm whitespace-nowrap min-w-0 text-center truncate">
               <span>👨‍🍳</span>
-              <span>{t.profileTitle}</span>
+              <span className="truncate">{t.profileTitle}</span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-end gap-1.5 shrink-0">
               <button
                 type="button"
                 onClick={() => { setShowPublicPreview(true); haptic.light(); }}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 text-xs font-black border border-cyan-500/35 active:scale-95 transition-all cursor-pointer shadow-sm"
+                className="w-8 h-8 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 flex items-center justify-center text-xs font-black border border-cyan-500/35 active:scale-95 transition-all cursor-pointer shadow-sm"
                 title={t.profilePreviewBtn}
               >
                 <span>👁️</span>
-                <span className="hidden xs:inline">{t.profilePreviewBtn}</span>
               </button>
 
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 text-xs font-black font-mono shadow-sm">
+              <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 text-xs font-black font-mono shadow-sm">
                 <span>💎</span>
                 <span className="tabular-nums">{formatNum(state.diamonds)}</span>
               </div>
@@ -3348,13 +3347,6 @@ export default function App() {
                 </span>
                 {isDevUser(tgUser?.id) && <DevBadge size="md" />}
               </div>
-
-              {/* Developer Official Status */}
-              {isDevUser(tgUser?.id) && (
-                <div className="mt-1.5">
-                  <DevBadge size="lg" />
-                </div>
-              )}
 
               {/* Username & ID */}
               <div className="flex items-center gap-2 mt-1">
@@ -3848,22 +3840,22 @@ export default function App() {
           </div>
 
           {/* Top Bar Header */}
-          <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-4 py-3 flex items-center justify-between">
+          <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-3 py-2.5 grid grid-cols-[auto_1fr_auto] items-center gap-2">
             <button
               type="button"
               onClick={() => { setShowPublicPreview(false); haptic.light(); }}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm shrink-0"
             >
               <span>←</span>
               <span>{lang === 'uk' ? 'Назад' : 'Назад'}</span>
             </button>
 
-            <div className="flex items-center gap-1.5 font-black text-amber-100 text-sm">
+            <div className="flex items-center justify-center gap-1.5 font-black text-amber-100 text-xs sm:text-sm whitespace-nowrap min-w-0 text-center truncate">
               <span>👤</span>
-              <span>{t.profilePreviewTitle}</span>
+              <span className="truncate">{t.profilePreviewTitle}</span>
             </div>
 
-            <div className="text-[11px] text-amber-500/60 font-mono">
+            <div className="text-[11px] text-amber-500/60 font-mono shrink-0 text-right">
               ID: {tgUser?.id || '—'}
             </div>
           </div>
@@ -3913,13 +3905,6 @@ export default function App() {
                 </span>
                 {isDevUser(tgUser?.id) && <DevBadge size="md" />}
               </div>
-
-              {/* Developer Official Status */}
-              {isDevUser(tgUser?.id) && (
-                <div className="mt-1.5">
-                  <DevBadge size="lg" />
-                </div>
-              )}
 
               {/* Username with TG link */}
               {tgUser?.username ? (
@@ -4106,22 +4091,22 @@ export default function App() {
       {viewingProfile !== null && (
         <div className="fixed inset-0 z-[65] bg-[#0c0905] text-amber-100 flex flex-col overflow-hidden select-none safe-top safe-bottom animate-fade-in">
           {/* Header */}
-          <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-4 py-3 flex items-center justify-between">
+          <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-3 py-2.5 grid grid-cols-[auto_1fr_auto] items-center gap-2">
             <button
               type="button"
               onClick={() => { setViewingProfile(null); haptic.light(); }}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm shrink-0"
             >
               <span>←</span>
               <span>{lang === 'uk' ? 'Назад' : 'Назад'}</span>
             </button>
 
-            <div className="flex items-center gap-1.5 font-black text-amber-100 text-sm">
+            <div className="flex items-center justify-center gap-1.5 font-black text-amber-100 text-xs sm:text-sm whitespace-nowrap min-w-0 text-center truncate">
               <span>👤</span>
-              <span>{lang === 'uk' ? 'Акаунт гравця' : 'Аккаунт игрока'}</span>
+              <span className="truncate">{lang === 'uk' ? 'Акаунт гравця' : 'Аккаунт игрока'}</span>
             </div>
 
-            <div className="text-[11px] text-amber-500/60 font-mono">
+            <div className="text-[11px] text-amber-500/60 font-mono shrink-0 text-right">
               ID: {viewingProfile.id}
             </div>
           </div>
@@ -4160,13 +4145,6 @@ export default function App() {
                 </span>
                 {isDevUser(viewingProfile.id) && <DevBadge size="md" />}
               </div>
-
-              {/* Developer Official Status */}
-              {isDevUser(viewingProfile.id) && (
-                <div className="mt-1.5">
-                  <DevBadge size="lg" />
-                </div>
-              )}
 
               {/* Username with TG link */}
               {viewingProfile.username ? (
