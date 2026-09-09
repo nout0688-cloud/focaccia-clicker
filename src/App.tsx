@@ -39,6 +39,7 @@ import type { AvatarFrame, NameColorStyle, ShowcaseMetric } from './game/cosmeti
 import { DONATE_PACKAGES, MONOBANK_JAR_URL, type DonatePackage } from './game/donate';
 import focacciaImg from './assets/focaccia.png';
 import goldenImg from './assets/golden.png';
+import monoGuideImg from './assets/mono-guide.jpg';
 
 /* ---- Telegram WebApp ---- */
 const tg = window.Telegram?.WebApp;
@@ -466,6 +467,7 @@ export default function App() {
   } | null>(null);
   const [checkingOrderStatus, setCheckingOrderStatus] = useState(false);
   const [copiedOrderCode, setCopiedOrderCode] = useState(false);
+  const [showMonoHelp, setShowMonoHelp] = useState(false);
 
   /* Hold-to-buy (затискання для швидкої покупки з прискоренням) */
   const [holdingBuyId, setHoldingBuyId] = useState<string | null>(null);
@@ -2920,13 +2922,23 @@ export default function App() {
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => { setShowDonateModal(false); haptic.light(); }}
-                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white flex items-center justify-center text-sm font-bold border border-white/10 transition active:scale-95 cursor-pointer"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => { setShowMonoHelp(true); haptic.selection(); }}
+                  className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-emerald-200 flex items-center gap-1.5 text-xs font-bold border border-emerald-500/30 transition active:scale-95 cursor-pointer shadow-sm"
+                >
+                  <span>❓</span>
+                  <span>{lang === 'uk' ? 'Допомога' : 'Помощь'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowDonateModal(false); haptic.light(); }}
+                  className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white flex items-center justify-center text-sm font-bold border border-white/10 transition active:scale-95 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {/* Content Body */}
@@ -2981,6 +2993,14 @@ export default function App() {
                         ? 'Вставте цей номер у коментар при поповненні Банки, щоб автор одразу підтвердив вашу нагороду!'
                         : 'Вставьте этот номер в комментарий при пополнении Банки, чтобы автор сразу подтвердил вашу награду!'}
                     </p>
+                    <button
+                      type="button"
+                      onClick={() => { setShowMonoHelp(true); haptic.selection(); }}
+                      className="w-full py-1.5 px-2.5 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 border border-amber-400/40 text-amber-200 text-[11px] font-bold transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <span>❓</span>
+                      <span>{lang === 'uk' ? 'Куди вводити код? (Скріншот-підказка)' : 'Куда вводить код? (Скриншот-подсказка)'}</span>
+                    </button>
                   </div>
 
                   {/* Action buttons */}
@@ -3024,13 +3044,22 @@ export default function App() {
             ) : (
               /* ===== MONOBANK SHOP ===== */
               <div className="p-4 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
-                <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center gap-2 text-[11px] text-emerald-300/90">
-                  <span>💳</span>
-                  <span>
-                    {lang === 'uk'
-                      ? 'Оплата напряму на Банку Monobank: оберіть пак, сплатіть із кодом замовлення — автор підтвердить у боті!'
-                      : 'Оплата напрямую на Банку Monobank: выберите пак, оплатите с кодом заказа — автор подтвердит в боте!'}
-                  </span>
+                <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between gap-2 text-[11px] text-emerald-300/90">
+                  <div className="flex items-center gap-2">
+                    <span>💳</span>
+                    <span>
+                      {lang === 'uk'
+                        ? 'Оплата на Банку Monobank. Скопіюйте код та вкажіть у коментарі!'
+                        : 'Оплата на Банку Monobank. Скопируйте код и укажите в комментарии!'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setShowMonoHelp(true); haptic.selection(); }}
+                    className="shrink-0 px-2 py-1 rounded-lg bg-emerald-500/25 hover:bg-emerald-500/35 text-emerald-200 font-bold text-[10px] border border-emerald-500/30 active:scale-95 transition cursor-pointer"
+                  >
+                    {lang === 'uk' ? '❓ Допомога' : '❓ Помощь'}
+                  </button>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -3189,6 +3218,51 @@ export default function App() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== MONOBANK PAYMENT HELP / SCREENSHOT MODAL ===== */}
+      {showMonoHelp && (
+        <div className="fixed inset-0 z-[85] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 select-none animate-fade-in">
+          <div className="relative w-full max-w-sm bg-[#0c0905] border border-emerald-500/40 rounded-3xl p-4 shadow-[0_0_50px_rgba(16,185,129,0.25)] flex flex-col max-h-[92vh] overflow-y-auto custom-scrollbar">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📖</span>
+                <h4 className="text-sm font-black text-emerald-200">
+                  {lang === 'uk' ? 'Куди вставляти код оплати?' : 'Куда вставлять код оплаты?'}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowMonoHelp(false); haptic.light(); }}
+                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-bold cursor-pointer active:scale-95 transition"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="rounded-2xl overflow-hidden border border-emerald-500/30 bg-black shadow-inner mb-3 shrink-0">
+              <img src={monoGuideImg} alt="Monobank guide" className="w-full h-auto max-h-[48vh] object-contain mx-auto" />
+            </div>
+            <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-2 text-xs mb-3">
+              <div className="flex items-center gap-1.5 font-black text-amber-300">
+                <span>👉</span>
+                <span>{lang === 'uk' ? 'Покрокова інструкція:' : 'Пошаговая инструкция:'}</span>
+              </div>
+              <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-amber-100/90 leading-relaxed font-medium">
+                <li>{lang === 'uk' ? 'Скопіюйте код замовлення (натисніть кнопку «Скопіювати»).' : 'Скопируйте код заказа (нажмите «Копировать»).'}</li>
+                <li>{lang === 'uk' ? 'Відкрийте сторінку Банки Monobank.' : 'Откройте страницу Банки Monobank.'}</li>
+                <li className="font-bold text-amber-200">{lang === 'uk' ? 'Вставте скопійований код у поле коментаря (показано червоною стрілкою на скріншоті) та проведіть платіж!' : 'Вставьте скопированный код в поле комментария (показано красной стрелкой на скриншоте) и проведите платёж!'}</li>
+                <li>{lang === 'uk' ? 'Поверніться в гру — автор підтвердить оплату в боті і нагорода миттєво зарахується!' : 'Вернитесь в игру — автор подтвердит оплату в боте и награда мгновенно зачислится!'}</li>
+              </ol>
+            </div>
+            <button
+              type="button"
+              onClick={() => { setShowMonoHelp(false); haptic.light(); }}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-emerald-500/20 hover:brightness-110"
+            >
+              {lang === 'uk' ? '👍 Все зрозуміло!' : '👍 Всё понятно!'}
+            </button>
           </div>
         </div>
       )}
