@@ -5376,78 +5376,97 @@ export default function App() {
               </div>
             )}
 
-                                    {/* Tab 3: UPGRADER */}
+                                                {/* Tab 3: UPGRADER */}
             {skinsTab === 'upgrader' && (
               (() => {
-                const eligibleSourceIds = (state.skins?.owned || []).filter((id) => id !== 'skin_classic');
-                const hasEligibleSkin = eligibleSourceIds.length > 0;
+                const ownedList = state.skins?.owned || ['skin_classic'];
+                const eligibleSourceIds = ownedList.filter((id) => id !== 'skin_classic');
 
-                if (!hasEligibleSkin) {
-                  return (
-                    <div className="p-6 flex-1 flex flex-col items-center justify-center text-center space-y-4 animate-fade-in my-auto">
-                      <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-4xl shadow-[0_0_30px_rgba(245,158,11,0.15)]">
-                        🔒
-                      </div>
-                      <div className="space-y-1.5 max-w-xs">
-                        <h3 className="text-base font-black text-white">
-                          {lang === 'uk' ? 'Базову фокачу не можна апгрейдити' : 'Базовую фокаччу нельзя апгрейдить'}
-                        </h3>
-                        <p className="text-xs text-stone-400 leading-relaxed">
-                          {lang === 'uk'
-                            ? 'Апгрейдер призначений для синтезу отриманих скінів вищих рангів (Рідкісних, Епічних тощо). Отримайте свій перший скін у Кейсах!'
-                            : 'Апгрейдер предназначен для синтеза полученных скинов высших рангов (Редких, Эпических и т.д.). Откройте свой первый скин в Кейсах!'}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSkinsTab('cases');
-                          haptic.selection();
-                        }}
-                        className="px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-stone-950 font-black text-sm shadow-lg shadow-amber-500/25 transition active:scale-95 cursor-pointer flex items-center gap-2"
-                      >
-                        <span>🎁</span>
-                        <span>{lang === 'uk' ? 'Перейти до Кейсів' : 'Перейти к Кейсам'}</span>
-                      </button>
-                    </div>
-                  );
+                // If player owns non-classic skins, prefer the selected one or first eligible
+                let effectiveSourceId = upgraderSourceId;
+                if (!effectiveSourceId || !ownedList.includes(effectiveSourceId)) {
+                  effectiveSourceId = eligibleSourceIds[0] || 'skin_classic';
                 }
 
-                const effectiveSourceId = eligibleSourceIds.includes(upgraderSourceId)
-                  ? upgraderSourceId
-                  : eligibleSourceIds[0];
-                const srcSkin = SKINS[effectiveSourceId] || SKINS[eligibleSourceIds[0]];
+                const isForbidden = effectiveSourceId === 'skin_classic';
+                const srcSkin = SKINS[effectiveSourceId] || SKINS.skin_classic;
 
+                // Eligible target skins: non-classic, and not srcSkin
                 const eligibleTargetSkins = SKIN_LIST.filter(
                   (sk) => sk.id !== 'skin_classic' && sk.id !== effectiveSourceId
                 );
                 const effectiveTargetId = eligibleTargetSkins.some((sk) => sk.id === upgraderTargetId)
                   ? upgraderTargetId
-                  : (eligibleTargetSkins[0]?.id || 'skin_chef');
+                  : (eligibleTargetSkins.find((sk) => !ownedList.includes(sk.id))?.id || eligibleTargetSkins[0]?.id || 'skin_chef');
                 const tgtSkin = SKINS[effectiveTargetId] || eligibleTargetSkins[0];
 
-                const effectiveBoostDiamonds = Math.min(upgraderBoostDiamonds, state.diamonds);
-                const { boostChance, totalChance } = calculateUpgradeChance(srcSkin, tgtSkin, effectiveBoostDiamonds);
+                const effectiveBoostDiamonds = isForbidden ? 0 : Math.min(upgraderBoostDiamonds, state.diamonds);
+                const { boostChance, totalChance } = isForbidden
+                  ? { baseChance: 0, boostChance: 0, totalChance: 0 }
+                  : calculateUpgradeChance(srcSkin, tgtSkin, effectiveBoostDiamonds);
                 const winSliceDeg = Math.round(totalChance * 3.6);
 
                 return (
                   <div className="p-4 space-y-3.5 overflow-y-auto flex-1 custom-scrollbar">
+                    {/* Notice if classic focaccia is selected */}
+                    {isForbidden && (
+                      <div className="p-3 rounded-2xl bg-rose-950/60 border border-rose-500/40 flex items-center justify-between gap-3 animate-fade-in shadow-lg">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="text-2xl shrink-0">🚫</span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-black text-rose-300">
+                              {lang === 'uk' ? 'Апгрейд з базової фокачі заборонено!' : 'Апгрейд с базовой фокаччи запрещён!'}
+                            </div>
+                            <div className="text-[10px] text-stone-300 leading-tight">
+                              {lang === 'uk'
+                                ? 'Вона безкоштовна у всіх. Відкрийте скін у Кейсах 🎁, щоб апгрейдити його!'
+                                : 'Она бесплатная у всех. Откройте скин в Кейсах 🎁, чтобы апгрейдить его!'}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setSkinsTab('cases'); haptic.selection(); }}
+                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-black shrink-0 transition active:scale-95 cursor-pointer shadow"
+                        >
+                          {lang === 'uk' ? 'Кейси 🎁' : 'Кейсы 🎁'}
+                        </button>
+                      </div>
+                    )}
+
                     {/* Source & Target Skin Selectors */}
                     <div className="grid grid-cols-2 gap-2">
                       {/* Left: Source Skin */}
-                      <div className="p-2.5 rounded-2xl bg-stone-900/80 border border-white/10 flex flex-col items-center text-center">
-                        <span className="text-[10px] text-stone-400 font-bold uppercase mb-1">
-                          {lang === 'uk' ? 'Ваш скін' : 'Ваш скин'}
-                        </span>
-                        <div className="w-14 h-14 rounded-xl overflow-hidden border border-white/20 mb-1.5 bg-stone-950 shadow">
+                      <div className={cn(
+                        'p-2.5 rounded-2xl border flex flex-col items-center text-center transition-all',
+                        isForbidden ? 'bg-rose-950/20 border-rose-500/30' : 'bg-stone-900/80 border-white/10'
+                      )}>
+                        <div className="flex items-center justify-between w-full mb-1">
+                          <span className="text-[10px] text-stone-400 font-bold uppercase">
+                            {lang === 'uk' ? 'Ваш скін' : 'Ваш скин'}
+                          </span>
+                          {isForbidden && (
+                            <span className="text-[8px] px-1 py-0.2 rounded bg-rose-500/20 text-rose-300 font-bold border border-rose-500/40">
+                              🔒 БАЗОВИЙ
+                            </span>
+                          )}
+                        </div>
+                        <div className={cn(
+                          'w-14 h-14 rounded-xl overflow-hidden border mb-1.5 bg-stone-950 shadow',
+                          isForbidden ? 'border-rose-500/50' : 'border-white/20'
+                        )}>
                           <img src={srcSkin.img} alt="" className="w-full h-full object-cover" />
                         </div>
                         <select
                           value={effectiveSourceId}
-                          onChange={(e) => setUpgraderSourceId(e.target.value)}
+                          onChange={(e) => {
+                            setUpgraderSourceId(e.target.value);
+                            haptic.selection();
+                          }}
                           disabled={isUpgrading}
                           className="w-full text-[11px] font-bold bg-stone-950 text-white border border-white/15 rounded-lg py-1 px-1.5 truncate cursor-pointer"
                         >
+                          {/* If player has obtained skins, list them */}
                           {eligibleSourceIds.map((id) => {
                             const sk = SKINS[id];
                             if (!sk) return null;
@@ -5458,6 +5477,10 @@ export default function App() {
                               </option>
                             );
                           })}
+                          {/* Always list Classic Focaccia with clear label */}
+                          <option value="skin_classic">
+                            🫓 {lang === 'uk' ? 'Звичайна фокача (Базова — 🚫)' : 'Обычная фокачча (Базовая — 🚫)'}
+                          </option>
                         </select>
                         <span className={cn('px-1.5 py-0.2 rounded text-[8px] font-bold border mt-1 truncate max-w-full', RARITY_LABELS[srcSkin.rarity].color, RARITY_LABELS[srcSkin.rarity].border)}>
                           {srcSkin.badge}
@@ -5479,12 +5502,15 @@ export default function App() {
                         </div>
                         <select
                           value={effectiveTargetId}
-                          onChange={(e) => setUpgraderTargetId(e.target.value)}
+                          onChange={(e) => {
+                            setUpgraderTargetId(e.target.value);
+                            haptic.selection();
+                          }}
                           disabled={isUpgrading}
                           className="w-full text-[11px] font-bold bg-stone-950 text-amber-200 border border-amber-500/30 rounded-lg py-1 px-1.5 truncate cursor-pointer"
                         >
                           {eligibleTargetSkins.map((sk) => {
-                            const isAlreadyOwned = (state.skins?.owned || []).includes(sk.id);
+                            const isAlreadyOwned = ownedList.includes(sk.id);
                             const emojiPrefix = sk.badge.split(' ')[0] || '🫓';
                             return (
                               <option key={sk.id} value={sk.id}>
@@ -5500,29 +5526,39 @@ export default function App() {
                     </div>
 
                     {/* Circular Interactive Wheel */}
-                    <div className="relative p-4 rounded-2xl bg-gradient-to-b from-stone-900 via-[#16130e] to-stone-950 border border-white/10 flex flex-col items-center">
+                    <div className="relative p-4 rounded-2xl bg-gradient-to-b from-stone-900 via-[#16130e] to-stone-950 border border-white/10 flex flex-col items-center shadow-lg">
                       {/* Spinner Disc */}
                       <div className="relative w-48 h-48 sm:w-52 sm:h-52 flex items-center justify-center my-1">
                         {/* Conic Gradient Dial */}
                         <div
                           className="w-full h-full rounded-full border-4 border-stone-800 shadow-[0_0_35px_rgba(0,0,0,0.8),inset_0_0_20px_rgba(0,0,0,0.6)] overflow-hidden relative"
                           style={{
-                            background: `conic-gradient(from 0deg, #10b981 0deg ${winSliceDeg}deg, #27272a ${winSliceDeg}deg 360deg)`,
+                            background: isForbidden
+                              ? '#27272a'
+                              : `conic-gradient(from 0deg, #10b981 0deg ${winSliceDeg}deg, #27272a ${winSliceDeg}deg 360deg)`,
                           }}
                         >
-                          {/* Inner Dark Cutout (Guaranteed free of needle overlap) */}
+                          {/* Inner Dark Cutout */}
                           <div className="absolute inset-7 sm:inset-8 rounded-full bg-[#13110e] border-2 border-stone-700/80 flex items-center justify-center shadow-inner z-10 pointer-events-none select-none">
                             <div className="text-center space-y-0.5">
                               <div className="text-[10px] text-stone-400 uppercase font-black tracking-wider leading-none">
                                 {lang === 'uk' ? 'Шанс' : 'Шанс'}
                               </div>
-                              <div className="text-2xl sm:text-3xl font-black text-amber-300 font-mono tracking-tight leading-none my-0.5">
-                                {totalChance}%
+                              <div className={cn(
+                                "text-2xl sm:text-3xl font-black font-mono tracking-tight leading-none my-0.5",
+                                isForbidden ? "text-rose-400" : "text-amber-300"
+                              )}>
+                                {isForbidden ? '0%' : `${totalChance}%`}
                               </div>
-                              <div className="text-[10px] text-emerald-400 font-black leading-none">
-                                {lang === 'uk' ? 'УСПІХ' : 'УСПЕХ'}
+                              <div className={cn(
+                                "text-[10px] font-black leading-none",
+                                isForbidden ? "text-rose-400" : "text-emerald-400"
+                              )}>
+                                {isForbidden
+                                  ? (lang === 'uk' ? 'ЗАБОРОНЕНО' : 'ЗАПРЕЩЕНО')
+                                  : (lang === 'uk' ? 'УСПІХ' : 'УСПЕХ')}
                               </div>
-                              {effectiveBoostDiamonds > 0 && (
+                              {!isForbidden && effectiveBoostDiamonds > 0 && (
                                 <div className="text-[9px] text-cyan-300 font-bold leading-none mt-0.5">
                                   +{boostChance}% 💎
                                 </div>
@@ -5531,7 +5567,7 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Pixel-Perfect CSS-Rotated Pointer Container */}
+                        {/* Pixel-Perfect CSS Rotating Pointer */}
                         <div
                           className="absolute inset-0 pointer-events-none z-20"
                           style={{
@@ -5540,35 +5576,29 @@ export default function App() {
                             transition: isUpgrading ? 'transform 3.6s cubic-bezier(0.12, 0.9, 0.18, 1)' : 'none',
                           }}
                         >
-                          <svg
-                            viewBox="0 0 200 200"
-                            className="w-full h-full"
-                          >
-                            {/* Needle Shaft strictly along track */}
+                          <svg viewBox="0 0 200 200" className="w-full h-full">
                             <line
                               x1="100"
                               y1="64"
                               x2="100"
                               y2="18"
-                              stroke="#f59e0b"
+                              stroke={isForbidden ? '#ef4444' : '#f59e0b'}
                               strokeWidth="4"
                               strokeLinecap="round"
-                              filter="drop-shadow(0 0 6px #f59e0b)"
+                              filter={`drop-shadow(0 0 6px ${isForbidden ? '#ef4444' : '#f59e0b'})`}
                             />
-                            {/* Arrow Pointer Head pointing outwards to rim */}
                             <polygon
                               points="92,22 108,22 100,6"
-                              fill="#f59e0b"
+                              fill={isForbidden ? '#ef4444' : '#f59e0b'}
                               stroke="#fffbeb"
                               strokeWidth="1.5"
-                              filter="drop-shadow(0 0 8px #f59e0b)"
+                              filter={`drop-shadow(0 0 8px ${isForbidden ? '#ef4444' : '#f59e0b'})`}
                             />
-                            {/* Hub rivet dot */}
                             <circle
                               cx="100"
                               cy="64"
                               r="5"
-                              fill="#fbbf24"
+                              fill={isForbidden ? '#f87171' : '#fbbf24'}
                               stroke="#ffffff"
                               strokeWidth="2"
                               filter="drop-shadow(0 0 4px rgba(0,0,0,0.6))"
@@ -5589,28 +5619,29 @@ export default function App() {
                             </span>
                           </div>
                           <span className="font-bold text-cyan-300">
-                            +{boostChance}% {effectiveBoostDiamonds > 0 ? `(${effectiveBoostDiamonds} 💎)` : ''}
+                            {isForbidden
+                              ? '0%'
+                              : `+${boostChance}% ${effectiveBoostDiamonds > 0 ? `(${effectiveBoostDiamonds} 💎)` : ''}`}
                           </span>
                         </div>
 
                         <div className="grid grid-cols-5 gap-1.5">
                           {[0, 5, 10, 25, 50].map((amt) => {
                             const isSelected = effectiveBoostDiamonds === amt;
-                            const canAfford = amt === 0 || state.diamonds >= amt;
+                            const canAfford = !isForbidden && (amt === 0 || state.diamonds >= amt);
                             return (
                               <button
                                 key={amt}
                                 type="button"
-                                disabled={isUpgrading || !canAfford}
+                                disabled={isUpgrading || isForbidden || !canAfford}
                                 onClick={() => {
-                                  if (!canAfford) return;
+                                  if (!canAfford || isForbidden) return;
                                   setUpgraderBoostDiamonds(amt);
                                   haptic.selection();
                                 }}
-                                title={!canAfford ? (lang === 'uk' ? `Недостатньо діамантів (у вас ${state.diamonds})` : `Недостаточно алмазов (у вас ${state.diamonds})`) : ''}
                                 className={cn(
                                   'py-1.5 rounded-xl text-xs font-bold border transition-all text-center relative flex items-center justify-center',
-                                  !canAfford
+                                  isForbidden || !canAfford
                                     ? 'bg-stone-950/60 text-stone-600 border-white/5 opacity-40 cursor-not-allowed'
                                     : isSelected
                                     ? 'bg-cyan-500 text-stone-950 border-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.5)] cursor-pointer active:scale-95'
@@ -5618,36 +5649,13 @@ export default function App() {
                                 )}
                               >
                                 <span>{amt === 0 ? '0' : `+${amt}💎`}</span>
-                                {!canAfford && amt > 0 && (
+                                {(!canAfford || isForbidden) && amt > 0 && (
                                   <span className="absolute -top-1 -right-1 text-[8px] bg-stone-900 rounded-full px-0.5 border border-white/10">🔒</span>
                                 )}
                               </button>
                             );
                           })}
                         </div>
-
-                        {/* Informative notice about diamonds */}
-                        {state.diamonds < 5 ? (
-                          <div className="text-[10px] text-stone-400 italic flex items-center gap-1.5 mt-1 bg-stone-950/50 p-2 rounded-xl border border-white/5">
-                            <span>💡</span>
-                            <span>
-                              {lang === 'uk'
-                                ? `У вас ${state.diamonds} 💎 (для бусту потрібно від 5 💎). Алмази можна здобути за босів, завдання або в кейсах.`
-                                : `У вас ${state.diamonds} 💎 (для буста нужно от 5 💎). Алмазы можно получить за боссов, задания или в кейсах.`}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="text-[10px] text-cyan-300/80 flex items-center justify-between px-1">
-                            <span>
-                              {effectiveBoostDiamonds > 0
-                                ? (lang === 'uk' ? `Витратиться: ${effectiveBoostDiamonds} 💎` : `Потратится: ${effectiveBoostDiamonds} 💎`)
-                                : (lang === 'uk' ? 'Буст не обрано (0 💎)' : 'Буст не выбран (0 💎)')}
-                            </span>
-                            <span>
-                              {lang === 'uk' ? `Залишиться: ${state.diamonds - effectiveBoostDiamonds} 💎` : `Останется: ${state.diamonds - effectiveBoostDiamonds} 💎`}
-                            </span>
-                          </div>
-                        )}
                       </div>
                     </div>
 
@@ -5666,20 +5674,22 @@ export default function App() {
                     {/* Run Button */}
                     <button
                       type="button"
-                      disabled={isUpgrading || (state.skins?.owned || []).includes(tgtSkin.id)}
+                      disabled={isUpgrading || isForbidden || ownedList.includes(tgtSkin.id)}
                       onClick={handleRunUpgrader}
                       className={cn(
                         'w-full py-3.5 rounded-2xl font-black text-sm transition active:scale-95 cursor-pointer shadow-lg flex items-center justify-center gap-2',
-                        isUpgrading || (state.skins?.owned || []).includes(tgtSkin.id)
+                        isUpgrading || isForbidden || ownedList.includes(tgtSkin.id)
                           ? 'bg-stone-800 text-stone-500 cursor-not-allowed border border-white/5'
                           : 'bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-stone-950 hover:brightness-110 shadow-amber-500/30'
                       )}
                     >
-                      <span>⚡</span>
+                      <span>{isForbidden ? '🚫' : '⚡'}</span>
                       <span>
                         {isUpgrading
                           ? (lang === 'uk' ? 'Апгрейд у процесі…' : 'Апгрейд в процессе…')
-                          : (state.skins?.owned || []).includes(tgtSkin.id)
+                          : isForbidden
+                          ? (lang === 'uk' ? 'З базової фокачі апгрейд заборонено!' : 'С базовой фокаччи апгрейд запрещён!')
+                          : ownedList.includes(tgtSkin.id)
                           ? (lang === 'uk' ? 'Скін уже відкрито' : 'Скин уже открыт')
                           : effectiveBoostDiamonds > 0
                           ? (lang === 'uk' ? `Апгрейдити (${totalChance}%) • -${effectiveBoostDiamonds} 💎` : `Апгрейдить (${totalChance}%) • -${effectiveBoostDiamonds} 💎`)
