@@ -2416,19 +2416,25 @@ export default function App() {
       return;
     }
 
-    if (upgraderBoostDiamonds > 0 && state.diamonds < upgraderBoostDiamonds) {
-      addToast(lang === 'uk' ? 'Недостатньо діамантів для бусту' : 'Недостаточно алмазов для буста', '', '💎');
+    const effectiveBoost = Math.max(0, Math.min(upgraderBoostDiamonds, state.diamonds));
+    if (upgraderBoostDiamonds > state.diamonds) {
+      addToast(
+        lang === 'uk' ? `Недостатньо діамантів (у вас ${state.diamonds} 💎)` : `Недостаточно алмазов (у вас ${state.diamonds} 💎)`,
+        lang === 'uk' ? 'Оберіть доступну кількість бусту' : 'Выберите доступное количество буста',
+        '💎'
+      );
+      setUpgraderBoostDiamonds(effectiveBoost);
       return;
     }
 
-    const { totalChance } = calculateUpgradeChance(srcSkin, tgtSkin, upgraderBoostDiamonds);
+    const { totalChance } = calculateUpgradeChance(srcSkin, tgtSkin, effectiveBoost);
     setIsUpgrading(true);
     setUpgradeResult(null);
     haptic.medium();
 
     let curState = { ...stateRef.current };
-    if (upgraderBoostDiamonds > 0) {
-      curState.diamonds = Math.max(0, curState.diamonds - upgraderBoostDiamonds);
+    if (effectiveBoost > 0) {
+      curState.diamonds = Math.max(0, curState.diamonds - effectiveBoost);
       setState(curState);
       stateRef.current = curState;
     }
@@ -5309,148 +5315,230 @@ export default function App() {
               </div>
             )}
 
-            {/* Tab 3: UPGRADER */}
+                        {/* Tab 3: UPGRADER */}
             {skinsTab === 'upgrader' && (
               (() => {
                 const srcSkin = SKINS[upgraderSourceId] || SKINS.skin_classic;
                 const tgtSkin = SKINS[upgraderTargetId] || SKINS.skin_chef;
-                const { boostChance, totalChance } = calculateUpgradeChance(srcSkin, tgtSkin, upgraderBoostDiamonds);
+                const effectiveBoostDiamonds = Math.min(upgraderBoostDiamonds, state.diamonds);
+                const { boostChance, totalChance } = calculateUpgradeChance(srcSkin, tgtSkin, effectiveBoostDiamonds);
                 const winSliceDeg = Math.round(totalChance * 3.6);
 
                 return (
-                  <div className="p-4 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
+                  <div className="p-4 space-y-3.5 overflow-y-auto flex-1 custom-scrollbar">
                     {/* Source & Target Skin Selectors */}
                     <div className="grid grid-cols-2 gap-2">
                       {/* Left: Source Skin */}
-                      <div className="p-3 rounded-2xl bg-stone-900/80 border border-white/10 flex flex-col items-center text-center">
-                        <span className="text-[10px] text-stone-400 font-bold uppercase mb-1.5">
+                      <div className="p-2.5 rounded-2xl bg-stone-900/80 border border-white/10 flex flex-col items-center text-center">
+                        <span className="text-[10px] text-stone-400 font-bold uppercase mb-1">
                           {lang === 'uk' ? 'Ваш скін' : 'Ваш скин'}
                         </span>
-                        <div className="w-16 h-16 rounded-xl overflow-hidden border border-white/20 mb-2 bg-stone-950">
+                        <div className="w-14 h-14 rounded-xl overflow-hidden border border-white/20 mb-1.5 bg-stone-950 shadow">
                           <img src={srcSkin.img} alt="" className="w-full h-full object-cover" />
                         </div>
                         <select
                           value={upgraderSourceId}
                           onChange={(e) => setUpgraderSourceId(e.target.value)}
                           disabled={isUpgrading}
-                          className="w-full text-xs font-bold bg-stone-950 text-white border border-white/15 rounded-lg py-1 px-1.5 truncate cursor-pointer"
+                          className="w-full text-[11px] font-bold bg-stone-950 text-white border border-white/15 rounded-lg py-1 px-1.5 truncate cursor-pointer"
                         >
                           {(state.skins?.owned || ['skin_classic']).map((id) => {
                             const sk = SKINS[id];
                             if (!sk) return null;
+                            const emojiPrefix = sk.badge.split(' ')[0] || '🫓';
                             return (
                               <option key={id} value={id}>
-                                {sk.badge} {lang === 'uk' ? sk.name : sk.nameRu}
+                                {emojiPrefix} {lang === 'uk' ? sk.name : sk.nameRu}
                               </option>
                             );
                           })}
                         </select>
+                        <span className={cn('px-1.5 py-0.2 rounded text-[8px] font-bold border mt-1 truncate max-w-full', RARITY_LABELS[srcSkin.rarity].color, RARITY_LABELS[srcSkin.rarity].border)}>
+                          {srcSkin.badge}
+                        </span>
                       </div>
 
                       {/* Right: Target Skin */}
-                      <div className="p-3 rounded-2xl bg-stone-900/80 border border-amber-500/30 flex flex-col items-center text-center relative overflow-hidden">
+                      <div className="p-2.5 rounded-2xl bg-stone-900/80 border border-amber-500/30 flex flex-col items-center text-center relative overflow-hidden">
                         <div className="absolute top-1 right-1">
-                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-400/40">
+                          <span className="text-[8px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-black border border-amber-400/40">
                             ЦІЛЬ
                           </span>
                         </div>
-                        <span className="text-[10px] text-amber-300/80 font-bold uppercase mb-1.5">
+                        <span className="text-[10px] text-amber-300/80 font-bold uppercase mb-1">
                           {lang === 'uk' ? 'Цільовий скін' : 'Целевой скин'}
                         </span>
-                        <div className="w-16 h-16 rounded-xl overflow-hidden border border-amber-400/50 mb-2 bg-stone-950 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
+                        <div className="w-14 h-14 rounded-xl overflow-hidden border border-amber-400/50 mb-1.5 bg-stone-950 shadow-[0_0_15px_rgba(245,158,11,0.2)]">
                           <img src={tgtSkin.img} alt="" className="w-full h-full object-cover" />
                         </div>
                         <select
                           value={upgraderTargetId}
                           onChange={(e) => setUpgraderTargetId(e.target.value)}
                           disabled={isUpgrading}
-                          className="w-full text-xs font-bold bg-stone-950 text-amber-200 border border-amber-500/30 rounded-lg py-1 px-1.5 truncate cursor-pointer"
+                          className="w-full text-[11px] font-bold bg-stone-950 text-amber-200 border border-amber-500/30 rounded-lg py-1 px-1.5 truncate cursor-pointer"
                         >
                           {SKIN_LIST.map((sk) => {
                             if (sk.id === upgraderSourceId) return null;
+                            const emojiPrefix = sk.badge.split(' ')[0] || '🫓';
                             return (
                               <option key={sk.id} value={sk.id}>
-                                {sk.badge} {lang === 'uk' ? sk.name : sk.nameRu}
+                                {emojiPrefix} {lang === 'uk' ? sk.name : sk.nameRu}
                               </option>
                             );
                           })}
                         </select>
+                        <span className={cn('px-1.5 py-0.2 rounded text-[8px] font-bold border mt-1 truncate max-w-full', RARITY_LABELS[tgtSkin.rarity].color, RARITY_LABELS[tgtSkin.rarity].border)}>
+                          {tgtSkin.badge}
+                        </span>
                       </div>
                     </div>
 
                     {/* Circular Interactive Wheel */}
-                    <div className="relative p-4 rounded-2xl bg-gradient-to-b from-stone-900 to-[#16130e] border border-white/10 flex flex-col items-center">
+                    <div className="relative p-4 rounded-2xl bg-gradient-to-b from-stone-900 via-[#16130e] to-stone-950 border border-white/10 flex flex-col items-center">
                       {/* Spinner Disc */}
-                      <div className="relative w-44 h-44 flex items-center justify-center my-2">
+                      <div className="relative w-48 h-48 sm:w-52 sm:h-52 flex items-center justify-center my-1">
                         {/* Conic Gradient Dial */}
                         <div
-                          className="w-full h-full rounded-full border-4 border-stone-800 shadow-[0_0_35px_rgba(0,0,0,0.8),inset_0_0_20px_rgba(0,0,0,0.6)] overflow-hidden transition-transform duration-75 relative"
+                          className="w-full h-full rounded-full border-4 border-stone-800 shadow-[0_0_35px_rgba(0,0,0,0.8),inset_0_0_20px_rgba(0,0,0,0.6)] overflow-hidden relative"
                           style={{
                             background: `conic-gradient(from 0deg, #10b981 0deg ${winSliceDeg}deg, #27272a ${winSliceDeg}deg 360deg)`,
                           }}
                         >
-                          {/* Inner Dark Cutout */}
-                          <div className="absolute inset-3 rounded-full bg-[#14120e] border border-white/10 flex items-center justify-center shadow-inner">
+                          {/* Inner Dark Cutout (Guaranteed free of needle overlap) */}
+                          <div className="absolute inset-7 sm:inset-8 rounded-full bg-[#13110e] border-2 border-stone-700/80 flex items-center justify-center shadow-inner z-10 pointer-events-none select-none">
                             <div className="text-center space-y-0.5">
-                              <div className="text-[10px] text-stone-400 uppercase font-bold tracking-wider">
+                              <div className="text-[10px] text-stone-400 uppercase font-black tracking-wider leading-none">
                                 {lang === 'uk' ? 'Шанс' : 'Шанс'}
                               </div>
-                              <div className="text-2xl font-black text-amber-300 font-mono">
+                              <div className="text-2xl sm:text-3xl font-black text-amber-300 font-mono tracking-tight leading-none my-0.5">
                                 {totalChance}%
                               </div>
-                              <div className="text-[9px] text-emerald-400 font-bold">
-                                {lang === 'uk' ? 'Успіх' : 'Успех'}
+                              <div className="text-[10px] text-emerald-400 font-black leading-none">
+                                {lang === 'uk' ? 'УСПІХ' : 'УСПЕХ'}
                               </div>
+                              {effectiveBoostDiamonds > 0 && (
+                                <div className="text-[9px] text-cyan-300 font-bold leading-none mt-0.5">
+                                  +{boostChance}% 💎
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
 
-                        {/* Spinning Arrow Needle */}
-                        <div
-                          className="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
-                          style={{
-                            transform: `rotate(${spinnerAngle}deg)`,
-                            transition: isUpgrading ? 'transform 3.6s cubic-bezier(0.12, 0.9, 0.18, 1)' : 'none',
-                          }}
+                        {/* Pixel-Perfect SVG Rotating Pointer (positioned ONLY in outer ring track) */}
+                        <svg
+                          viewBox="0 0 200 200"
+                          className="absolute inset-0 w-full h-full pointer-events-none z-20"
                         >
-                          <div className="w-2.5 h-20 relative -top-7 flex flex-col items-center">
-                            <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[14px] border-b-amber-400 filter drop-shadow-[0_0_6px_#f59e0b]" />
-                            <div className="w-1.5 h-12 bg-amber-400 rounded-full shadow-[0_0_8px_#f59e0b]" />
-                          </div>
-                        </div>
+                          <g
+                            transform={`rotate(${spinnerAngle} 100 100)`}
+                            style={{
+                              transition: isUpgrading ? 'transform 3.6s cubic-bezier(0.12, 0.9, 0.18, 1)' : 'none',
+                            }}
+                          >
+                            {/* Needle Shaft strictly along track */}
+                            <line
+                              x1="100"
+                              y1="64"
+                              x2="100"
+                              y2="18"
+                              stroke="#f59e0b"
+                              strokeWidth="3.5"
+                              strokeLinecap="round"
+                              filter="drop-shadow(0 0 4px #f59e0b)"
+                            />
+                            {/* Arrow Pointer Head pointing outwards to rim */}
+                            <polygon
+                              points="93,22 107,22 100,7"
+                              fill="#f59e0b"
+                              stroke="#fffbeb"
+                              strokeWidth="1"
+                              filter="drop-shadow(0 0 6px #f59e0b)"
+                            />
+                            {/* Hub rivet dot */}
+                            <circle
+                              cx="100"
+                              cy="64"
+                              r="4.5"
+                              fill="#fbbf24"
+                              stroke="#ffffff"
+                              strokeWidth="1.5"
+                            />
+                          </g>
+                        </svg>
                       </div>
 
                       {/* Boost with Diamonds */}
                       <div className="w-full mt-2 pt-3 border-t border-white/10 space-y-2">
                         <div className="flex items-center justify-between text-xs">
-                          <span className="text-stone-300 font-medium">
-                            {lang === 'uk' ? 'Підвищити шанс діамантами:' : 'Повысить шанс алмазами:'}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-stone-300 font-medium">
+                              {lang === 'uk' ? 'Підвищити шанс:' : 'Повысить шанс:'}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 font-mono font-bold text-[11px] shadow-sm">
+                              {state.diamonds} 💎
+                            </span>
+                          </div>
                           <span className="font-bold text-cyan-300">
-                            +{boostChance}% {upgraderBoostDiamonds > 0 ? `(${upgraderBoostDiamonds} 💎)` : ''}
+                            +{boostChance}% {effectiveBoostDiamonds > 0 ? `(${effectiveBoostDiamonds} 💎)` : ''}
                           </span>
                         </div>
+
                         <div className="grid grid-cols-5 gap-1.5">
                           {[0, 5, 10, 25, 50].map((amt) => {
-                            const isSelected = upgraderBoostDiamonds === amt;
+                            const isSelected = effectiveBoostDiamonds === amt;
+                            const canAfford = amt === 0 || state.diamonds >= amt;
                             return (
                               <button
                                 key={amt}
                                 type="button"
-                                disabled={isUpgrading}
-                                onClick={() => { setUpgraderBoostDiamonds(amt); haptic.selection(); }}
+                                disabled={isUpgrading || !canAfford}
+                                onClick={() => {
+                                  if (!canAfford) return;
+                                  setUpgraderBoostDiamonds(amt);
+                                  haptic.selection();
+                                }}
+                                title={!canAfford ? (lang === 'uk' ? `Недостатньо діамантів (у вас ${state.diamonds})` : `Недостаточно алмазов (у вас ${state.diamonds})`) : ''}
                                 className={cn(
-                                  'py-1.5 rounded-xl text-xs font-bold border transition active:scale-95 cursor-pointer text-center',
-                                  isSelected
-                                    ? 'bg-cyan-500 text-stone-950 border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]'
-                                    : 'bg-stone-900/90 text-stone-300 border-white/10 hover:border-cyan-500/40'
+                                  'py-1.5 rounded-xl text-xs font-bold border transition-all text-center relative flex items-center justify-center',
+                                  !canAfford
+                                    ? 'bg-stone-950/60 text-stone-600 border-white/5 opacity-40 cursor-not-allowed'
+                                    : isSelected
+                                    ? 'bg-cyan-500 text-stone-950 border-cyan-400 shadow-[0_0_12px_rgba(6,182,212,0.5)] cursor-pointer active:scale-95'
+                                    : 'bg-stone-900/90 text-stone-300 border-white/10 hover:border-cyan-500/40 cursor-pointer active:scale-95'
                                 )}
                               >
-                                {amt === 0 ? '0' : `+${amt}💎`}
+                                <span>{amt === 0 ? '0' : `+${amt}💎`}</span>
+                                {!canAfford && amt > 0 && (
+                                  <span className="absolute -top-1 -right-1 text-[8px] bg-stone-900 rounded-full px-0.5 border border-white/10">🔒</span>
+                                )}
                               </button>
                             );
                           })}
                         </div>
+
+                        {/* Informative notice about diamonds */}
+                        {state.diamonds < 5 ? (
+                          <div className="text-[10px] text-stone-400 italic flex items-center gap-1.5 mt-1 bg-stone-950/50 p-2 rounded-xl border border-white/5">
+                            <span>💡</span>
+                            <span>
+                              {lang === 'uk'
+                                ? `У вас ${state.diamonds} 💎 (для бусту потрібно від 5 💎). Алмази можна здобути за босів, завдання або в кейсах.`
+                                : `У вас ${state.diamonds} 💎 (для буста нужно от 5 💎). Алмазы можно получить за боссов, задания или в кейсах.`}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-cyan-300/80 flex items-center justify-between px-1">
+                            <span>
+                              {effectiveBoostDiamonds > 0
+                                ? (lang === 'uk' ? `Витратиться: ${effectiveBoostDiamonds} 💎` : `Потратится: ${effectiveBoostDiamonds} 💎`)
+                                : (lang === 'uk' ? 'Буст не обрано (0 💎)' : 'Буст не выбран (0 💎)')}
+                            </span>
+                            <span>
+                              {lang === 'uk' ? `Залишиться: ${state.diamonds - effectiveBoostDiamonds} 💎` : `Останется: ${state.diamonds - effectiveBoostDiamonds} 💎`}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -5484,6 +5572,8 @@ export default function App() {
                           ? (lang === 'uk' ? 'Апгрейд у процесі…' : 'Апгрейд в процессе…')
                           : (state.skins?.owned || ['skin_classic']).includes(tgtSkin.id)
                           ? (lang === 'uk' ? 'Скін уже відкрито' : 'Скин уже открыт')
+                          : effectiveBoostDiamonds > 0
+                          ? (lang === 'uk' ? `Апгрейдити (${totalChance}%) • -${effectiveBoostDiamonds} 💎` : `Апгрейдить (${totalChance}%) • -${effectiveBoostDiamonds} 💎`)
                           : (lang === 'uk' ? `Апгрейдити (${totalChance}%)` : `Апгрейдить (${totalChance}%)`)}
                       </span>
                     </button>
