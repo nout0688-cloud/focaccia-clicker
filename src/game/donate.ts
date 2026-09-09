@@ -1,4 +1,6 @@
 export const MONOBANK_JAR_URL = 'https://send.monobank.ua/jar/9jugPBu9om';
+export const SUPPORT_USERNAME = 'hhimd';
+export const SUPPORT_URL = 'https://t.me/hhimd';
 
 export interface DonatePackage {
   id: string;
@@ -12,6 +14,36 @@ export interface DonatePackage {
   emoji: string;
   badge?: string;
   isStarter?: boolean;
+}
+
+export interface CartItem {
+  packageId: string;
+  count: number;
+}
+
+export interface JarOrderItem {
+  packageId: string;
+  title: string;
+  count: number;
+  priceUah: number;
+  diamonds: number;
+  emoji: string;
+  isStarter?: boolean;
+  isTip?: boolean;
+}
+
+export interface JarOrderRecord {
+  orderId: string;
+  amountUah: number;
+  diamonds: number;
+  isStarter?: boolean;
+  isTip?: boolean;
+  comment: string;
+  jarUrl: string;
+  title: string;
+  items?: JarOrderItem[];
+  createdAt: number;
+  status: 'pending' | 'completed' | 'rejected';
 }
 
 export const DONATE_PACKAGES: DonatePackage[] = [

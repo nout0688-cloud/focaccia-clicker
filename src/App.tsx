@@ -36,7 +36,16 @@ import {
   getShowcaseMetric,
 } from './game/cosmetics';
 import type { AvatarFrame, NameColorStyle, ShowcaseMetric } from './game/cosmetics';
-import { DONATE_PACKAGES, MONOBANK_JAR_URL, type DonatePackage } from './game/donate';
+import {
+  DONATE_PACKAGES,
+  MONOBANK_JAR_URL,
+  SUPPORT_URL,
+  SUPPORT_USERNAME,
+  type DonatePackage,
+  type CartItem,
+  type JarOrderRecord,
+  type JarOrderItem,
+} from './game/donate';
 import focacciaImg from './assets/focaccia.png';
 import goldenImg from './assets/golden.png';
 import monoGuideImg from './assets/mono-guide.jpg';
@@ -453,18 +462,39 @@ export default function App() {
   const [previewColor, setPreviewColor] = useState<string | null>(null);
   const [showPublicPreview, setShowPublicPreview] = useState(false);
   const [showDonateModal, setShowDonateModal] = useState(false);
+  const [donateTab, setDonateTab] = useState<'shop' | 'cart' | 'pending'>('shop');
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('focaccia_cart_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [savedOrders, setSavedOrders] = useState<JarOrderRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('focaccia_jar_orders_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('focaccia_cart_v1', JSON.stringify(cart));
+    } catch {}
+  }, [cart]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('focaccia_jar_orders_v1', JSON.stringify(savedOrders));
+    } catch {}
+  }, [savedOrders]);
+
   const [buyingPackageId, setBuyingPackageId] = useState<string | null>(null);
   const [tipAmount, setTipAmount] = useState<number>(25);
-  const [activeJarOrder, setActiveJarOrder] = useState<{
-    orderId: string;
-    amountUah: number;
-    diamonds: number;
-    isStarter?: boolean;
-    isTip?: boolean;
-    comment: string;
-    jarUrl: string;
-    title: string;
-  } | null>(null);
+  const [activeJarOrder, setActiveJarOrder] = useState<JarOrderRecord | null>(null);
   const [checkingOrderStatus, setCheckingOrderStatus] = useState(false);
   const [copiedOrderCode, setCopiedOrderCode] = useState(false);
   const [showMonoHelp, setShowMonoHelp] = useState(false);
@@ -2157,6 +2187,101 @@ export default function App() {
     return true;
   };
 
+  const openSupport = () => {
+    haptic.selection();
+    if ((window as any).Telegram?.WebApp?.openTelegramLink) {
+      (window as any).Telegram.WebApp.openTelegramLink(SUPPORT_URL);
+    } else {
+      window.open(SUPPORT_URL, '_blank');
+    }
+  };
+
+  const addToCart = (pkgId: string) => {
+    haptic.selection();
+    setCart((prev) => {
+      const existing = prev.find((item) => item.packageId === pkgId);
+      if (pkgId === 'starter_pack') {
+        if (existing) {
+          addToast(
+            lang === 'uk' ? 'ℹ️ Обмеження' : 'ℹ️ Ограничение',
+            lang === 'uk' ? 'Стартовий набір можна додати лише 1 раз' : 'Стартовый набор можно добавить только 1 раз',
+            '⚡'
+          );
+          return prev;
+        }
+        return [...prev, { packageId: pkgId, count: 1 }];
+      }
+      if (existing) {
+        return prev.map((item) =>
+          item.packageId === pkgId ? { ...item, count: Math.min(99, item.count + 1) } : item
+        );
+      }
+      return [...prev, { packageId: pkgId, count: 1 }];
+    });
+    addToast(
+      lang === 'uk' ? '🛒 Додано в кошик' : '🛒 Добавлено в корзину',
+      lang === 'uk' ? 'Товар збережено в кошику' : 'Товар сохранён в корзине',
+      '🛍️'
+    );
+  };
+
+  const updateCartCount = (pkgId: string, delta: number) => {
+    haptic.selection();
+    setCart((prev) => {
+      return prev
+        .map((item) => {
+          if (item.packageId === pkgId) {
+            const nextCount = item.count + delta;
+            return nextCount > 0 ? { ...item, count: nextCount } : null;
+          }
+          return item;
+        })
+        .filter(Boolean) as CartItem[];
+    });
+  };
+
+  const removeFromCart = (pkgId: string) => {
+    haptic.light();
+    setCart((prev) => prev.filter((item) => item.packageId !== pkgId));
+  };
+
+  const clearCart = () => {
+    haptic.light();
+    setCart([]);
+  };
+
+  const cancelOrder = (orderId: string) => {
+    haptic.light();
+    setSavedOrders((prev) => prev.filter((o) => o.orderId !== orderId));
+    if (activeJarOrder?.orderId === orderId) setActiveJarOrder(null);
+    addToast(
+      lang === 'uk' ? '🗑️ Замовлення скасовано' : '🗑️ Заказ отменён',
+      lang === 'uk' ? `Замовлення #${orderId} видалено зі списку` : `Заказ #${orderId} удалён из списка`,
+      'ℹ️'
+    );
+  };
+
+  const cartSummary = useMemo(() => {
+    let totalUah = 0;
+    let totalDiamonds = 0;
+    let hasStarter = false;
+    let hasTip = false;
+    let itemsCount = 0;
+
+    for (const it of cart) {
+      const pkg = DONATE_PACKAGES.find((p) => p.id === it.packageId);
+      if (pkg) {
+        totalUah += pkg.priceUah * it.count;
+        totalDiamonds += pkg.diamonds * it.count;
+        if (pkg.isStarter) hasStarter = true;
+        if (pkg.id === 'tip_dev') hasTip = true;
+        itemsCount += it.count;
+      }
+    }
+
+    return { totalUah, totalDiamonds, hasStarter, hasTip, itemsCount };
+  }, [cart]);
+
   const handleBuyMono = async (pkgId: string, customVal?: number) => {
     const curUserId = tgUser?.id || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id;
     const curUsername = tgUser?.username || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.username || '';
@@ -2196,7 +2321,7 @@ export default function App() {
         return;
       }
 
-      setActiveJarOrder({
+      const newOrder: JarOrderRecord = {
         orderId: data.orderId,
         amountUah: data.amountUah,
         diamonds: data.diamonds,
@@ -2205,7 +2330,14 @@ export default function App() {
         comment: data.comment,
         jarUrl: data.jarUrl || MONOBANK_JAR_URL,
         title: data.title,
-      });
+        items: data.items,
+        createdAt: data.createdAt || Date.now(),
+        status: 'pending',
+      };
+
+      setSavedOrders((prev) => [newOrder, ...prev.filter((o) => o.orderId !== newOrder.orderId)]);
+      setActiveJarOrder(newOrder);
+      setDonateTab('pending');
       haptic.success();
     } catch {
       addToast(
@@ -2219,62 +2351,160 @@ export default function App() {
     }
   };
 
-  const checkJarOrderStatus = async (isManual = false) => {
-    if (!activeJarOrder) return;
+  const handleCheckoutCart = async () => {
+    if (cart.length === 0) return;
+    const curUserId = tgUser?.id || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    const curUsername = tgUser?.username || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.username || '';
+    if (!curUserId) {
+      addToast(
+        lang === 'uk' ? '⚠️ Помилка' : '⚠️ Ошибка',
+        lang === 'uk' ? 'Не вдалося визначити Telegram ID' : 'Не удалось определить Telegram ID',
+        '❌',
+      );
+      return;
+    }
+
+    setBuyingPackageId('cart_checkout');
+    haptic.medium();
+
+    try {
+      const res = await fetch(`https://focaccia-bot.vercel.app/api/donate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'jar_order',
+          userId: String(curUserId),
+          username: curUsername,
+          cartItems: cart,
+        }),
+      });
+      const data = await res.json();
+
+      if (!data?.ok || !data?.orderId) {
+        addToast(
+          lang === 'uk' ? '⚠️ Помилка' : '⚠️ Ошибка',
+          data?.error || (lang === 'uk' ? 'Не вдалося створити замовлення' : 'Не удалось создать заказ'),
+          '❌',
+        );
+        haptic.error();
+        return;
+      }
+
+      const newOrder: JarOrderRecord = {
+        orderId: data.orderId,
+        amountUah: data.amountUah,
+        diamonds: data.diamonds,
+        isStarter: data.isStarter,
+        isTip: data.isTip,
+        comment: data.comment,
+        jarUrl: data.jarUrl || MONOBANK_JAR_URL,
+        title: data.title,
+        items: data.items,
+        createdAt: data.createdAt || Date.now(),
+        status: 'pending',
+      };
+
+      setSavedOrders((prev) => [newOrder, ...prev.filter((o) => o.orderId !== newOrder.orderId)]);
+      setActiveJarOrder(newOrder);
+      setCart([]);
+      setDonateTab('pending');
+      haptic.success();
+    } catch {
+      addToast(
+        lang === 'uk' ? '⚠️ Помилка' : '⚠️ Ошибка',
+        lang === 'uk' ? 'Помилка зв’язку з сервером' : 'Ошибка связи с сервером',
+        '❌',
+      );
+      haptic.error();
+    } finally {
+      setBuyingPackageId(null);
+    }
+  };
+
+  const awardOrderRewards = (order: { diamonds: number; isStarter?: boolean; isTip?: boolean }) => {
+    burstConfetti(['💎', '💖', '✨', '👑', '🎉']);
+    haptic.success();
+    const diamondsToAdd = order.diamonds || 0;
+
+    setState((p) => {
+      let next = { ...p, diamonds: (p.diamonds || 0) + diamondsToAdd };
+      if (order.isStarter) {
+        const curVip = p.vipUpgrades || [];
+        if (!curVip.includes('rolling_pin')) {
+          next = { ...next, vipUpgrades: [...curVip, 'rolling_pin'] };
+        }
+      }
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+
+    addToast(
+      lang === 'uk' ? '🎉 Оплату підтверджено!' : '🎉 Оплата подтверждена!',
+      lang === 'uk'
+        ? `Нараховано +${diamondsToAdd} 💎! Дякуємо за підтримку!`
+        : `Начислено +${diamondsToAdd} 💎! Спасибо за поддержку!`,
+      '💎',
+    );
+    reportSync();
+  };
+
+  const checkSingleOrder = async (orderId: string, isManual = false) => {
     if (isManual) setCheckingOrderStatus(true);
     const curUserId = tgUser?.id || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id;
 
     try {
       const res = await fetch(
-        `https://focaccia-bot.vercel.app/api/donate?action=check_order&orderId=${activeJarOrder.orderId}&userId=${curUserId || ''}`
+        `https://focaccia-bot.vercel.app/api/donate?action=check_order&orderId=${orderId}&userId=${curUserId || ''}`
       );
       const data = await res.json();
 
-      if (data?.ok && data.status === 'completed') {
-        burstConfetti(['💎', '💖', '✨', '👑', '🎉']);
-        haptic.success();
-        const diamondsToAdd = data.diamonds || activeJarOrder.diamonds || 0;
+      if (data?.ok) {
+        if (data.status === 'completed') {
+          const prevOrder = savedOrders.find((o) => o.orderId === orderId);
+          const wasPending = prevOrder?.status === 'pending';
 
-        setState((p) => {
-          let next = { ...p, diamonds: (p.diamonds || 0) + diamondsToAdd };
-          if (data.isStarter) {
-            const curVip = p.vipUpgrades || [];
-            if (!curVip.includes('rolling_pin')) {
-              next = { ...next, vipUpgrades: [...curVip, 'rolling_pin'] };
-            }
+          setSavedOrders((prev) =>
+            prev.map((o) => (o.orderId === orderId ? { ...o, status: 'completed' } : o))
+          );
+
+          if (activeJarOrder?.orderId === orderId) {
+            setActiveJarOrder((prev) => (prev ? { ...prev, status: 'completed' } : null));
           }
-          stateRef.current = next;
-          saveNow(next);
-          return next;
-        });
 
-        addToast(
-          lang === 'uk' ? '🎉 Оплату підтверджено!' : '🎉 Оплата подтверждена!',
-          lang === 'uk'
-            ? `Нараховано +${diamondsToAdd} 💎! Дякуємо за підтримку!`
-            : `Начислено +${diamondsToAdd} 💎! Спасибо за поддержку!`,
-          '💎',
-        );
-
-        setActiveJarOrder(null);
-        setShowDonateModal(false);
-        reportSync();
-      } else if (data?.ok && data.status === 'rejected') {
-        haptic.error();
-        addToast(
-          lang === 'uk' ? '❌ Замовлення відхилено' : '❌ Заказ отклонён',
-          lang === 'uk'
-            ? 'Кошти не надійшли на банку або невірний коментар'
-            : 'Средства не поступили на банку или неверный комментарий',
-          '⚠️',
-        );
-        setActiveJarOrder(null);
-      } else if (isManual) {
-        addToast(
-          lang === 'uk' ? '⏳ Очікуємо підтвердження' : '⏳ Ожидаем подтверждения',
-          lang === 'uk' ? 'Автор ще перевіряє оплату в додатку Monobank' : 'Автор ещё проверяет оплату в приложении Monobank',
-          '⏳',
-        );
+          if (wasPending) {
+            awardOrderRewards(data);
+          } else if (isManual) {
+            addToast(
+              lang === 'uk' ? '✅ Замовлення схвалено' : '✅ Заказ одобрен',
+              lang === 'uk' ? 'Нагороду вже було нараховано' : 'Награда уже была начислена',
+              '✅',
+            );
+          }
+        } else if (data.status === 'rejected') {
+          setSavedOrders((prev) =>
+            prev.map((o) => (o.orderId === orderId ? { ...o, status: 'rejected' } : o))
+          );
+          if (activeJarOrder?.orderId === orderId) {
+            setActiveJarOrder((prev) => (prev ? { ...prev, status: 'rejected' } : null));
+          }
+          if (isManual) {
+            haptic.error();
+            addToast(
+              lang === 'uk' ? '❌ Замовлення відхилено' : '❌ Заказ отклонён',
+              lang === 'uk'
+                ? 'Кошти не надійшли на банку або невірний коментар'
+                : 'Средства не поступили на банку или неверный комментарий',
+              '⚠️',
+            );
+          }
+        } else if (isManual) {
+          addToast(
+            lang === 'uk' ? '⏳ Очікуємо підтвердження' : '⏳ Ожидаем подтверждения',
+            lang === 'uk' ? 'Автор ще перевіряє оплату в додатку Monobank' : 'Автор ещё проверяет оплату в приложении Monobank',
+            '⏳',
+          );
+        }
       }
     } catch {
       if (isManual) {
@@ -2290,12 +2520,20 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!activeJarOrder) return;
+    const pending = savedOrders.filter((o) => o.status === 'pending');
+    if (pending.length === 0 && (!activeJarOrder || activeJarOrder.status !== 'pending')) return;
+
     const interval = setInterval(() => {
-      checkJarOrderStatus(false);
-    }, 4000);
+      for (const ord of pending) {
+        checkSingleOrder(ord.orderId, false);
+      }
+      if (activeJarOrder && activeJarOrder.status === 'pending' && !pending.some((o) => o.orderId === activeJarOrder.orderId)) {
+        checkSingleOrder(activeJarOrder.orderId, false);
+      }
+    }, 4500);
+
     return () => clearInterval(interval);
-  }, [activeJarOrder]);
+  }, [savedOrders, activeJarOrder]);
 
   const copyOrderCode = (code: string) => {
     try {
@@ -2903,33 +3141,42 @@ export default function App() {
         </div>
       )}
 
-      {/* ===== 💎 TELEGRAM STARS DONATE / DIAMOND STORE MODAL ===== */}
+      {/* ===== 💎 MONOBANK DONATE / DIAMOND STORE MODAL ===== */}
       {showDonateModal && (
         <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
           <div className="relative w-full max-w-lg bg-[#0c0905] border-t sm:border border-cyan-500/30 rounded-t-3xl sm:rounded-3xl max-h-[90vh] flex flex-col shadow-[0_0_50px_rgba(6,182,212,0.2)] overflow-hidden">
             {/* Header */}
-            <div className="shrink-0 px-5 py-4 border-b border-cyan-500/20 bg-gradient-to-r from-cyan-950/60 via-[#0c0905] to-blue-950/60 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center text-xl shadow-[0_0_15px_rgba(6,182,212,0.4)]">
+            <div className="shrink-0 px-4 py-3 border-b border-cyan-500/20 bg-gradient-to-r from-cyan-950/60 via-[#0c0905] to-blue-950/60 flex items-center justify-between">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center text-lg shadow-[0_0_15px_rgba(6,182,212,0.4)] shrink-0">
                   💎
                 </div>
-                <div>
-                  <h3 className="text-base font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-white to-amber-200">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-white to-amber-200 truncate">
                     {t.donateTitle || '💎 Банк Діамантів'}
                   </h3>
-                  <p className="text-[11px] text-emerald-300/80 font-medium">
-                    {lang === 'uk' ? 'Офіційна підтримка гри через Банку Monobank 💳' : 'Официальная поддержка игры через Банку Monobank 💳'}
+                  <p className="text-[10px] text-emerald-300/80 font-medium truncate">
+                    {lang === 'uk' ? 'Банка Monobank 💳' : 'Банка Monobank 💳'}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={openSupport}
+                  className="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 hover:text-cyan-200 flex items-center gap-1 text-xs font-bold border border-cyan-500/35 transition active:scale-95 cursor-pointer shadow-sm"
+                  title="Підтримка @hhimd"
+                >
+                  <span>💬</span>
+                  <span className="hidden xs:inline">@{SUPPORT_USERNAME}</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => { setShowMonoHelp(true); haptic.selection(); }}
-                  className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-emerald-200 flex items-center gap-1.5 text-xs font-bold border border-emerald-500/30 transition active:scale-95 cursor-pointer shadow-sm"
+                  className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-emerald-200 flex items-center gap-1 text-xs font-bold border border-emerald-500/30 transition active:scale-95 cursor-pointer shadow-sm"
                 >
                   <span>❓</span>
-                  <span>{lang === 'uk' ? 'Допомога' : 'Помощь'}</span>
+                  <span className="hidden xs:inline">{lang === 'uk' ? 'Допомога' : 'Помощь'}</span>
                 </button>
                 <button
                   type="button"
@@ -2941,115 +3188,71 @@ export default function App() {
               </div>
             </div>
 
-            {/* Content Body */}
-            {activeJarOrder ? (
-              /* ===== PENDING JAR ORDER SCREEN ===== */
-              <div className="p-4 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-950/50 via-[#0c0905] to-teal-950/40 border border-emerald-500/40 text-center space-y-3">
-                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-2xl">
-                    🏦
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-black text-emerald-200">
-                      {lang === 'uk' ? 'Оплата через Банку Monobank' : 'Оплата через Банку Monobank'}
-                    </h4>
-                    <p className="text-xs text-white/70 mt-1">
-                      {activeJarOrder.title} ➔ <b className="text-cyan-300">+{activeJarOrder.diamonds} 💎</b>
-                    </p>
-                  </div>
+            {/* Navigation Tabs (Магазин, Кошик, Очікують) */}
+            <div className="shrink-0 px-3 pt-2.5 pb-2 border-b border-white/5 flex gap-1.5 bg-black/40">
+              <button
+                type="button"
+                onClick={() => { setDonateTab('shop'); haptic.selection(); }}
+                className={cn(
+                  'flex-1 py-1.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer',
+                  donateTab === 'shop'
+                    ? 'bg-gradient-to-r from-cyan-500/30 to-blue-500/30 text-cyan-200 border border-cyan-400/50 shadow-sm'
+                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                )}
+              >
+                <span>🛍️</span>
+                <span>{t.donateTabShop || 'Товари'}</span>
+              </button>
 
-                  <div className="py-2 px-4 rounded-xl bg-black/40 border border-emerald-500/30 inline-block">
-                    <span className="text-xs text-white/60 mr-1.5">{lang === 'uk' ? 'Сума до сплати:' : 'Сумма к оплате:'}</span>
-                    <span className="text-lg font-black text-emerald-400">{activeJarOrder.amountUah} ₴</span>
-                  </div>
+              <button
+                type="button"
+                onClick={() => { setDonateTab('cart'); haptic.selection(); }}
+                className={cn(
+                  'flex-1 py-1.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer relative',
+                  donateTab === 'cart'
+                    ? 'bg-gradient-to-r from-pink-500/30 to-rose-500/30 text-pink-200 border border-pink-400/50 shadow-sm'
+                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                )}
+              >
+                <span>🛒</span>
+                <span>{t.donateTabCart || 'Кошик'}</span>
+                {cartSummary.itemsCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-pink-500 text-white font-mono text-[9px] font-black leading-none shadow-sm">
+                    {cartSummary.itemsCount}
+                  </span>
+                )}
+              </button>
 
-                  {/* Order Code Box */}
-                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-left space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-amber-300">
-                        {lang === 'uk' ? '⚠️ Коментар до платежу (ОБОВ’ЯЗКОВО):' : '⚠️ Комментарий к платежу (ОБЯЗАТЕЛЬНО):'}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 font-mono font-black text-base text-amber-200 bg-black/50 px-3 py-2 rounded-lg border border-amber-500/30 tracking-wider text-center select-all">
-                        {activeJarOrder.comment}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => copyOrderCode(activeJarOrder.comment)}
-                        className={cn(
-                          'px-3 py-2 rounded-lg font-bold text-xs transition active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5',
-                          copiedOrderCode
-                            ? 'bg-emerald-500 text-emerald-950 font-black'
-                            : 'bg-amber-400 text-amber-950 hover:bg-amber-300'
-                        )}
-                      >
-                        <span>{copiedOrderCode ? '✅' : '📋'}</span>
-                        <span>{copiedOrderCode ? (lang === 'uk' ? 'Скопійовано!' : 'Скопировано!') : (lang === 'uk' ? 'Копіювати' : 'Копировать')}</span>
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-amber-200/70 leading-relaxed">
-                      {lang === 'uk'
-                        ? 'Вставте цей номер у коментар при поповненні Банки, щоб автор одразу підтвердив вашу нагороду!'
-                        : 'Вставьте этот номер в комментарий при пополнении Банки, чтобы автор сразу подтвердил вашу награду!'}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => { setShowMonoHelp(true); haptic.selection(); }}
-                      className="w-full py-1.5 px-2.5 rounded-lg bg-amber-400/20 hover:bg-amber-400/30 border border-amber-400/40 text-amber-200 text-[11px] font-bold transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
-                    >
-                      <span>❓</span>
-                      <span>{lang === 'uk' ? 'Куди вводити код? (Скріншот-підказка)' : 'Куда вводить код? (Скриншот-подсказка)'}</span>
-                    </button>
-                  </div>
+              <button
+                type="button"
+                onClick={() => { setDonateTab('pending'); haptic.selection(); }}
+                className={cn(
+                  'flex-1 py-1.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer relative',
+                  donateTab === 'pending'
+                    ? 'bg-gradient-to-r from-amber-500/30 to-yellow-500/30 text-amber-200 border border-amber-400/50 shadow-sm'
+                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                )}
+              >
+                <span>⏳</span>
+                <span>{t.donateTabPending || 'Очікують'}</span>
+                {savedOrders.filter((o) => o.status === 'pending').length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-amber-400 text-amber-950 font-mono text-[9px] font-black leading-none animate-pulse shadow-sm">
+                    {savedOrders.filter((o) => o.status === 'pending').length}
+                  </span>
+                )}
+              </button>
+            </div>
 
-                  {/* Action buttons */}
-                  <div className="space-y-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => openMonobankJar(activeJarOrder.jarUrl)}
-                      className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black text-sm transition active:scale-95 cursor-pointer shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 hover:brightness-110"
-                    >
-                      <span>🏦</span>
-                      <span>{lang === 'uk' ? 'Відкрити Банку Monobank' : 'Открыть Банку Monobank'}</span>
-                      <span>↗</span>
-                    </button>
-
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => checkJarOrderStatus(true)}
-                        disabled={checkingOrderStatus}
-                        className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs border border-white/15 transition active:scale-95 cursor-pointer flex items-center justify-center gap-2"
-                      >
-                        <span className={cn(checkingOrderStatus && 'animate-spin')}>🔄</span>
-                        <span>{checkingOrderStatus ? (lang === 'uk' ? 'Перевіряємо…' : 'Проверяем…') : (lang === 'uk' ? 'Я оплатив (перевірити)' : 'Я оплатил (проверить)')}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setActiveJarOrder(null); haptic.light(); }}
-                        className="py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 font-bold text-xs border border-white/10 transition active:scale-95 cursor-pointer"
-                      >
-                        {lang === 'uk' ? 'Назад' : 'Назад'}
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-center gap-1.5 text-[10px] text-emerald-400/80 pt-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                      <span>{lang === 'uk' ? 'Автоматична перевірка кожні 4 сек...' : 'Автоматическая проверка каждые 4 сек...'}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* ===== MONOBANK SHOP ===== */
+            {/* Modal Body Tabs */}
+            {donateTab === 'shop' && (
+              /* ===== TAB 1: SHOP PRODUCTS ===== */
               <div className="p-4 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
                 <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between gap-2 text-[11px] text-emerald-300/90">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 min-w-0 truncate">
                     <span>💳</span>
-                    <span>
+                    <span className="truncate">
                       {lang === 'uk'
-                        ? 'Оплата на Банку Monobank. Скопіюйте код та вкажіть у коментарі!'
+                        ? 'Оплата на Банку Monobank. Скопіюйте код і вкажіть у коментарі!'
                         : 'Оплата на Банку Monobank. Скопируйте код и укажите в комментарии!'}
                     </span>
                   </div>
@@ -3068,6 +3271,7 @@ export default function App() {
                     const desc = lang === 'uk' ? pkg.descUk : pkg.descRu;
                     const isBuying = buyingPackageId === pkg.id;
                     const isStarter = !!pkg.isStarter;
+                    const inCartItem = cart.find((it) => it.packageId === pkg.id);
 
                     return (
                       <div
@@ -3102,29 +3306,71 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between pt-1 border-t border-white/5 mt-1">
+                        <div className="flex items-center justify-between pt-1 border-t border-white/5 mt-1 gap-2">
                           <div className="text-xs font-black text-cyan-300 flex items-center gap-1">
                             <span>+{pkg.diamonds}</span>
                             <span>💎</span>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleBuyMono(pkg.id)}
-                            disabled={!!buyingPackageId}
-                            className={cn(
-                              'px-3.5 py-1.5 rounded-xl font-black text-xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer shadow-md',
-                              isStarter
-                                ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 hover:brightness-110 shadow-amber-500/20'
-                                : 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:brightness-110 shadow-emerald-500/25',
-                              buyingPackageId && 'opacity-60 cursor-not-allowed'
-                            )}
-                          >
-                            {isBuying ? (
-                              <span>{t.donateLoading || 'Замовлення…'}</span>
+
+                          <div className="flex items-center gap-1.5">
+                            {/* In-Cart quantity control or Add-to-cart button */}
+                            {inCartItem ? (
+                              <div className="flex items-center gap-1 bg-black/60 rounded-xl p-0.5 border border-pink-500/40">
+                                <button
+                                  type="button"
+                                  onClick={() => updateCartCount(pkg.id, -1)}
+                                  className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95"
+                                >
+                                  -
+                                </button>
+                                <span className="text-xs font-black text-pink-300 px-1 font-mono">
+                                  {inCartItem.count}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateCartCount(pkg.id, 1)}
+                                  disabled={isStarter}
+                                  className={cn(
+                                    'w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95',
+                                    isStarter && 'opacity-30 cursor-not-allowed'
+                                  )}
+                                  title={isStarter ? 'Максимум 1' : 'Додати ще'}
+                                >
+                                  +
+                                </button>
+                              </div>
                             ) : (
-                              <span>{pkg.priceUah} ₴</span>
+                              <button
+                                type="button"
+                                onClick={() => addToCart(pkg.id)}
+                                className="px-2.5 py-1.5 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border border-pink-500/40 font-bold text-xs active:scale-95 transition cursor-pointer flex items-center gap-1"
+                                title="Додати в кошик"
+                              >
+                                <span>🛒</span>
+                                <span className="text-[10px] font-black">+</span>
+                              </button>
                             )}
-                          </button>
+
+                            {/* Direct Buy button */}
+                            <button
+                              type="button"
+                              onClick={() => handleBuyMono(pkg.id)}
+                              disabled={!!buyingPackageId}
+                              className={cn(
+                                'px-3 py-1.5 rounded-xl font-black text-xs transition-all active:scale-95 flex items-center gap-1 cursor-pointer shadow-md',
+                                isStarter
+                                  ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 hover:brightness-110 shadow-amber-500/20'
+                                  : 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:brightness-110 shadow-emerald-500/25',
+                                buyingPackageId && 'opacity-60 cursor-not-allowed'
+                              )}
+                            >
+                              {isBuying ? (
+                                <span>...</span>
+                              ) : (
+                                <span>{pkg.priceUah} ₴</span>
+                              )}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -3209,15 +3455,446 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Bottom Guarantee notice */}
-                <div className="text-center pt-2 pb-1">
-                  <p className="text-[10px] text-amber-400/50 flex items-center justify-center gap-1">
-                    <span>🔒</span>
-                    <span>{t.donateThanks || 'Дякуємо за підтримку Фокача Клікер! ❤️'}</span>
-                  </p>
-                </div>
+                {/* Cart bottom notification banner if items present */}
+                {cartSummary.itemsCount > 0 && (
+                  <div className="sticky bottom-0 p-3 rounded-2xl bg-gradient-to-r from-pink-950/90 via-rose-950/90 to-[#0c0905] border border-pink-500/40 flex items-center justify-between gap-2 shadow-[0_0_25px_rgba(236,72,153,0.25)] animate-slide-up backdrop-blur-md">
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-pink-200 flex items-center gap-1.5">
+                        <span>🛒</span>
+                        <span>{lang === 'uk' ? `У кошику ${cartSummary.itemsCount} тов.` : `В корзине ${cartSummary.itemsCount} тов.`}</span>
+                        <span className="text-white/40">•</span>
+                        <span className="text-emerald-300 font-black">{cartSummary.totalUah} ₴</span>
+                      </div>
+                      <div className="text-[10px] text-cyan-300 font-bold">
+                        +{cartSummary.totalDiamonds} 💎
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setDonateTab('cart'); haptic.selection(); }}
+                      className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:brightness-110 text-white text-xs font-black active:scale-95 transition cursor-pointer shadow-md shadow-pink-500/20 flex items-center gap-1"
+                    >
+                      <span>{lang === 'uk' ? 'До кошика' : 'В корзину'}</span>
+                      <span>➔</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
+
+            {donateTab === 'cart' && (
+              /* ===== TAB 2: SHOPPING CART ===== */
+              <div className="p-4 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
+                {cart.length === 0 ? (
+                  <div className="py-12 text-center space-y-3 flex flex-col items-center justify-center">
+                    <div className="w-16 h-16 rounded-3xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-3xl">
+                      🛒
+                    </div>
+                    <div>
+                      <div className="text-sm font-black text-pink-200">
+                        {t.cartEmpty || 'Кошик порожній'}
+                      </div>
+                      <p className="text-xs text-white/50 max-w-xs mt-1">
+                        {t.cartEmptyDesc || 'Оберіть товари в магазині та додайте їх до кошика!'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setDonateTab('shop'); haptic.selection(); }}
+                      className="px-4 py-2 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border border-pink-500/40 text-xs font-bold transition active:scale-95 cursor-pointer"
+                    >
+                      🛍️ {lang === 'uk' ? 'Перейти до магазину' : 'Перейти в магазин'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-xs font-bold text-white/70 px-1">
+                      <span>{lang === 'uk' ? 'Товари в замовленні:' : 'Товары в заказе:'}</span>
+                      <button
+                        type="button"
+                        onClick={clearCart}
+                        className="text-pink-400 hover:text-pink-300 text-[11px] underline cursor-pointer"
+                      >
+                        {lang === 'uk' ? 'Очистити все' : 'Очистить всё'}
+                      </button>
+                    </div>
+
+                    {/* Cart Items List */}
+                    <div className="space-y-2">
+                      {cart.map((item) => {
+                        const pkg = DONATE_PACKAGES.find((p) => p.id === item.packageId);
+                        if (!pkg) return null;
+                        const title = lang === 'uk' ? pkg.titleUk : pkg.titleRu;
+                        const isStarter = !!pkg.isStarter;
+
+                        return (
+                          <div
+                            key={item.packageId}
+                            className="p-3 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between gap-3"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="text-2xl p-2 rounded-xl bg-black/40 border border-white/10 shrink-0">
+                                {pkg.emoji}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-black text-amber-100 truncate">
+                                  {title}
+                                </div>
+                                <div className="text-[11px] text-cyan-300 font-bold mt-0.5">
+                                  +{pkg.diamonds * item.count} 💎
+                                </div>
+                                <div className="text-[10px] text-white/50">
+                                  {pkg.priceUah} ₴ / шт.
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <div className="flex items-center gap-1 bg-black/60 rounded-xl p-1 border border-white/10">
+                                <button
+                                  type="button"
+                                  onClick={() => updateCartCount(item.packageId, -1)}
+                                  className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95"
+                                >
+                                  -
+                                </button>
+                                <span className="text-xs font-black text-pink-300 px-1.5 font-mono">
+                                  {item.count}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateCartCount(item.packageId, 1)}
+                                  disabled={isStarter}
+                                  className={cn(
+                                    'w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95',
+                                    isStarter && 'opacity-30 cursor-not-allowed'
+                                  )}
+                                >
+                                  +
+                                </button>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => removeFromCart(item.packageId)}
+                                className="w-8 h-8 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-300 flex items-center justify-center text-xs cursor-pointer active:scale-95 transition"
+                                title="Видалити"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Cart Summary Card */}
+                    <div className="p-4 rounded-2xl bg-gradient-to-br from-pink-950/40 via-[#0c0905] to-rose-950/30 border border-pink-500/30 space-y-2.5">
+                      <div className="text-xs font-bold text-white/70">
+                        {lang === 'uk' ? 'Підсумок замовлення:' : 'Итог заказа:'}
+                      </div>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between text-white/80">
+                          <span>{lang === 'uk' ? 'Товарів у кошику:' : 'Товаров в корзине:'}</span>
+                          <span className="font-bold">{cartSummary.itemsCount} шт.</span>
+                        </div>
+                        <div className="flex items-center justify-between text-cyan-300 font-bold">
+                          <span>{lang === 'uk' ? 'Разом діамантів:' : 'Всего алмазов:'}</span>
+                          <span>+{cartSummary.totalDiamonds} 💎</span>
+                        </div>
+                        {cartSummary.hasStarter && (
+                          <div className="flex items-center justify-between text-amber-300 font-bold text-[11px]">
+                            <span>{lang === 'uk' ? 'Бонус набору:' : 'Бонус набора:'}</span>
+                            <span>🪵 Бойова скалка</span>
+                          </div>
+                        )}
+                        <div className="pt-2 border-t border-white/10 flex items-center justify-between text-sm font-black">
+                          <span className="text-white">{t.cartTotal || 'Всього до сплати:'}</span>
+                          <span className="text-emerald-400 text-lg">{cartSummary.totalUah} ₴</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Checkout Button */}
+                    <button
+                      type="button"
+                      onClick={handleCheckoutCart}
+                      disabled={buyingPackageId === 'cart_checkout'}
+                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white font-black text-sm transition active:scale-95 cursor-pointer shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 hover:brightness-110"
+                    >
+                      <span>🏦</span>
+                      <span>
+                        {buyingPackageId === 'cart_checkout'
+                          ? (lang === 'uk' ? 'Створення замовлення…' : 'Создание заказа…')
+                          : (lang === 'uk' ? `Оформити замовлення (${cartSummary.totalUah} ₴)` : `Оформить заказ (${cartSummary.totalUah} ₴)`)}
+                      </span>
+                      <span>➔</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {donateTab === 'pending' && (
+              /* ===== TAB 3: PENDING & COMPLETED ORDERS ===== */
+              <div className="p-4 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
+                {/* Notice banner */}
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-1 text-[11px] text-amber-200/90">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                      <span>ℹ️</span>
+                      <span>{lang === 'uk' ? 'Як працює підтвердження:' : 'Как работает подтверждение:'}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={openSupport}
+                      className="text-[10px] text-cyan-300 underline font-bold cursor-pointer"
+                    >
+                      💬 @{SUPPORT_USERNAME}
+                    </button>
+                  </div>
+                  <p className="leading-relaxed">
+                    {lang === 'uk'
+                      ? 'Автор перевіряє оплату в Monobank за номером замовлення та натискає «Підтвердити». Нагорода зараховується автоматично!'
+                      : 'Автор проверяет оплату в Monobank по номеру заказа и нажимает «Подтвердить». Награда зачисляется автоматически!'}
+                  </p>
+                </div>
+
+                {savedOrders.length === 0 ? (
+                  <div className="py-12 text-center space-y-3 flex flex-col items-center justify-center">
+                    <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-3xl">
+                      ⏳
+                    </div>
+                    <div>
+                      <div className="text-sm font-black text-amber-200">
+                        {t.pendingNone || 'Немає замовлень на перевірці'}
+                      </div>
+                      <p className="text-xs text-white/50 max-w-xs mt-1">
+                        {t.pendingNoneDesc || 'Оберіть товари та оплатіть на Банку Monobank.'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setDonateTab('shop'); haptic.selection(); }}
+                      className="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-xs font-bold transition active:scale-95 cursor-pointer"
+                    >
+                      🛍️ {lang === 'uk' ? 'Перейти до магазину' : 'Перейти в магазин'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3.5">
+                    {savedOrders.map((ord) => {
+                      const isPending = ord.status === 'pending';
+                      const isCompleted = ord.status === 'completed';
+                      const isRejected = ord.status === 'rejected';
+
+                      return (
+                        <div
+                          key={ord.orderId}
+                          className={cn(
+                            'rounded-2xl p-4 border transition-all space-y-3',
+                            isPending
+                              ? 'bg-gradient-to-br from-amber-950/40 via-[#0c0905] to-yellow-950/30 border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)]'
+                              : isCompleted
+                                ? 'bg-gradient-to-br from-emerald-950/30 to-[#0c0905] border-emerald-500/30'
+                                : 'bg-gradient-to-br from-red-950/30 to-[#0c0905] border-red-500/30'
+                          )}
+                        >
+                          {/* Order Header */}
+                          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+                            <div>
+                              <div className="text-xs font-black text-amber-200 font-mono flex items-center gap-1.5">
+                                <span>🧾</span>
+                                <span>#{ord.orderId}</span>
+                              </div>
+                              <div className="text-[10px] text-white/40">
+                                {new Date(ord.createdAt).toLocaleDateString(lang === 'uk' ? 'uk-UA' : 'ru-RU', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Status Badge */}
+                            <div>
+                              {isPending && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[10px] font-bold animate-pulse">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                  <span>{lang === 'uk' ? 'Очікує схвалення' : 'Ожидает одобрения'}</span>
+                                </span>
+                              )}
+                              {isCompleted && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-[10px] font-bold">
+                                  <span>✅</span>
+                                  <span>{lang === 'uk' ? 'Схвалено' : 'Одобрено'}</span>
+                                </span>
+                              )}
+                              {isRejected && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-500/20 border border-red-400/50 text-red-300 text-[10px] font-bold">
+                                  <span>❌</span>
+                                  <span>{lang === 'uk' ? 'Відхилено' : 'Отклонено'}</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Order Contents */}
+                          <div className="space-y-1">
+                            <div className="text-xs font-bold text-amber-100">
+                              {ord.title}
+                            </div>
+                            {ord.items && ord.items.length > 1 && (
+                              <div className="text-[10px] text-amber-200/70 space-y-0.5 pl-2 border-l border-amber-500/30">
+                                {ord.items.map((it, idx) => (
+                                  <div key={idx}>
+                                    • {it.count}x {it.title} ({it.priceUah} ₴ ➔ +{it.diamonds} 💎)
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between pt-1 text-xs font-bold">
+                              <span className="text-cyan-300">+{ord.diamonds} 💎</span>
+                              <span className="text-emerald-400 font-black">{ord.amountUah} ₴</span>
+                            </div>
+                          </div>
+
+                          {/* Interactive Area for Pending Orders */}
+                          {isPending && (
+                            <div className="space-y-2 pt-1 border-t border-white/10">
+                              {/* Order Code Box */}
+                              <div className="p-2.5 rounded-xl bg-black/50 border border-amber-500/30 space-y-1.5">
+                                <div className="text-[10px] font-bold text-amber-300">
+                                  {lang === 'uk' ? '⚠️ Коментар до платежу (ОБОВ’ЯЗКОВО):' : '⚠️ Комментарий к платежу (ОБЯЗАТЕЛЬНО):'}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 font-mono font-black text-sm text-amber-200 bg-black/60 px-2.5 py-1.5 rounded-lg border border-amber-500/30 tracking-wider text-center select-all">
+                                    {ord.comment}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => copyOrderCode(ord.comment)}
+                                    className={cn(
+                                      'px-3 py-1.5 rounded-lg font-bold text-xs transition active:scale-95 cursor-pointer shrink-0 flex items-center gap-1',
+                                      copiedOrderCode
+                                        ? 'bg-emerald-500 text-emerald-950 font-black'
+                                        : 'bg-amber-400 text-amber-950 hover:bg-amber-300'
+                                    )}
+                                  >
+                                    <span>{copiedOrderCode ? '✅' : '📋'}</span>
+                                    <span>{copiedOrderCode ? (lang === 'uk' ? 'Скопійовано!' : 'Скопировано!') : (lang === 'uk' ? 'Копіювати' : 'Копировать')}</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Buttons */}
+                              <button
+                                type="button"
+                                onClick={() => openMonobankJar(ord.jarUrl)}
+                                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black text-xs transition active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20 flex items-center justify-center gap-1.5 hover:brightness-110"
+                              >
+                                <span>🏦</span>
+                                <span>{lang === 'uk' ? 'Відкрити Банку Monobank' : 'Открыть Банку Monobank'}</span>
+                                <span>↗</span>
+                              </button>
+
+                              <div className="grid grid-cols-2 gap-2 pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => checkSingleOrder(ord.orderId, true)}
+                                  disabled={checkingOrderStatus}
+                                  className="py-2 px-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-[11px] border border-white/15 transition active:scale-95 cursor-pointer flex items-center justify-center gap-1"
+                                >
+                                  <span className={cn(checkingOrderStatus && 'animate-spin')}>🔄</span>
+                                  <span>{checkingOrderStatus ? '...' : (lang === 'uk' ? 'Перевірити статус' : 'Проверить статус')}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => { setShowMonoHelp(true); haptic.selection(); }}
+                                  className="py-2 px-2.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/35 font-bold text-[11px] transition active:scale-95 cursor-pointer flex items-center justify-center gap-1"
+                                >
+                                  <span>❓</span>
+                                  <span>{lang === 'uk' ? 'Підказка' : 'Подсказка'}</span>
+                                </button>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-1 text-[10px]">
+                                <button
+                                  type="button"
+                                  onClick={openSupport}
+                                  className="text-cyan-400 hover:text-cyan-300 font-medium flex items-center gap-1 underline cursor-pointer"
+                                >
+                                  <span>💬</span>
+                                  <span>{lang === 'uk' ? 'Підтримка @hhimd' : 'Поддержка @hhimd'}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => cancelOrder(ord.orderId)}
+                                  className="text-red-400/70 hover:text-red-300 underline cursor-pointer"
+                                >
+                                  {lang === 'uk' ? 'Скасувати замовлення' : 'Отменить заказ'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Completed actions */}
+                          {isCompleted && (
+                            <div className="flex items-center justify-between pt-1 border-t border-emerald-500/20 text-[11px] text-emerald-300/90 font-medium">
+                              <span>✅ {lang === 'uk' ? 'Нагорода на вашому акаунті!' : 'Награда на вашем аккаунте!'}</span>
+                              <button
+                                type="button"
+                                onClick={() => cancelOrder(ord.orderId)}
+                                className="text-white/40 hover:text-white/70 text-[10px] underline cursor-pointer"
+                              >
+                                {lang === 'uk' ? 'Приховати' : 'Скрыть'}
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Rejected actions */}
+                          {isRejected && (
+                            <div className="flex items-center justify-between pt-1 border-t border-red-500/20 text-[11px]">
+                              <button
+                                type="button"
+                                onClick={openSupport}
+                                className="text-cyan-400 hover:text-cyan-300 underline cursor-pointer font-bold"
+                              >
+                                💬 {lang === 'uk' ? 'Написати в підтримку @hhimd' : 'Написать в поддержку @hhimd'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => cancelOrder(ord.orderId)}
+                                className="text-white/40 hover:text-white/70 text-[10px] underline cursor-pointer"
+                              >
+                                {lang === 'uk' ? 'Видалити' : 'Удалить'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Bottom Guarantee notice */}
+            <div className="text-center pt-2 pb-2 px-3 border-t border-white/5 bg-black/40 flex items-center justify-between text-[10px] text-amber-400/50">
+              <span className="flex items-center gap-1">
+                <span>🔒</span>
+                <span>{t.donateThanks || 'Дякуємо за підтримку! ❤️'}</span>
+              </span>
+              <button
+                type="button"
+                onClick={openSupport}
+                className="text-cyan-400 hover:text-cyan-300 font-bold underline cursor-pointer flex items-center gap-1"
+              >
+                <span>💬</span>
+                <span>@{SUPPORT_USERNAME}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -3271,22 +3948,24 @@ export default function App() {
       {profileModalOpen && (
         <div className="fixed inset-0 z-[65] bg-[#0c0905] text-amber-100 flex flex-col overflow-hidden select-none safe-top safe-bottom animate-fade-in">
           {/* Top Bar Header */}
-          <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-3 py-2.5 grid grid-cols-[auto_1fr_auto] items-center gap-2">
+          <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-3 py-2.5 flex items-center justify-between gap-2 relative">
             <button
               type="button"
               onClick={() => { setProfileModalOpen(false); setPreviewFrame(null); setPreviewColor(null); haptic.light(); }}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm shrink-0"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm shrink-0 z-10"
             >
               <span>←</span>
               <span>{lang === 'uk' ? 'Назад' : 'Назад'}</span>
             </button>
 
-            <div className="flex items-center justify-center gap-1.5 font-black text-amber-100 text-xs sm:text-sm whitespace-nowrap min-w-0 text-center truncate">
-              <span>👨‍🍳</span>
-              <span className="truncate">{t.profileTitle}</span>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-20">
+              <div className="flex items-center gap-1.5 font-black text-amber-100 text-xs sm:text-sm whitespace-nowrap truncate pointer-events-auto">
+                <span>👨‍🍳</span>
+                <span className="truncate">{t.profileTitle}</span>
+              </div>
             </div>
 
-            <div className="flex items-center justify-end gap-1.5 shrink-0">
+            <div className="flex items-center justify-end gap-1.5 shrink-0 z-10">
               <button
                 type="button"
                 onClick={() => { setShowPublicPreview(true); haptic.light(); }}
@@ -4091,22 +4770,24 @@ export default function App() {
       {viewingProfile !== null && (
         <div className="fixed inset-0 z-[65] bg-[#0c0905] text-amber-100 flex flex-col overflow-hidden select-none safe-top safe-bottom animate-fade-in">
           {/* Header */}
-          <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-3 py-2.5 grid grid-cols-[auto_1fr_auto] items-center gap-2">
+          <div className="sticky top-0 z-30 shrink-0 bg-[#0c0905]/95 backdrop-blur-md border-b border-amber-500/20 px-3 py-2.5 flex items-center justify-between gap-2 relative">
             <button
               type="button"
               onClick={() => { setViewingProfile(null); haptic.light(); }}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm shrink-0"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-black border border-amber-500/30 active:scale-95 transition-all cursor-pointer shadow-sm shrink-0 z-10"
             >
               <span>←</span>
               <span>{lang === 'uk' ? 'Назад' : 'Назад'}</span>
             </button>
 
-            <div className="flex items-center justify-center gap-1.5 font-black text-amber-100 text-xs sm:text-sm whitespace-nowrap min-w-0 text-center truncate">
-              <span>👤</span>
-              <span className="truncate">{lang === 'uk' ? 'Акаунт гравця' : 'Аккаунт игрока'}</span>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none px-20">
+              <div className="flex items-center gap-1.5 font-black text-amber-100 text-xs sm:text-sm whitespace-nowrap truncate pointer-events-auto">
+                <span>👤</span>
+                <span className="truncate">{lang === 'uk' ? 'Акаунт гравця' : 'Аккаунт игрока'}</span>
+              </div>
             </div>
 
-            <div className="text-[11px] text-amber-500/60 font-mono shrink-0 text-right">
+            <div className="text-[11px] text-amber-500/60 font-mono shrink-0 text-right z-10">
               ID: {viewingProfile.id}
             </div>
           </div>
@@ -5500,7 +6181,7 @@ export default function App() {
                       ) : (
                         <span className="shrink-0 text-[9px]">ID: {pl.id}</span>
                       )}
-                      {(pl.isDev || isDevUser(pl.id)) && <DevBadge size="sm" />}
+                      {isDevUser(pl.id) && <DevBadge size="sm" />}
                       {isMe && (
                         <span className="shrink-0 text-[8px] leading-tight bg-gradient-to-r from-amber-500/30 to-amber-600/30 border border-amber-400/40 text-amber-200 px-1.5 py-0.5 rounded-full font-black">
                           {t.itsYou}
@@ -5808,6 +6489,29 @@ export default function App() {
                 {t.tips.map((tip, idx) => (
                   <p key={idx}>{tip}</p>
                 ))}
+              </div>
+            </div>
+
+            {/* Служба підтримки @hhimd */}
+            <div className="glass-card rounded-2xl p-4 border-amber-500/20 bg-gradient-to-br from-amber-950/20 to-black/40">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[12px] font-black text-amber-200 flex items-center gap-1.5">
+                    <span>💬</span>
+                    <span>{t.settingsSupportTitle}</span>
+                  </div>
+                  <div className="text-[10px] text-amber-300/60 mt-0.5">
+                    {t.settingsSupportDesc}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={openSupport}
+                  className="shrink-0 px-3 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-black text-xs shadow-md shadow-sky-500/20 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>✈️</span>
+                  <span>@{SUPPORT_USERNAME}</span>
+                </button>
               </div>
             </div>
 
