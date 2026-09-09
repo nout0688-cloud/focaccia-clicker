@@ -3144,22 +3144,38 @@ export default function App() {
       {/* ===== 💎 MONOBANK DONATE / DIAMOND STORE MODAL ===== */}
       {showDonateModal && (
         <div className="fixed inset-0 z-[70] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
-          <div className="relative w-full max-w-lg bg-[#0c0905] border-t sm:border border-cyan-500/30 rounded-t-3xl sm:rounded-3xl max-h-[90vh] flex flex-col shadow-[0_0_50px_rgba(6,182,212,0.2)] overflow-hidden">
+          <div className="relative w-full max-w-lg bg-[#0c0905] border-t sm:border border-cyan-500/35 rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col shadow-[0_0_60px_rgba(6,182,212,0.25)] overflow-hidden">
+            {/* Top Ambient Glow */}
+            <div className="absolute -top-16 left-1/2 -translate-x-1/2 w-80 h-32 bg-gradient-to-r from-cyan-500/20 via-blue-500/15 to-purple-500/20 rounded-full blur-3xl pointer-events-none" />
+
             {/* Header */}
-            <div className="shrink-0 px-4 py-3 border-b border-cyan-500/20 bg-gradient-to-r from-cyan-950/60 via-[#0c0905] to-blue-950/60 flex items-center justify-between">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center text-lg shadow-[0_0_15px_rgba(6,182,212,0.4)] shrink-0">
-                  💎
+            <div className="relative shrink-0 px-4 py-3.5 border-b border-cyan-500/25 bg-gradient-to-r from-cyan-950/70 via-[#0c0905] to-blue-950/70 flex items-center justify-between z-10">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="relative flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 flex items-center justify-center text-xl shadow-[0_0_20px_rgba(6,182,212,0.45)] border border-cyan-300/40 animate-diamond">
+                    💎
+                  </div>
+                  <span className="absolute -bottom-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500 border-2 border-[#0c0905]" />
+                  </span>
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-white to-amber-200 truncate">
-                    {t.donateTitle || '💎 Банк Діамантів'}
-                  </h3>
-                  <p className="text-[10px] text-emerald-300/80 font-medium truncate">
-                    {lang === 'uk' ? 'Банка Monobank 💳' : 'Банка Monobank 💳'}
+                  <div className="flex items-center gap-1.5">
+                    <h3 className="text-sm sm:text-base font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-200 via-white to-amber-200 truncate tracking-wide">
+                      {t.donateTitle || '💎 Банк Діамантів'}
+                    </h3>
+                    <span className="px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-[9px] font-black uppercase tracking-wider border border-cyan-500/30 shrink-0 font-mono">
+                      MONO
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-emerald-300/90 font-medium flex items-center gap-1.5 mt-0.5 truncate">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                    <span>{lang === 'uk' ? 'Банка Monobank • Миттєве зарахування' : 'Банка Monobank • Мгновенное начисление'}</span>
                   </p>
                 </div>
               </div>
+
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
@@ -3168,7 +3184,7 @@ export default function App() {
                   title="Підтримка @hhimd"
                 >
                   <span>💬</span>
-                  <span className="hidden xs:inline">@{SUPPORT_USERNAME}</span>
+                  <span className="hidden xs:inline font-mono">@{SUPPORT_USERNAME}</span>
                 </button>
                 <button
                   type="button"
@@ -3189,14 +3205,14 @@ export default function App() {
             </div>
 
             {/* Navigation Tabs (Магазин, Кошик, Очікують) */}
-            <div className="shrink-0 px-3 pt-2.5 pb-2 border-b border-white/5 flex gap-1.5 bg-black/40">
+            <div className="shrink-0 p-1.5 mx-3.5 my-2 rounded-2xl bg-black/60 border border-white/10 flex gap-1 shadow-inner z-10">
               <button
                 type="button"
                 onClick={() => { setDonateTab('shop'); haptic.selection(); }}
                 className={cn(
-                  'flex-1 py-1.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer',
+                  'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
                   donateTab === 'shop'
-                    ? 'bg-gradient-to-r from-cyan-500/30 to-blue-500/30 text-cyan-200 border border-cyan-400/50 shadow-sm'
+                    ? 'bg-gradient-to-r from-cyan-500/30 to-blue-500/30 text-cyan-200 border border-cyan-400/50 shadow-[0_0_15px_rgba(6,182,212,0.25)]'
                     : 'text-white/60 hover:text-white hover:bg-white/5'
                 )}
               >
@@ -3208,16 +3224,16 @@ export default function App() {
                 type="button"
                 onClick={() => { setDonateTab('cart'); haptic.selection(); }}
                 className={cn(
-                  'flex-1 py-1.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer relative',
+                  'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer relative',
                   donateTab === 'cart'
-                    ? 'bg-gradient-to-r from-pink-500/30 to-rose-500/30 text-pink-200 border border-pink-400/50 shadow-sm'
+                    ? 'bg-gradient-to-r from-pink-500/30 to-rose-500/30 text-pink-200 border border-pink-400/50 shadow-[0_0_15px_rgba(236,72,153,0.25)]'
                     : 'text-white/60 hover:text-white hover:bg-white/5'
                 )}
               >
-                <span>🛒</span>
+                <span className={cn(cartSummary.itemsCount > 0 && 'animate-bounce-scale')}>🛒</span>
                 <span>{t.donateTabCart || 'Кошик'}</span>
                 {cartSummary.itemsCount > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-full bg-pink-500 text-white font-mono text-[9px] font-black leading-none shadow-sm">
+                  <span className="px-1.5 py-0.5 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 text-white font-mono text-[9px] font-black leading-none shadow-sm animate-badge-pop">
                     {cartSummary.itemsCount}
                   </span>
                 )}
@@ -3227,16 +3243,16 @@ export default function App() {
                 type="button"
                 onClick={() => { setDonateTab('pending'); haptic.selection(); }}
                 className={cn(
-                  'flex-1 py-1.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer relative',
+                  'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer relative',
                   donateTab === 'pending'
-                    ? 'bg-gradient-to-r from-amber-500/30 to-yellow-500/30 text-amber-200 border border-amber-400/50 shadow-sm'
+                    ? 'bg-gradient-to-r from-amber-500/30 to-yellow-500/30 text-amber-200 border border-amber-400/50 shadow-[0_0_15px_rgba(245,158,11,0.25)]'
                     : 'text-white/60 hover:text-white hover:bg-white/5'
                 )}
               >
                 <span>⏳</span>
                 <span>{t.donateTabPending || 'Очікують'}</span>
                 {savedOrders.filter((o) => o.status === 'pending').length > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-full bg-amber-400 text-amber-950 font-mono text-[9px] font-black leading-none animate-pulse shadow-sm">
+                  <span className="px-1.5 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-mono text-[9px] font-black leading-none animate-pulse shadow-sm">
                     {savedOrders.filter((o) => o.status === 'pending').length}
                   </span>
                 )}
@@ -3246,160 +3262,325 @@ export default function App() {
             {/* Modal Body Tabs */}
             {donateTab === 'shop' && (
               /* ===== TAB 1: SHOP PRODUCTS ===== */
-              <div className="p-4 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
-                <div className="px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-between gap-2 text-[11px] text-emerald-300/90">
-                  <div className="flex items-center gap-2 min-w-0 truncate">
-                    <span>💳</span>
-                    <span className="truncate">
-                      {lang === 'uk'
-                        ? 'Оплата на Банку Monobank. Скопіюйте код і вкажіть у коментарі!'
-                        : 'Оплата на Банку Monobank. Скопируйте код и укажите в комментарии!'}
-                    </span>
+              <div className="p-4 space-y-3.5 overflow-y-auto flex-1 custom-scrollbar">
+                {/* Monobank Trust Banner */}
+                <div className="px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-[#0c0905] to-teal-950/30 border border-emerald-500/30 flex items-center justify-between gap-2.5 text-[11px] shadow-sm">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-base shrink-0 shadow-inner">
+                      💳
+                    </div>
+                    <div className="min-w-0 leading-tight">
+                      <div className="font-black text-emerald-200 truncate">
+                        {lang === 'uk' ? 'Оплата на Банку Monobank' : 'Оплата на Банку Monobank'}
+                      </div>
+                      <div className="text-[10px] text-emerald-300/70 truncate mt-0.5">
+                        {lang === 'uk' ? 'Скопіюйте код замовлення та вкажіть у коментарі' : 'Скопируйте код заказа и укажите в комментарии'}
+                      </div>
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => { setShowMonoHelp(true); haptic.selection(); }}
-                    className="shrink-0 px-2 py-1 rounded-lg bg-emerald-500/25 hover:bg-emerald-500/35 text-emerald-200 font-bold text-[10px] border border-emerald-500/30 active:scale-95 transition cursor-pointer"
+                    className="shrink-0 px-2.5 py-1.5 rounded-xl bg-emerald-500/25 hover:bg-emerald-500/35 text-emerald-200 font-black text-[10px] border border-emerald-500/35 active:scale-95 transition cursor-pointer flex items-center gap-1 shadow-sm"
                   >
-                    {lang === 'uk' ? '❓ Допомога' : '❓ Помощь'}
+                    <span>❓</span>
+                    <span>{lang === 'uk' ? 'Як оплатити' : 'Как платить'}</span>
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {DONATE_PACKAGES.filter((p) => p.id !== 'tip_dev').map((pkg) => {
-                    const title = lang === 'uk' ? pkg.titleUk : pkg.titleRu;
-                    const desc = lang === 'uk' ? pkg.descUk : pkg.descRu;
-                    const isBuying = buyingPackageId === pkg.id;
-                    const isStarter = !!pkg.isStarter;
-                    const inCartItem = cart.find((it) => it.packageId === pkg.id);
+                {/* Hero Starter Pack Spotlight */}
+                {(() => {
+                  const starterPkg = DONATE_PACKAGES.find((p) => p.id === 'starter_pack');
+                  if (!starterPkg) return null;
+                  const isBuying = buyingPackageId === starterPkg.id;
+                  const inCartItem = cart.find((it) => it.packageId === starterPkg.id);
+                  const title = lang === 'uk' ? starterPkg.titleUk : starterPkg.titleRu;
+                  const desc = lang === 'uk' ? starterPkg.descUk : starterPkg.descRu;
 
-                    return (
-                      <div
-                        key={pkg.id}
-                        className={cn(
-                          'relative overflow-hidden rounded-2xl p-3 border transition-all flex flex-col justify-between',
-                          isStarter
-                            ? 'bg-gradient-to-br from-amber-950/40 via-yellow-950/20 to-[#0c0905] border-amber-400/50 shadow-[0_0_15px_rgba(251,191,36,0.15)] col-span-1 sm:col-span-2'
-                            : 'bg-gradient-to-br from-emerald-950/30 to-[#0c0905] border-emerald-500/25 hover:border-emerald-400/40'
-                        )}
-                      >
-                        {pkg.badge && (
-                          <div className={cn(
-                            'absolute top-0 right-0 px-2 py-0.5 rounded-bl-xl text-[9px] font-black tracking-wider shadow-sm uppercase',
-                            isStarter ? 'bg-amber-400 text-black font-extrabold' : 'bg-emerald-500/80 text-white'
-                          )}>
-                            {pkg.badge}
-                          </div>
-                        )}
+                  return (
+                    <div className="relative overflow-hidden rounded-3xl p-4 donate-card-starter shadow-[0_0_30px_rgba(245,158,11,0.18)] border border-amber-400/50 group transition-all duration-300">
+                      {/* Animated light sweep */}
+                      <div className="animate-sheen-fast" />
 
-                        <div className="flex items-start gap-3 mb-2">
-                          <div className="text-2xl p-2 rounded-xl bg-white/5 border border-white/10 shrink-0">
-                            {pkg.emoji}
+                      {/* Header Badge */}
+                      <div className="flex items-center justify-between gap-2 mb-3 relative z-10">
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-black text-[10px] tracking-wider uppercase shadow-sm shadow-amber-500/30 animate-float-badge">
+                          <span>👑</span>
+                          <span>{starterPkg.badge || 'ВИГІДА -70%'}</span>
+                        </div>
+                        <span className="text-[10px] text-amber-300/80 font-mono font-bold bg-black/40 px-2.5 py-0.5 rounded-full border border-amber-500/20">
+                          {lang === 'uk' ? 'Тільки для новачків' : 'Только для новичков'}
+                        </span>
+                      </div>
+
+                      {/* Main info row */}
+                      <div className="flex items-start gap-3.5 mb-3 relative z-10">
+                        <div className="w-13 h-13 rounded-2xl bg-gradient-to-br from-amber-400/25 via-yellow-500/15 to-transparent border border-amber-400/40 flex items-center justify-center text-3xl shadow-inner shrink-0 group-hover:scale-105 transition-transform">
+                          ⚡
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-sm font-black text-amber-100 flex items-center gap-1.5">
+                            <span>{title}</span>
+                          </h4>
+                          <p className="text-[11px] text-amber-200/70 leading-snug mt-0.5">
+                            {desc}
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-500/20 text-cyan-200 border border-cyan-400/30 text-[10px] font-black">
+                              <span>💎</span>
+                              <span>+100 Діамантів</span>
+                            </span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-200 border border-amber-400/30 text-[10px] font-black">
+                              <span>🪵</span>
+                              <span>Бойова скалка</span>
+                            </span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 text-[10px] font-black">
+                              <span>⚔️</span>
+                              <span>x2 шкоди босам</span>
+                            </span>
                           </div>
-                          <div className="flex-1 pr-8">
-                            <div className="text-xs font-black text-amber-100 flex items-center gap-1.5">
-                              {title}
-                            </div>
-                            <div className="text-[10px] text-amber-200/60 leading-snug mt-0.5">
-                              {desc}
-                            </div>
+                        </div>
+                      </div>
+
+                      {/* Action footer */}
+                      <div className="flex items-center justify-between pt-3 border-t border-amber-500/20 gap-3 relative z-10">
+                        <div>
+                          <div className="text-[10px] text-amber-400/60 uppercase font-bold tracking-wider">
+                            {lang === 'uk' ? 'Ціна набору:' : 'Цена набора:'}
+                          </div>
+                          <div className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-300 to-amber-400 font-mono">
+                            {starterPkg.priceUah} ₴
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-between pt-1 border-t border-white/5 mt-1 gap-2">
-                          <div className="text-xs font-black text-cyan-300 flex items-center gap-1">
-                            <span>+{pkg.diamonds}</span>
-                            <span>💎</span>
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            {/* In-Cart quantity control or Add-to-cart button */}
-                            {inCartItem ? (
-                              <div className="flex items-center gap-1 bg-black/60 rounded-xl p-0.5 border border-pink-500/40">
-                                <button
-                                  type="button"
-                                  onClick={() => updateCartCount(pkg.id, -1)}
-                                  className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95"
-                                >
-                                  -
-                                </button>
-                                <span className="text-xs font-black text-pink-300 px-1 font-mono">
-                                  {inCartItem.count}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => updateCartCount(pkg.id, 1)}
-                                  disabled={isStarter}
-                                  className={cn(
-                                    'w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95',
-                                    isStarter && 'opacity-30 cursor-not-allowed'
-                                  )}
-                                  title={isStarter ? 'Максимум 1' : 'Додати ще'}
-                                >
-                                  +
-                                </button>
-                              </div>
-                            ) : (
+                        <div className="flex items-center gap-2">
+                          {inCartItem ? (
+                            <div className="flex items-center gap-1.5 bg-black/70 rounded-xl px-2.5 py-1.5 border border-pink-500/50 shadow-sm">
+                              <span className="text-xs font-bold text-pink-300">
+                                ✓ {lang === 'uk' ? 'У кошику' : 'В корзине'}
+                              </span>
                               <button
                                 type="button"
-                                onClick={() => addToCart(pkg.id)}
-                                className="px-2.5 py-1.5 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border border-pink-500/40 font-bold text-xs active:scale-95 transition cursor-pointer flex items-center gap-1"
-                                title="Додати в кошик"
+                                onClick={() => removeFromCart(starterPkg.id)}
+                                className="text-[10px] text-white/50 hover:text-red-300 px-1 cursor-pointer"
                               >
-                                <span>🛒</span>
-                                <span className="text-[10px] font-black">+</span>
+                                ✕
                               </button>
-                            )}
-
-                            {/* Direct Buy button */}
+                            </div>
+                          ) : (
                             <button
                               type="button"
-                              onClick={() => handleBuyMono(pkg.id)}
-                              disabled={!!buyingPackageId}
-                              className={cn(
-                                'px-3 py-1.5 rounded-xl font-black text-xs transition-all active:scale-95 flex items-center gap-1 cursor-pointer shadow-md',
-                                isStarter
-                                  ? 'bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 hover:brightness-110 shadow-amber-500/20'
-                                  : 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white hover:brightness-110 shadow-emerald-500/25',
-                                buyingPackageId && 'opacity-60 cursor-not-allowed'
-                              )}
+                              onClick={() => addToCart(starterPkg.id)}
+                              className="px-3.5 py-2 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border border-pink-500/40 text-xs font-black active:scale-95 transition cursor-pointer flex items-center gap-1.5 shadow-sm"
+                              title="Додати в кошик"
                             >
-                              {isBuying ? (
-                                <span>...</span>
-                              ) : (
-                                <span>{pkg.priceUah} ₴</span>
-                              )}
+                              <span>🛒</span>
+                              <span>{lang === 'uk' ? 'В кошик' : 'В корзину'}</span>
                             </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                          )}
 
-                {/* ===== INTERACTIVE TIP SLIDER (1 - 9999 ₴) ===== */}
-                <div className="p-3.5 rounded-2xl bg-gradient-to-br from-pink-950/30 via-[#0c0905] to-rose-950/20 border border-pink-500/30 space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <div className="text-2xl p-2 rounded-xl bg-pink-500/10 border border-pink-500/20">
-                        💖
-                      </div>
-                      <div>
-                        <div className="text-xs font-black text-pink-200">
-                          {lang === 'uk' ? 'Чайові розробнику на Банку' : 'Чаевые разработчику на Банку'}
-                        </div>
-                        <div className="text-[10px] text-pink-300/60 leading-tight">
-                          {lang === 'uk' ? 'Отримай +2.5 💎 за кожну 1 ₴ та титул 💖 Меценат!' : 'Получи +2.5 💎 за каждую 1 ₴ и титул 💖 Меценат!'}
+                          <button
+                            type="button"
+                            onClick={() => handleBuyMono(starterPkg.id)}
+                            disabled={!!buyingPackageId}
+                            className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:brightness-110 text-amber-950 font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-amber-500/25 flex items-center gap-1.5"
+                          >
+                            <span>⚡</span>
+                            <span>{isBuying ? '...' : (lang === 'uk' ? 'Купити зараз' : 'Купить сейчас')}</span>
+                          </button>
                         </div>
                       </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full bg-pink-500/20 border border-pink-500/30 text-pink-300 text-[9px] font-black uppercase">
+                  );
+                })()}
+
+                {/* Diamond Bundles Grid */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs font-black text-amber-200/80 px-1 pt-1">
+                    <span className="flex items-center gap-1.5">
+                      <span>💎</span>
+                      <span>{lang === 'uk' ? 'Набори діамантів' : 'Наборы алмазов'}</span>
+                    </span>
+                    <span className="text-[10px] font-medium text-emerald-400/80 flex items-center gap-1">
+                      <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>{lang === 'uk' ? 'Миттєве зарахування' : 'Мгновенное зачисление'}</span>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {DONATE_PACKAGES.filter((p) => p.id !== 'tip_dev' && p.id !== 'starter_pack').map((pkg, idx) => {
+                      const title = lang === 'uk' ? pkg.titleUk : pkg.titleRu;
+                      const desc = lang === 'uk' ? pkg.descUk : pkg.descRu;
+                      const isBuying = buyingPackageId === pkg.id;
+                      const inCartItem = cart.find((it) => it.packageId === pkg.id);
+
+                      // Card styling variant based on tier
+                      let cardClass = 'donate-card-cyan';
+                      if (pkg.id === 'gems_50') cardClass = 'donate-card-emerald';
+                      else if (pkg.id === 'gems_150') cardClass = 'donate-card-cyan';
+                      else if (pkg.id === 'gems_500') cardClass = 'donate-card-purple';
+                      else if (pkg.id === 'gems_1500') cardClass = 'donate-card-starter';
+
+                      return (
+                        <div
+                          key={pkg.id}
+                          style={{ animationDelay: `${idx * 60}ms` }}
+                          className={cn(
+                            'relative overflow-hidden rounded-2xl p-3.5 transition-all duration-200 flex flex-col justify-between group animate-card hover:scale-[1.01] active:scale-[0.99]',
+                            cardClass
+                          )}
+                        >
+                          {/* Sheen sweep effect on high tiers */}
+                          {(pkg.id === 'gems_500' || pkg.id === 'gems_1500') && (
+                            <div className="animate-sheen-fast" />
+                          )}
+
+                          {pkg.badge && (
+                            <div className={cn(
+                              'absolute top-0 right-0 px-2 py-0.5 rounded-bl-xl text-[9px] font-black tracking-wider shadow-sm uppercase z-10',
+                              pkg.id === 'gems_1500'
+                                ? 'bg-amber-400 text-amber-950'
+                                : pkg.id === 'gems_500'
+                                  ? 'bg-purple-500 text-white'
+                                  : 'bg-cyan-500 text-slate-950'
+                            )}>
+                              {pkg.badge}
+                            </div>
+                          )}
+
+                          <div className="flex items-start gap-3 mb-2.5 relative z-10">
+                            <div className="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-2xl shrink-0 group-hover:scale-110 transition-transform shadow-inner">
+                              {pkg.emoji}
+                            </div>
+                            <div className="flex-1 pr-6 min-w-0">
+                              <div className="text-xs font-black text-white/90 truncate">
+                                {title}
+                              </div>
+                              <div className="text-[10px] text-white/50 leading-snug mt-0.5 line-clamp-2">
+                                {desc}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-2 border-t border-white/5 mt-1 gap-2 relative z-10">
+                            <div>
+                              <div className="text-sm font-black text-cyan-300 flex items-center gap-1 font-mono">
+                                <span>+{pkg.diamonds}</span>
+                                <span className="text-xs">💎</span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              {/* Cart stepper or add button */}
+                              {inCartItem ? (
+                                <div className="flex items-center gap-1 bg-black/70 rounded-xl p-0.5 border border-pink-500/40 shadow-sm">
+                                  <button
+                                    type="button"
+                                    onClick={() => updateCartCount(pkg.id, -1)}
+                                    className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95"
+                                  >
+                                    -
+                                  </button>
+                                  <span className="text-xs font-black text-pink-300 px-1.5 font-mono">
+                                    {inCartItem.count}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => updateCartCount(pkg.id, 1)}
+                                    className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => addToCart(pkg.id)}
+                                  className="px-2.5 py-1.5 rounded-xl bg-pink-500/15 hover:bg-pink-500/25 text-pink-200 border border-pink-500/35 font-bold text-xs active:scale-95 transition cursor-pointer flex items-center gap-1"
+                                  title="Додати в кошик"
+                                >
+                                  <span>🛒</span>
+                                  <span className="text-[10px] font-black">+</span>
+                                </button>
+                              )}
+
+                              {/* Direct Buy button */}
+                              <button
+                                type="button"
+                                onClick={() => handleBuyMono(pkg.id)}
+                                disabled={!!buyingPackageId}
+                                className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:brightness-110 text-white font-black text-xs transition-all active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20 flex items-center gap-1"
+                              >
+                                {isBuying ? (
+                                  <span>...</span>
+                                ) : (
+                                  <span>{pkg.priceUah} ₴</span>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ===== INTERACTIVE CUSTOM TIP SECTION (1 - 9999 ₴) ===== */}
+                <div className="p-4 rounded-3xl bg-gradient-to-br from-pink-950/40 via-[#0c0905] to-purple-950/30 border border-pink-500/35 space-y-3.5 relative overflow-hidden shadow-[0_0_30px_rgba(236,72,153,0.12)]">
+                  {/* Subtle ambient rose blur */}
+                  <div className="absolute -top-12 -right-12 w-32 h-32 bg-pink-500/15 rounded-full blur-2xl pointer-events-none" />
+
+                  <div className="flex items-start justify-between gap-2 relative z-10">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-pink-500/20 to-purple-500/20 border border-pink-500/35 flex items-center justify-center text-2xl shadow-inner shrink-0 animate-bounce-scale">
+                        💖
+                      </div>
+                      <div>
+                        <div className="text-xs font-black text-pink-200 flex items-center gap-1.5">
+                          <span>{lang === 'uk' ? 'Чайові розробнику на Банку' : 'Чаевые разработчику на Банку'}</span>
+                        </div>
+                        <div className="text-[10px] text-pink-300/70 leading-snug mt-0.5">
+                          {lang === 'uk'
+                            ? '+2.5 💎 за кожну 1 ₴ та титул «Меценат» у профілі!'
+                            : '+2.5 💎 за каждую 1 ₴ и титул «Меценат» в профиле!'}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full bg-pink-500/20 border border-pink-500/35 text-pink-300 text-[10px] font-black font-mono shrink-0">
                       1–9999 ₴
                     </span>
                   </div>
 
+                  {/* Quick Preset Buttons */}
+                  <div className="space-y-1.5 relative z-10">
+                    <div className="text-[10px] font-bold text-pink-300/60 flex items-center justify-between">
+                      <span>{lang === 'uk' ? 'Швидкий вибір суми:' : 'Быстрый выбор суммы:'}</span>
+                      <span className="font-mono text-pink-300">{tipAmount} ₴</span>
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                      {[25, 50, 100, 250, 500, 1000].map((preset) => {
+                        const isActive = tipAmount === preset;
+                        return (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => { setTipAmount(preset); haptic.selection(); }}
+                            className={cn(
+                              'py-1.5 px-2 rounded-xl text-[11px] font-black font-mono transition-all active:scale-95 cursor-pointer border',
+                              isActive
+                                ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white border-pink-300 shadow-md shadow-pink-500/30'
+                                : 'bg-black/50 hover:bg-white/10 text-pink-200/80 border-pink-500/20 hover:border-pink-500/40'
+                            )}
+                          >
+                            {preset} ₴
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {/* Slider and Input row */}
-                  <div className="space-y-2">
+                  <div className="space-y-2.5 relative z-10 pt-1">
                     <div className="flex items-center gap-3">
                       <input
                         type="range"
@@ -3408,9 +3589,12 @@ export default function App() {
                         step={1}
                         value={tipAmount}
                         onChange={(e) => setTipAmount(Math.max(1, Math.min(9999, parseInt(e.target.value, 10) || 1)))}
-                        className="flex-1 accent-pink-500 cursor-pointer h-2 bg-pink-950 rounded-lg"
+                        style={{
+                          background: `linear-gradient(to right, #ec4899 0%, #a855f7 ${((tipAmount - 1) / 9998) * 100}%, rgba(255,255,255,0.1) ${((tipAmount - 1) / 9998) * 100}%, rgba(255,255,255,0.1) 100%)`,
+                        }}
+                        className="flex-1 accent-pink-500 cursor-pointer h-2.5 rounded-lg appearance-none"
                       />
-                      <div className="flex items-center gap-1 bg-black/60 border border-pink-500/40 rounded-xl px-2.5 py-1 shrink-0">
+                      <div className="flex items-center gap-1.5 bg-black/70 border border-pink-500/40 rounded-xl px-3 py-1.5 shrink-0 shadow-inner">
                         <input
                           type="number"
                           min={1}
@@ -3420,22 +3604,26 @@ export default function App() {
                             const v = parseInt(e.target.value, 10);
                             setTipAmount(isNaN(v) ? 1 : Math.max(1, Math.min(9999, v)));
                           }}
-                          className="w-16 bg-transparent text-pink-200 font-black text-sm text-right focus:outline-none"
+                          className="w-16 bg-transparent text-pink-100 font-black text-sm text-right focus:outline-none font-mono"
                         />
-                        <span className="text-xs font-bold text-pink-400">₴</span>
+                        <span className="text-xs font-black text-pink-400">₴</span>
                       </div>
                     </div>
 
-                    {/* Reward preview */}
-                    <div className="flex items-center justify-between text-[11px] px-1 font-medium">
-                      <span className="text-white/60">
-                        {lang === 'uk' ? 'Винагорода:' : 'Награда:'}
+                    {/* Live Reward Calculation Banner */}
+                    <div className="flex items-center justify-between p-2.5 rounded-xl bg-black/40 border border-pink-500/20 text-xs">
+                      <span className="text-white/60 font-medium">
+                        {lang === 'uk' ? 'Ваша винагорода:' : 'Ваша награда:'}
                       </span>
-                      <span className="font-black text-cyan-300 flex items-center gap-1">
-                        <span>+{Math.max(1, Math.round(tipAmount * 2.5))}</span>
-                        <span>💎</span>
-                        <span className="text-pink-300 font-bold ml-1">+ 💖 Меценат</span>
-                      </span>
+                      <div className="flex items-center gap-2 font-black">
+                        <span className="text-cyan-300 font-mono flex items-center gap-1">
+                          <span>+{Math.max(1, Math.round(tipAmount * 2.5))}</span>
+                          <span>💎</span>
+                        </span>
+                        <span className="text-pink-300 text-[11px] bg-pink-500/15 px-2 py-0.5 rounded-md border border-pink-500/30">
+                          💖 {lang === 'uk' ? 'Титул «Меценат»' : 'Титул «Меценат»'}
+                        </span>
+                      </div>
                     </div>
                   </div>
 
@@ -3444,35 +3632,40 @@ export default function App() {
                     type="button"
                     onClick={() => handleBuyMono('custom_tip', tipAmount)}
                     disabled={!!buyingPackageId}
-                    className="w-full py-2.5 rounded-xl bg-gradient-to-r from-pink-500 via-rose-500 to-purple-600 text-white font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-pink-500/20 hover:brightness-110 flex items-center justify-center gap-2"
+                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-purple-600 hover:brightness-110 text-white font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-pink-500/25 flex items-center justify-center gap-2 relative overflow-hidden"
                   >
-                    <span>💖</span>
+                    <span className="animate-bounce-scale">💖</span>
                     <span>
                       {buyingPackageId === 'custom_tip'
                         ? (lang === 'uk' ? 'Створення замовлення…' : 'Создание заказа…')
                         : (lang === 'uk' ? `Надіслати ${tipAmount} ₴ на Банку` : `Отправить ${tipAmount} ₴ на Банку`)}
                     </span>
+                    <span>➔</span>
                   </button>
                 </div>
 
-                {/* Cart bottom notification banner if items present */}
+                {/* Sticky Bottom Cart Floating Bar */}
                 {cartSummary.itemsCount > 0 && (
-                  <div className="sticky bottom-0 p-3 rounded-2xl bg-gradient-to-r from-pink-950/90 via-rose-950/90 to-[#0c0905] border border-pink-500/40 flex items-center justify-between gap-2 shadow-[0_0_25px_rgba(236,72,153,0.25)] animate-slide-up backdrop-blur-md">
-                    <div className="min-w-0">
-                      <div className="text-xs font-black text-pink-200 flex items-center gap-1.5">
-                        <span>🛒</span>
-                        <span>{lang === 'uk' ? `У кошику ${cartSummary.itemsCount} тов.` : `В корзине ${cartSummary.itemsCount} тов.`}</span>
-                        <span className="text-white/40">•</span>
-                        <span className="text-emerald-300 font-black">{cartSummary.totalUah} ₴</span>
+                  <div className="sticky bottom-0 p-3 rounded-2xl bg-[#0c0905]/95 border border-pink-500/50 flex items-center justify-between gap-3 shadow-[0_0_30px_rgba(236,72,153,0.3)] animate-slide-up backdrop-blur-md z-20">
+                    <div className="min-w-0 flex items-center gap-2.5">
+                      <div className="w-10 h-10 rounded-xl bg-pink-500/20 border border-pink-500/40 flex items-center justify-center text-lg shrink-0 animate-bounce-scale">
+                        🛒
                       </div>
-                      <div className="text-[10px] text-cyan-300 font-bold">
-                        +{cartSummary.totalDiamonds} 💎
+                      <div className="min-w-0">
+                        <div className="text-xs font-black text-pink-200 flex items-center gap-1.5 truncate">
+                          <span>{lang === 'uk' ? `У кошику ${cartSummary.itemsCount} тов.` : `В корзине ${cartSummary.itemsCount} тов.`}</span>
+                          <span className="text-white/40">•</span>
+                          <span className="text-emerald-400 font-mono font-black">{cartSummary.totalUah} ₴</span>
+                        </div>
+                        <div className="text-[10px] text-cyan-300 font-bold font-mono truncate">
+                          +{cartSummary.totalDiamonds} 💎 {cartSummary.hasStarter ? '• 🪵 Скалка' : ''}
+                        </div>
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => { setDonateTab('cart'); haptic.selection(); }}
-                      className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:brightness-110 text-white text-xs font-black active:scale-95 transition cursor-pointer shadow-md shadow-pink-500/20 flex items-center gap-1"
+                      className="shrink-0 px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 via-rose-500 to-purple-600 hover:brightness-110 text-white text-xs font-black active:scale-95 transition cursor-pointer shadow-md shadow-pink-500/30 flex items-center gap-1.5"
                     >
                       <span>{lang === 'uk' ? 'До кошика' : 'В корзину'}</span>
                       <span>➔</span>
@@ -3486,28 +3679,28 @@ export default function App() {
               /* ===== TAB 2: SHOPPING CART ===== */
               <div className="p-4 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
                 {cart.length === 0 ? (
-                  <div className="py-12 text-center space-y-3 flex flex-col items-center justify-center">
-                    <div className="w-16 h-16 rounded-3xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-3xl">
+                  <div className="py-12 text-center space-y-3.5 flex flex-col items-center justify-center">
+                    <div className="w-20 h-20 rounded-3xl bg-pink-500/10 border border-pink-500/25 flex items-center justify-center text-4xl animate-bob shadow-[0_0_30px_rgba(236,72,153,0.15)]">
                       🛒
                     </div>
                     <div>
                       <div className="text-sm font-black text-pink-200">
                         {t.cartEmpty || 'Кошик порожній'}
                       </div>
-                      <p className="text-xs text-white/50 max-w-xs mt-1">
+                      <p className="text-xs text-white/50 max-w-xs mt-1 leading-relaxed">
                         {t.cartEmptyDesc || 'Оберіть товари в магазині та додайте їх до кошика!'}
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => { setDonateTab('shop'); haptic.selection(); }}
-                      className="px-4 py-2 rounded-xl bg-pink-500/20 hover:bg-pink-500/30 text-pink-200 border border-pink-500/40 text-xs font-bold transition active:scale-95 cursor-pointer"
+                      className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-pink-500/20 to-rose-500/20 hover:from-pink-500/30 hover:to-rose-500/30 text-pink-200 border border-pink-500/40 text-xs font-black transition active:scale-95 cursor-pointer shadow-sm"
                     >
-                      🛍️ {lang === 'uk' ? 'Перейти до магазину' : 'Перейти в магазин'}
+                      🛍️ {lang === 'uk' ? 'Перейти до товарів' : 'Перейти к товарам'}
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-3.5">
                     <div className="flex items-center justify-between text-xs font-bold text-white/70 px-1">
                       <span>{lang === 'uk' ? 'Товари в замовленні:' : 'Товары в заказе:'}</span>
                       <button
@@ -3521,7 +3714,7 @@ export default function App() {
 
                     {/* Cart Items List */}
                     <div className="space-y-2">
-                      {cart.map((item) => {
+                      {cart.map((item, idx) => {
                         const pkg = DONATE_PACKAGES.find((p) => p.id === item.packageId);
                         if (!pkg) return null;
                         const title = lang === 'uk' ? pkg.titleUk : pkg.titleRu;
@@ -3530,35 +3723,36 @@ export default function App() {
                         return (
                           <div
                             key={item.packageId}
-                            className="p-3 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between gap-3"
+                            style={{ animationDelay: `${idx * 40}ms` }}
+                            className="p-3.5 rounded-2xl bg-white/5 border border-white/10 hover:border-pink-500/30 flex items-center justify-between gap-3 transition-all animate-card"
                           >
                             <div className="flex items-center gap-3 min-w-0">
-                              <div className="text-2xl p-2 rounded-xl bg-black/40 border border-white/10 shrink-0">
+                              <div className="w-11 h-11 rounded-2xl bg-black/50 border border-white/10 flex items-center justify-center text-2xl shrink-0 shadow-inner">
                                 {pkg.emoji}
                               </div>
                               <div className="min-w-0">
                                 <div className="text-xs font-black text-amber-100 truncate">
                                   {title}
                                 </div>
-                                <div className="text-[11px] text-cyan-300 font-bold mt-0.5">
+                                <div className="text-[11px] text-cyan-300 font-bold font-mono mt-0.5">
                                   +{pkg.diamonds * item.count} 💎
                                 </div>
-                                <div className="text-[10px] text-white/50">
+                                <div className="text-[10px] text-white/50 font-mono">
                                   {pkg.priceUah} ₴ / шт.
                                 </div>
                               </div>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
-                              <div className="flex items-center gap-1 bg-black/60 rounded-xl p-1 border border-white/10">
+                              <div className="flex items-center gap-1 bg-black/60 rounded-xl p-1 border border-white/10 shadow-inner">
                                 <button
                                   type="button"
                                   onClick={() => updateCartCount(item.packageId, -1)}
-                                  className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95"
+                                  className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95 transition"
                                 >
                                   -
                                 </button>
-                                <span className="text-xs font-black text-pink-300 px-1.5 font-mono">
+                                <span className="text-xs font-black text-pink-300 px-2 font-mono">
                                   {item.count}
                                 </span>
                                 <button
@@ -3566,7 +3760,7 @@ export default function App() {
                                   onClick={() => updateCartCount(item.packageId, 1)}
                                   disabled={isStarter}
                                   className={cn(
-                                    'w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95',
+                                    'w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs font-black cursor-pointer active:scale-95 transition',
                                     isStarter && 'opacity-30 cursor-not-allowed'
                                   )}
                                 >
@@ -3577,7 +3771,7 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={() => removeFromCart(item.packageId)}
-                                className="w-8 h-8 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-300 flex items-center justify-center text-xs cursor-pointer active:scale-95 transition"
+                                className="w-8 h-8 rounded-xl bg-red-500/15 hover:bg-red-500/25 text-red-300 flex items-center justify-center text-xs cursor-pointer active:scale-95 transition border border-red-500/20"
                                 title="Видалити"
                               >
                                 ✕
@@ -3589,28 +3783,28 @@ export default function App() {
                     </div>
 
                     {/* Cart Summary Card */}
-                    <div className="p-4 rounded-2xl bg-gradient-to-br from-pink-950/40 via-[#0c0905] to-rose-950/30 border border-pink-500/30 space-y-2.5">
-                      <div className="text-xs font-bold text-white/70">
+                    <div className="p-4 rounded-3xl bg-gradient-to-br from-pink-950/40 via-[#0c0905] to-rose-950/30 border border-pink-500/35 space-y-2.5 shadow-lg">
+                      <div className="text-xs font-black text-pink-200 tracking-wide uppercase">
                         {lang === 'uk' ? 'Підсумок замовлення:' : 'Итог заказа:'}
                       </div>
                       <div className="space-y-1.5 text-xs">
                         <div className="flex items-center justify-between text-white/80">
                           <span>{lang === 'uk' ? 'Товарів у кошику:' : 'Товаров в корзине:'}</span>
-                          <span className="font-bold">{cartSummary.itemsCount} шт.</span>
+                          <span className="font-bold font-mono">{cartSummary.itemsCount} шт.</span>
                         </div>
-                        <div className="flex items-center justify-between text-cyan-300 font-bold">
+                        <div className="flex items-center justify-between text-cyan-300 font-bold font-mono">
                           <span>{lang === 'uk' ? 'Разом діамантів:' : 'Всего алмазов:'}</span>
                           <span>+{cartSummary.totalDiamonds} 💎</span>
                         </div>
                         {cartSummary.hasStarter && (
                           <div className="flex items-center justify-between text-amber-300 font-bold text-[11px]">
                             <span>{lang === 'uk' ? 'Бонус набору:' : 'Бонус набора:'}</span>
-                            <span>🪵 Бойова скалка</span>
+                            <span>🪵 Бойова скалка (x2 шкоди)</span>
                           </div>
                         )}
                         <div className="pt-2 border-t border-white/10 flex items-center justify-between text-sm font-black">
                           <span className="text-white">{t.cartTotal || 'Всього до сплати:'}</span>
-                          <span className="text-emerald-400 text-lg">{cartSummary.totalUah} ₴</span>
+                          <span className="text-emerald-400 text-lg font-mono font-black">{cartSummary.totalUah} ₴</span>
                         </div>
                       </div>
                     </div>
@@ -3620,8 +3814,9 @@ export default function App() {
                       type="button"
                       onClick={handleCheckoutCart}
                       disabled={buyingPackageId === 'cart_checkout'}
-                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white font-black text-sm transition active:scale-95 cursor-pointer shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 hover:brightness-110"
+                      className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:brightness-110 text-white font-black text-sm transition active:scale-95 cursor-pointer shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2 relative overflow-hidden"
                     >
+                      <div className="animate-sheen-fast" />
                       <span>🏦</span>
                       <span>
                         {buyingPackageId === 'cart_checkout'
@@ -3639,21 +3834,21 @@ export default function App() {
               /* ===== TAB 3: PENDING & COMPLETED ORDERS ===== */
               <div className="p-4 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
                 {/* Notice banner */}
-                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-1 text-[11px] text-amber-200/90">
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-1.5 text-[11px] text-amber-200/90 shadow-sm">
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                    <div className="flex items-center gap-1.5 font-black text-amber-300">
                       <span>ℹ️</span>
                       <span>{lang === 'uk' ? 'Як працює підтвердження:' : 'Как работает подтверждение:'}</span>
                     </div>
                     <button
                       type="button"
                       onClick={openSupport}
-                      className="text-[10px] text-cyan-300 underline font-bold cursor-pointer"
+                      className="text-[10px] text-cyan-300 underline font-bold cursor-pointer font-mono"
                     >
                       💬 @{SUPPORT_USERNAME}
                     </button>
                   </div>
-                  <p className="leading-relaxed">
+                  <p className="leading-relaxed text-amber-200/80">
                     {lang === 'uk'
                       ? 'Автор перевіряє оплату в Monobank за номером замовлення та натискає «Підтвердити». Нагорода зараховується автоматично!'
                       : 'Автор проверяет оплату в Monobank по номеру заказа и нажимает «Подтвердить». Награда зачисляется автоматически!'}
@@ -3661,29 +3856,29 @@ export default function App() {
                 </div>
 
                 {savedOrders.length === 0 ? (
-                  <div className="py-12 text-center space-y-3 flex flex-col items-center justify-center">
-                    <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-3xl">
+                  <div className="py-12 text-center space-y-3.5 flex flex-col items-center justify-center">
+                    <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-center text-4xl animate-bob shadow-[0_0_30px_rgba(245,158,11,0.15)]">
                       ⏳
                     </div>
                     <div>
                       <div className="text-sm font-black text-amber-200">
                         {t.pendingNone || 'Немає замовлень на перевірці'}
                       </div>
-                      <p className="text-xs text-white/50 max-w-xs mt-1">
+                      <p className="text-xs text-white/50 max-w-xs mt-1 leading-relaxed">
                         {t.pendingNoneDesc || 'Оберіть товари та оплатіть на Банку Monobank.'}
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => { setDonateTab('shop'); haptic.selection(); }}
-                      className="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-xs font-bold transition active:scale-95 cursor-pointer"
+                      className="px-5 py-2.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-xs font-black transition active:scale-95 cursor-pointer shadow-sm"
                     >
-                      🛍️ {lang === 'uk' ? 'Перейти до магазину' : 'Перейти в магазин'}
+                      🛍️ {lang === 'uk' ? 'Перейти до товарів' : 'Перейти к товарам'}
                     </button>
                   </div>
                 ) : (
                   <div className="space-y-3.5">
-                    {savedOrders.map((ord) => {
+                    {savedOrders.map((ord, idx) => {
                       const isPending = ord.status === 'pending';
                       const isCompleted = ord.status === 'completed';
                       const isRejected = ord.status === 'rejected';
@@ -3691,23 +3886,24 @@ export default function App() {
                       return (
                         <div
                           key={ord.orderId}
+                          style={{ animationDelay: `${idx * 40}ms` }}
                           className={cn(
-                            'rounded-2xl p-4 border transition-all space-y-3',
+                            'rounded-3xl p-4 border transition-all space-y-3 relative overflow-hidden animate-card',
                             isPending
-                              ? 'bg-gradient-to-br from-amber-950/40 via-[#0c0905] to-yellow-950/30 border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.15)]'
+                              ? 'bg-gradient-to-br from-amber-950/40 via-[#0c0905] to-yellow-950/30 border-amber-500/40 shadow-[0_0_25px_rgba(245,158,11,0.18)]'
                               : isCompleted
                                 ? 'bg-gradient-to-br from-emerald-950/30 to-[#0c0905] border-emerald-500/30'
                                 : 'bg-gradient-to-br from-red-950/30 to-[#0c0905] border-red-500/30'
                           )}
                         >
                           {/* Order Header */}
-                          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+                          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
                             <div>
                               <div className="text-xs font-black text-amber-200 font-mono flex items-center gap-1.5">
                                 <span>🧾</span>
                                 <span>#{ord.orderId}</span>
                               </div>
-                              <div className="text-[10px] text-white/40">
+                              <div className="text-[10px] text-white/40 font-mono mt-0.5">
                                 {new Date(ord.createdAt).toLocaleDateString(lang === 'uk' ? 'uk-UA' : 'ru-RU', {
                                   day: '2-digit',
                                   month: '2-digit',
@@ -3720,19 +3916,22 @@ export default function App() {
                             {/* Status Badge */}
                             <div>
                               {isPending && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[10px] font-bold animate-pulse">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-[10px] font-bold shadow-sm">
+                                  <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                                  </span>
                                   <span>{lang === 'uk' ? 'Очікує схвалення' : 'Ожидает одобрения'}</span>
                                 </span>
                               )}
                               {isCompleted && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-[10px] font-bold">
+                                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-[10px] font-bold shadow-sm">
                                   <span>✅</span>
                                   <span>{lang === 'uk' ? 'Схвалено' : 'Одобрено'}</span>
                                 </span>
                               )}
                               {isRejected && (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-500/20 border border-red-400/50 text-red-300 text-[10px] font-bold">
+                                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-red-500/20 border border-red-400/50 text-red-300 text-[10px] font-bold shadow-sm">
                                   <span>❌</span>
                                   <span>{lang === 'uk' ? 'Відхилено' : 'Отклонено'}</span>
                                 </span>
@@ -3742,44 +3941,45 @@ export default function App() {
 
                           {/* Order Contents */}
                           <div className="space-y-1">
-                            <div className="text-xs font-bold text-amber-100">
+                            <div className="text-xs font-black text-amber-100">
                               {ord.title}
                             </div>
                             {ord.items && ord.items.length > 1 && (
-                              <div className="text-[10px] text-amber-200/70 space-y-0.5 pl-2 border-l border-amber-500/30">
-                                {ord.items.map((it, idx) => (
-                                  <div key={idx}>
+                              <div className="text-[10px] text-amber-200/70 space-y-0.5 pl-2.5 border-l border-amber-500/30 font-mono">
+                                {ord.items.map((it, idx2) => (
+                                  <div key={idx2}>
                                     • {it.count}x {it.title} ({it.priceUah} ₴ ➔ +{it.diamonds} 💎)
                                   </div>
                                 ))}
                               </div>
                             )}
-                            <div className="flex items-center justify-between pt-1 text-xs font-bold">
-                              <span className="text-cyan-300">+{ord.diamonds} 💎</span>
-                              <span className="text-emerald-400 font-black">{ord.amountUah} ₴</span>
+                            <div className="flex items-center justify-between pt-1.5 text-xs font-bold font-mono">
+                              <span className="text-cyan-300 font-black">+{ord.diamonds} 💎</span>
+                              <span className="text-emerald-400 font-black text-sm">{ord.amountUah} ₴</span>
                             </div>
                           </div>
 
                           {/* Interactive Area for Pending Orders */}
                           {isPending && (
-                            <div className="space-y-2 pt-1 border-t border-white/10">
+                            <div className="space-y-2.5 pt-1 border-t border-white/10">
                               {/* Order Code Box */}
-                              <div className="p-2.5 rounded-xl bg-black/50 border border-amber-500/30 space-y-1.5">
-                                <div className="text-[10px] font-bold text-amber-300">
-                                  {lang === 'uk' ? '⚠️ Коментар до платежу (ОБОВ’ЯЗКОВО):' : '⚠️ Комментарий к платежу (ОБЯЗАТЕЛЬНО):'}
+                              <div className="p-3 rounded-2xl bg-black/60 border border-amber-500/35 space-y-1.5 shadow-inner">
+                                <div className="text-[10px] font-bold text-amber-300 flex items-center justify-between">
+                                  <span>{lang === 'uk' ? '⚠️ Коментар до платежу (ОБОВ’ЯЗКОВО):' : '⚠️ Комментарий к платежу (ОБЯЗАТЕЛЬНО):'}</span>
+                                  <span className="text-[9px] text-amber-400/60 font-mono">ID: {ord.orderId}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <div className="flex-1 font-mono font-black text-sm text-amber-200 bg-black/60 px-2.5 py-1.5 rounded-lg border border-amber-500/30 tracking-wider text-center select-all">
+                                  <div className="flex-1 font-mono font-black text-sm text-amber-200 bg-black/80 px-3 py-2 rounded-xl border border-amber-500/40 tracking-wider text-center select-all shadow-inner">
                                     {ord.comment}
                                   </div>
                                   <button
                                     type="button"
                                     onClick={() => copyOrderCode(ord.comment)}
                                     className={cn(
-                                      'px-3 py-1.5 rounded-lg font-bold text-xs transition active:scale-95 cursor-pointer shrink-0 flex items-center gap-1',
+                                      'px-3.5 py-2 rounded-xl font-bold text-xs transition-all active:scale-95 cursor-pointer shrink-0 flex items-center gap-1.5 shadow-md',
                                       copiedOrderCode
-                                        ? 'bg-emerald-500 text-emerald-950 font-black'
-                                        : 'bg-amber-400 text-amber-950 hover:bg-amber-300'
+                                        ? 'bg-emerald-500 text-emerald-950 font-black shadow-emerald-500/30'
+                                        : 'bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 hover:brightness-110 shadow-amber-500/30'
                                     )}
                                   >
                                     <span>{copiedOrderCode ? '✅' : '📋'}</span>
@@ -3792,7 +3992,7 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={() => openMonobankJar(ord.jarUrl)}
-                                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black text-xs transition active:scale-95 cursor-pointer shadow-md shadow-emerald-500/20 flex items-center justify-center gap-1.5 hover:brightness-110"
+                                className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:brightness-110 text-white font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-1.5"
                               >
                                 <span>🏦</span>
                                 <span>{lang === 'uk' ? 'Відкрити Банку Monobank' : 'Открыть Банку Monobank'}</span>
@@ -3804,7 +4004,7 @@ export default function App() {
                                   type="button"
                                   onClick={() => checkSingleOrder(ord.orderId, true)}
                                   disabled={checkingOrderStatus}
-                                  className="py-2 px-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-[11px] border border-white/15 transition active:scale-95 cursor-pointer flex items-center justify-center gap-1"
+                                  className="py-2 px-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-[11px] border border-white/15 transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
                                 >
                                   <span className={cn(checkingOrderStatus && 'animate-spin')}>🔄</span>
                                   <span>{checkingOrderStatus ? '...' : (lang === 'uk' ? 'Перевірити статус' : 'Проверить статус')}</span>
@@ -3812,7 +4012,7 @@ export default function App() {
                                 <button
                                   type="button"
                                   onClick={() => { setShowMonoHelp(true); haptic.selection(); }}
-                                  className="py-2 px-2.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/35 font-bold text-[11px] transition active:scale-95 cursor-pointer flex items-center justify-center gap-1"
+                                  className="py-2 px-2.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 text-amber-200 border border-amber-400/35 font-bold text-[11px] transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
                                 >
                                   <span>❓</span>
                                   <span>{lang === 'uk' ? 'Підказка' : 'Подсказка'}</span>
@@ -3881,15 +4081,15 @@ export default function App() {
             )}
 
             {/* Bottom Guarantee notice */}
-            <div className="text-center pt-2 pb-2 px-3 border-t border-white/5 bg-black/40 flex items-center justify-between text-[10px] text-amber-400/50">
-              <span className="flex items-center gap-1">
+            <div className="text-center pt-2.5 pb-2.5 px-4 border-t border-white/5 bg-black/50 flex items-center justify-between text-[10px] text-amber-400/60 z-10">
+              <span className="flex items-center gap-1.5">
                 <span>🔒</span>
                 <span>{t.donateThanks || 'Дякуємо за підтримку! ❤️'}</span>
               </span>
               <button
                 type="button"
                 onClick={openSupport}
-                className="text-cyan-400 hover:text-cyan-300 font-bold underline cursor-pointer flex items-center gap-1"
+                className="text-cyan-400 hover:text-cyan-300 font-bold underline cursor-pointer flex items-center gap-1 font-mono"
               >
                 <span>💬</span>
                 <span>@{SUPPORT_USERNAME}</span>
@@ -3919,24 +4119,49 @@ export default function App() {
               </button>
             </div>
             <div className="rounded-2xl overflow-hidden border border-emerald-500/30 bg-black shadow-inner mb-3 shrink-0">
-              <img src={monoGuideImg} alt="Monobank guide" className="w-full h-auto max-h-[48vh] object-contain mx-auto" />
+              <img src={monoGuideImg} alt="Monobank guide" className="w-full h-auto max-h-[44vh] object-contain mx-auto" />
             </div>
-            <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-2 text-xs mb-3">
-              <div className="flex items-center gap-1.5 font-black text-amber-300">
-                <span>👉</span>
-                <span>{lang === 'uk' ? 'Покрокова інструкція:' : 'Пошаговая инструкция:'}</span>
-              </div>
-              <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-amber-100/90 leading-relaxed font-medium">
-                <li>{lang === 'uk' ? 'Скопіюйте код замовлення (натисніть кнопку «Скопіювати»).' : 'Скопируйте код заказа (нажмите «Копировать»).'}</li>
-                <li>{lang === 'uk' ? 'Відкрийте сторінку Банки Monobank.' : 'Откройте страницу Банки Monobank.'}</li>
-                <li className="font-bold text-amber-200">{lang === 'uk' ? 'Вставте скопійований код у поле коментаря (показано червоною стрілкою на скріншоті) та проведіть платіж!' : 'Вставьте скопированный код в поле комментария (показано красной стрелкой на скриншоте) и проведите платёж!'}</li>
-                <li>{lang === 'uk' ? 'Поверніться в гру — автор підтвердить оплату в боті і нагорода миттєво зарахується!' : 'Вернитесь в игру — автор подтвердит оплату в боте и награда мгновенно зачислится!'}</li>
-              </ol>
+
+            {/* Step-by-step numbered cards */}
+            <div className="space-y-2 mb-3 shrink-0">
+              {[
+                {
+                  step: '1',
+                  title: lang === 'uk' ? 'Скопіюйте код' : 'Скопируйте код',
+                  text: lang === 'uk' ? 'Натисніть «Скопіювати» біля номера вашого замовлення.' : 'Нажмите «Копировать» возле номера вашего заказа.',
+                },
+                {
+                  step: '2',
+                  title: lang === 'uk' ? 'Відкрийте Банку' : 'Откройте Банку',
+                  text: lang === 'uk' ? 'Перейдіть за посиланням до офіційної Банки Monobank.' : 'Перейдите по ссылке в официальную Банку Monobank.',
+                },
+                {
+                  step: '3',
+                  title: lang === 'uk' ? 'Вставте в коментар' : 'Вставьте в комментарий',
+                  text: lang === 'uk' ? 'ОБОВ’ЯЗКОВО вставте скопійований код у поле коментаря платежу (показано червоною стрілкою)!' : 'ОБЯЗАТЕЛЬНО вставьте скопированный код в поле комментария платежа (показано красной стрелкой)!',
+                },
+                {
+                  step: '4',
+                  title: lang === 'uk' ? 'Отримайте нагороду' : 'Получите награду',
+                  text: lang === 'uk' ? 'Щойно автор натисне підтвердити в боті, діаманти зарахуються миттєво!' : 'Как только автор нажмёт подтвердить в боте, алмазы начислятся мгновенно!',
+                },
+              ].map((s) => (
+                <div key={s.step} className="p-2.5 rounded-2xl bg-black/40 border border-emerald-500/20 flex items-start gap-2.5 shadow-sm">
+                  <span className="w-5 h-5 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-emerald-950 font-black text-[11px] flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+                    {s.step}
+                  </span>
+                  <div className="text-[11px] leading-snug">
+                    <div className="font-black text-emerald-200">{s.title}</div>
+                    <div className="text-amber-100/80 mt-0.5">{s.text}</div>
+                  </div>
+                </div>
+              ))}
             </div>
+
             <button
               type="button"
               onClick={() => { setShowMonoHelp(false); haptic.light(); }}
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-emerald-500/20 hover:brightness-110"
+              className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:brightness-110 text-white font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-emerald-500/20"
             >
               {lang === 'uk' ? '👍 Все зрозуміло!' : '👍 Всё понятно!'}
             </button>
