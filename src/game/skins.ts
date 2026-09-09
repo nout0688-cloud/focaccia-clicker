@@ -447,6 +447,11 @@ export function calculateUpgradeChance(
   targetSkin: SkinItem,
   boostDiamonds: number = 0
 ): { baseChance: number; boostChance: number; totalChance: number } {
+  // Базову класичну фокачу не можна апгрейдити (захист від абузу)
+  if (!sourceSkin || sourceSkin.id === 'skin_classic') {
+    return { baseChance: 0, boostChance: 0, totalChance: 0 };
+  }
+
   const tierDiff = targetSkin.tier - sourceSkin.tier;
   let baseChance = 50;
 

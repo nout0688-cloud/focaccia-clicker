@@ -564,7 +564,7 @@ export default function App() {
   const [caseWonResult, setCaseWonResult] = useState<{ skin: SkinItem; isNew: boolean; newLevel: number } | null>(null);
 
   // Upgrader state
-  const [upgraderSourceId, setUpgraderSourceId] = useState<string>('skin_classic');
+  const [upgraderSourceId, setUpgraderSourceId] = useState<string>('');
   const [upgraderTargetId, setUpgraderTargetId] = useState<string>('skin_chef');
   const [upgraderBoostDiamonds, setUpgraderBoostDiamonds] = useState<number>(0);
   const [isUpgrading, setIsUpgrading] = useState(false);
@@ -2404,8 +2404,33 @@ export default function App() {
 
   const handleRunUpgrader = () => {
     if (isUpgrading) return;
-    const srcSkin = SKINS[upgraderSourceId] || SKINS.skin_classic;
+
+    const eligibleSourceIds = (state.skins?.owned || []).filter((id) => id !== 'skin_classic');
+    const effectiveSourceId = eligibleSourceIds.includes(upgraderSourceId)
+      ? upgraderSourceId
+      : (eligibleSourceIds[0] || '');
+
+    if (!effectiveSourceId || effectiveSourceId === 'skin_classic') {
+      addToast(
+        lang === 'uk' ? 'Базову фокачу не можна апгрейдити!' : 'Базовую фокаччу нельзя апгрейдить!',
+        lang === 'uk' ? 'Спершу відкрийте скін у кейсах' : 'Сначала откройте скин в кейсах',
+        '⚠️'
+      );
+      return;
+    }
+
+    const srcSkin = SKINS[effectiveSourceId];
+    if (!srcSkin) return;
     const tgtSkin = SKINS[upgraderTargetId] || SKINS.skin_chef;
+
+    if (tgtSkin.id === 'skin_classic' || tgtSkin.id === srcSkin.id) {
+      addToast(
+        lang === 'uk' ? 'Оберіть інший цільовий скін!' : 'Выберите другой целевой скин!',
+        '',
+        'ℹ️'
+      );
+      return;
+    }
 
     if (state.skins?.owned.includes(tgtSkin.id)) {
       addToast(
@@ -5180,18 +5205,20 @@ export default function App() {
                                 <span className="text-amber-400/80 font-bold">👑 MAX РІВЕНЬ (★ Lv.5)</span>
                               )}
 
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setUpgraderSourceId(sk.id);
-                                  setSkinsTab('upgrader');
-                                  haptic.selection();
-                                }}
-                                className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 font-medium flex items-center gap-1 transition active:scale-95 cursor-pointer ml-auto"
-                              >
-                                <span>⚡</span>
-                                <span>{lang === 'uk' ? 'В Апгрейдер' : 'В Апгрейдер'}</span>
-                              </button>
+                              {sk.id !== 'skin_classic' && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setUpgraderSourceId(sk.id);
+                                    setSkinsTab('upgrader');
+                                    haptic.selection();
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 font-medium flex items-center gap-1 transition active:scale-95 cursor-pointer ml-auto"
+                                >
+                                  <span>⚡</span>
+                                  <span>{lang === 'uk' ? 'В Апгрейдер' : 'В Апгрейдер'}</span>
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -5315,11 +5342,56 @@ export default function App() {
               </div>
             )}
 
-                        {/* Tab 3: UPGRADER */}
+                                    {/* Tab 3: UPGRADER */}
             {skinsTab === 'upgrader' && (
               (() => {
-                const srcSkin = SKINS[upgraderSourceId] || SKINS.skin_classic;
-                const tgtSkin = SKINS[upgraderTargetId] || SKINS.skin_chef;
+                const eligibleSourceIds = (state.skins?.owned || []).filter((id) => id !== 'skin_classic');
+                const hasEligibleSkin = eligibleSourceIds.length > 0;
+
+                if (!hasEligibleSkin) {
+                  return (
+                    <div className="p-6 flex-1 flex flex-col items-center justify-center text-center space-y-4 animate-fade-in my-auto">
+                      <div className="w-20 h-20 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-4xl shadow-[0_0_30px_rgba(245,158,11,0.15)]">
+                        🔒
+                      </div>
+                      <div className="space-y-1.5 max-w-xs">
+                        <h3 className="text-base font-black text-white">
+                          {lang === 'uk' ? 'Базову фокачу не можна апгрейдити' : 'Базовую фокаччу нельзя апгрейдить'}
+                        </h3>
+                        <p className="text-xs text-stone-400 leading-relaxed">
+                          {lang === 'uk'
+                            ? 'Апгрейдер призначений для синтезу отриманих скінів вищих рангів (Рідкісних, Епічних тощо). Отримайте свій перший скін у Кейсах!'
+                            : 'Апгрейдер предназначен для синтеза полученных скинов высших рангов (Редких, Эпических и т.д.). Откройте свой первый скин в Кейсах!'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSkinsTab('cases');
+                          haptic.selection();
+                        }}
+                        className="px-5 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-stone-950 font-black text-sm shadow-lg shadow-amber-500/25 transition active:scale-95 cursor-pointer flex items-center gap-2"
+                      >
+                        <span>🎁</span>
+                        <span>{lang === 'uk' ? 'Перейти до Кейсів' : 'Перейти к Кейсам'}</span>
+                      </button>
+                    </div>
+                  );
+                }
+
+                const effectiveSourceId = eligibleSourceIds.includes(upgraderSourceId)
+                  ? upgraderSourceId
+                  : eligibleSourceIds[0];
+                const srcSkin = SKINS[effectiveSourceId] || SKINS[eligibleSourceIds[0]];
+
+                const eligibleTargetSkins = SKIN_LIST.filter(
+                  (sk) => sk.id !== 'skin_classic' && sk.id !== effectiveSourceId
+                );
+                const effectiveTargetId = eligibleTargetSkins.some((sk) => sk.id === upgraderTargetId)
+                  ? upgraderTargetId
+                  : (eligibleTargetSkins[0]?.id || 'skin_chef');
+                const tgtSkin = SKINS[effectiveTargetId] || eligibleTargetSkins[0];
+
                 const effectiveBoostDiamonds = Math.min(upgraderBoostDiamonds, state.diamonds);
                 const { boostChance, totalChance } = calculateUpgradeChance(srcSkin, tgtSkin, effectiveBoostDiamonds);
                 const winSliceDeg = Math.round(totalChance * 3.6);
@@ -5337,12 +5409,12 @@ export default function App() {
                           <img src={srcSkin.img} alt="" className="w-full h-full object-cover" />
                         </div>
                         <select
-                          value={upgraderSourceId}
+                          value={effectiveSourceId}
                           onChange={(e) => setUpgraderSourceId(e.target.value)}
                           disabled={isUpgrading}
                           className="w-full text-[11px] font-bold bg-stone-950 text-white border border-white/15 rounded-lg py-1 px-1.5 truncate cursor-pointer"
                         >
-                          {(state.skins?.owned || ['skin_classic']).map((id) => {
+                          {eligibleSourceIds.map((id) => {
                             const sk = SKINS[id];
                             if (!sk) return null;
                             const emojiPrefix = sk.badge.split(' ')[0] || '🫓';
@@ -5372,17 +5444,17 @@ export default function App() {
                           <img src={tgtSkin.img} alt="" className="w-full h-full object-cover" />
                         </div>
                         <select
-                          value={upgraderTargetId}
+                          value={effectiveTargetId}
                           onChange={(e) => setUpgraderTargetId(e.target.value)}
                           disabled={isUpgrading}
                           className="w-full text-[11px] font-bold bg-stone-950 text-amber-200 border border-amber-500/30 rounded-lg py-1 px-1.5 truncate cursor-pointer"
                         >
-                          {SKIN_LIST.map((sk) => {
-                            if (sk.id === upgraderSourceId) return null;
+                          {eligibleTargetSkins.map((sk) => {
+                            const isAlreadyOwned = (state.skins?.owned || []).includes(sk.id);
                             const emojiPrefix = sk.badge.split(' ')[0] || '🫓';
                             return (
                               <option key={sk.id} value={sk.id}>
-                                {emojiPrefix} {lang === 'uk' ? sk.name : sk.nameRu}
+                                {emojiPrefix} {lang === 'uk' ? sk.name : sk.nameRu} {isAlreadyOwned ? '✓' : ''}
                               </option>
                             );
                           })}
@@ -5557,11 +5629,11 @@ export default function App() {
                     {/* Run Button */}
                     <button
                       type="button"
-                      disabled={isUpgrading || (state.skins?.owned || ['skin_classic']).includes(tgtSkin.id)}
+                      disabled={isUpgrading || (state.skins?.owned || []).includes(tgtSkin.id)}
                       onClick={handleRunUpgrader}
                       className={cn(
                         'w-full py-3.5 rounded-2xl font-black text-sm transition active:scale-95 cursor-pointer shadow-lg flex items-center justify-center gap-2',
-                        isUpgrading || (state.skins?.owned || ['skin_classic']).includes(tgtSkin.id)
+                        isUpgrading || (state.skins?.owned || []).includes(tgtSkin.id)
                           ? 'bg-stone-800 text-stone-500 cursor-not-allowed border border-white/5'
                           : 'bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-stone-950 hover:brightness-110 shadow-amber-500/30'
                       )}
@@ -5570,7 +5642,7 @@ export default function App() {
                       <span>
                         {isUpgrading
                           ? (lang === 'uk' ? 'Апгрейд у процесі…' : 'Апгрейд в процессе…')
-                          : (state.skins?.owned || ['skin_classic']).includes(tgtSkin.id)
+                          : (state.skins?.owned || []).includes(tgtSkin.id)
                           ? (lang === 'uk' ? 'Скін уже відкрито' : 'Скин уже открыт')
                           : effectiveBoostDiamonds > 0
                           ? (lang === 'uk' ? `Апгрейдити (${totalChance}%) • -${effectiveBoostDiamonds} 💎` : `Апгрейдить (${totalChance}%) • -${effectiveBoostDiamonds} 💎`)
@@ -5719,18 +5791,24 @@ export default function App() {
                     {lang === 'uk' ? 'Вдягти зараз ✨' : 'Надеть сейчас ✨'}
                   </button>
                   <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUpgraderSourceId(caseWonResult.skin.id);
-                        setSkinsTab('upgrader');
-                        setActiveCase(null);
-                        setCaseWonResult(null);
-                      }}
-                      className="py-2.5 rounded-xl bg-stone-900 hover:bg-stone-850 text-white font-bold text-xs border border-white/15 transition active:scale-95 cursor-pointer"
-                    >
-                      {lang === 'uk' ? '⚡ В Апгрейдер' : '⚡ В Апгрейдер'}
-                    </button>
+                    {caseWonResult.skin.id !== 'skin_classic' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUpgraderSourceId(caseWonResult.skin.id);
+                          setSkinsTab('upgrader');
+                          setActiveCase(null);
+                          setCaseWonResult(null);
+                        }}
+                        className="py-2.5 rounded-xl bg-stone-900 hover:bg-stone-850 text-white font-bold text-xs border border-white/15 transition active:scale-95 cursor-pointer"
+                      >
+                        {lang === 'uk' ? '⚡ В Апгрейдер' : '⚡ В Апгрейдер'}
+                      </button>
+                    ) : (
+                      <div className="py-2.5 rounded-xl bg-stone-950/60 text-stone-500 font-bold text-[11px] border border-white/5 flex items-center justify-center">
+                        {lang === 'uk' ? '🔒 Базовий скін' : '🔒 Базовый скин'}
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => {
