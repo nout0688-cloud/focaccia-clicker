@@ -5,7 +5,6 @@ export interface DonatePackage {
   descUk: string;
   descRu: string;
   stars: number;
-  uah: number;
   diamonds: number;
   emoji: string;
   badge?: string;
@@ -20,7 +19,6 @@ export const DONATE_PACKAGES: DonatePackage[] = [
     descUk: '100 💎 + зброя «Бойова скалка» 🪵 проти босів',
     descRu: '100 💎 + оружие «Боевая скалка» 🪵 против боссов',
     stars: 25,
-    uah: 35,
     diamonds: 100,
     emoji: '⚡',
     badge: 'ВИГІДА -70%',
@@ -33,7 +31,6 @@ export const DONATE_PACKAGES: DonatePackage[] = [
     descUk: '50 сяючих 💎 для швидких покупок',
     descRu: '50 сияющих 💎 для быстрых покупок',
     stars: 15,
-    uah: 20,
     diamonds: 50,
     emoji: '💎',
   },
@@ -44,7 +41,6 @@ export const DONATE_PACKAGES: DonatePackage[] = [
     descUk: '150 💎 (+15 бонусних каменів)',
     descRu: '150 💎 (+15 бонусных камней)',
     stars: 39,
-    uah: 50,
     diamonds: 150,
     emoji: '💰',
     badge: 'ХІТ',
@@ -56,7 +52,6 @@ export const DONATE_PACKAGES: DonatePackage[] = [
     descUk: '500 💎 (+75 бонусних каменів)',
     descRu: '500 💎 (+75 бонусных камней)',
     stars: 119,
-    uah: 150,
     diamonds: 500,
     emoji: '🧰',
     badge: '+20% БОНУС',
@@ -68,7 +63,6 @@ export const DONATE_PACKAGES: DonatePackage[] = [
     descUk: '1500 💎 (+300 бонусних каменів)',
     descRu: '1500 💎 (+300 бонусных камней)',
     stars: 299,
-    uah: 400,
     diamonds: 1500,
     emoji: '👑',
     badge: 'МАКСИМУМ',
@@ -80,7 +74,6 @@ export const DONATE_PACKAGES: DonatePackage[] = [
     descUk: '25 💎 + титул 💖 Меценат у профілі',
     descRu: '25 💎 + титул 💖 Меценат в профиле',
     stars: 15,
-    uah: 20,
     diamonds: 25,
     emoji: '💖',
   },

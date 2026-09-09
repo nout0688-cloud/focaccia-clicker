@@ -453,10 +453,6 @@ export default function App() {
   const [showPublicPreview, setShowPublicPreview] = useState(false);
   const [showDonateModal, setShowDonateModal] = useState(false);
   const [buyingPackageId, setBuyingPackageId] = useState<string | null>(null);
-  const [donateMethod, setDonateMethod] = useState<'stars' | 'card'>('stars');
-  const [donatelloNickname, setDonatelloNickname] = useState<string>('');
-  const [pendingCardPayment, setPendingCardPayment] = useState<DonatePackage | null>(null);
-  const [isCheckingPayment, setIsCheckingPayment] = useState(false);
 
   /* Hold-to-buy (затискання для швидкої покупки з прискоренням) */
   const [holdingBuyId, setHoldingBuyId] = useState<string | null>(null);
@@ -553,17 +549,6 @@ export default function App() {
       })
       .catch(() => null);
   }, [tgUser]);
-
-  useEffect(() => {
-    if (showDonateModal) {
-      fetch('https://focaccia-bot.vercel.app/api/donatello')
-        .then((r) => r.json())
-        .then((d) => {
-          if (d?.nickname) setDonatelloNickname(d.nickname);
-        })
-        .catch(() => {});
-    }
-  }, [showDonateModal]);
 
   /* ---- Init ---- */
   useEffect(() => {
@@ -2168,25 +2153,6 @@ export default function App() {
       return;
     }
 
-    // Спосіб 2: Оплата карткою України через Donatello.to
-    if (donateMethod === 'card') {
-      const nick = donatelloNickname || 'focaccia_clicker';
-      const userName = tgUser?.first_name || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.first_name || 'Гравець';
-      const commentTag = `FK_${curUserId}_${pkg.id}`;
-      const donatelloUrl = `https://donatello.to/${nick}?a=${pkg.uah}&m=${encodeURIComponent(commentTag)}&c=${encodeURIComponent(userName)}`;
-
-      setPendingCardPayment(pkg);
-      haptic.selection();
-
-      if (window.Telegram?.WebApp?.openLink) {
-        window.Telegram.WebApp.openLink(donatelloUrl);
-      } else {
-        window.open(donatelloUrl, '_blank');
-      }
-      return;
-    }
-
-    // Спосіб 1: Telegram Stars
     setBuyingPackageId(pkg.id);
     haptic.selection();
 
@@ -2264,84 +2230,6 @@ export default function App() {
       );
     } finally {
       setBuyingPackageId(null);
-    }
-  };
-
-  const handleCheckCardPayment = async () => {
-    if (!pendingCardPayment) return;
-    const curUserId = tgUser?.id || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id;
-    if (!curUserId) return;
-
-    setIsCheckingPayment(true);
-    haptic.light();
-
-    try {
-      const res = await fetch(`https://focaccia-bot.vercel.app/api/donatello?check=1&userId=${curUserId}&pkgId=${pendingCardPayment.id}`);
-      const data = await res.json();
-
-      if (data?.granted) {
-        burstConfetti(['💎', '💳', '✨', '🎉', '👑']);
-        haptic.success();
-        setPendingCardPayment(null);
-        setShowDonateModal(false);
-
-        setTimeout(() => {
-          fetch(`https://focaccia-bot.vercel.app/api/reward?userId=${curUserId}&lastReset=${stateRef.current.lastReset || 0}`)
-            .then((r) => r.json())
-            .then((rewardData) => {
-              if (rewardData?.diamonds && rewardData.diamonds > 0) {
-                setState((p) => {
-                  const next = { ...p, diamonds: (p.diamonds || 0) + rewardData.diamonds };
-                  stateRef.current = next;
-                  saveNow(next);
-                  return next;
-                });
-                const curT = TRANSLATIONS[langRef.current];
-                addToast(curT.toastDonateReward, formatTemplate(curT.toastDonateRewardDesc, formatNum(rewardData.diamonds)), '🌟');
-              }
-              if (rewardData?.extraUpgrade) {
-                setState((p) => {
-                  const curVip = p.vipUpgrades || [];
-                  if (!curVip.includes(rewardData.extraUpgrade)) {
-                    const next = { ...p, vipUpgrades: [...curVip, rewardData.extraUpgrade] };
-                    stateRef.current = next;
-                    saveNow(next);
-                    return next;
-                  }
-                  return p;
-                });
-                addToast(langRef.current === 'uk' ? '🪵 Нова зброя!' : '🪵 Новое оружие!', langRef.current === 'uk' ? 'Отримано «Бойова скалка»!' : 'Получено «Боевая скалка»!', '🪵');
-              }
-              if (rewardData?.patronBadge) {
-                setState((p) => {
-                  const next = { ...p, isPatron: true };
-                  stateRef.current = next;
-                  saveNow(next);
-                  return next;
-                });
-                addToast(langRef.current === 'uk' ? '💖 Меценат!' : '💖 Меценат!', langRef.current === 'uk' ? 'Отримано титул Мецената!' : 'Получен титул Мецената!', '💖');
-              }
-              reportSync();
-            })
-            .catch(() => {});
-        }, 600);
-      } else {
-        addToast(
-          lang === 'uk' ? '⏳ Очікуємо' : '⏳ Ожидаем',
-          data?.message || (lang === 'uk' ? t.donateNotFound : t.donateNotFound),
-          'ℹ️',
-        );
-        haptic.warning();
-      }
-    } catch (err) {
-      console.error('Check donatello error:', err);
-      addToast(
-        lang === 'uk' ? '⚠️ Помилка' : '⚠️ Ошибка',
-        lang === 'uk' ? 'Не вдалося перевірити оплату' : 'Не удалось проверить оплату',
-        '❌',
-      );
-    } finally {
-      setIsCheckingPayment(false);
     }
   };
 
@@ -2937,102 +2825,21 @@ export default function App() {
                     {t.donateTitle || '💎 Банк Діамантів'}
                   </h3>
                   <p className="text-[11px] text-cyan-300/70 font-medium">
-                    {t.donateSubtitle || 'Офіційна покупка за Telegram Stars ⭐ або картки 🇺🇦'}
+                    {t.donateSubtitle || 'Офіційна покупка за Telegram Stars ⭐'}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => { setShowDonateModal(false); setPendingCardPayment(null); haptic.light(); }}
+                onClick={() => { setShowDonateModal(false); haptic.light(); }}
                 className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white flex items-center justify-center text-sm font-bold border border-white/10 transition active:scale-95 cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {/* Payment Method Switcher */}
-            <div className="px-4 pt-3 pb-1 shrink-0">
-              <div className="flex items-center gap-1.5 p-1 bg-white/5 rounded-2xl border border-white/10">
-                <button
-                  type="button"
-                  onClick={() => { setDonateMethod('stars'); haptic.selection(); }}
-                  className={cn(
-                    'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
-                    donateMethod === 'stars'
-                      ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-amber-950 shadow-md shadow-amber-500/20'
-                      : 'text-white/60 hover:text-white'
-                  )}
-                >
-                  <span>🌟</span>
-                  <span>{t.donateMethodStars || 'Telegram Stars'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setDonateMethod('card'); haptic.selection(); }}
-                  className={cn(
-                    'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
-                    donateMethod === 'card'
-                      ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-md shadow-cyan-500/20'
-                      : 'text-white/60 hover:text-white'
-                  )}
-                >
-                  <span>💳</span>
-                  <span>{t.donateMethodCard || 'Картка України (₴)'}</span>
-                </button>
-              </div>
-            </div>
-
             {/* Content List */}
-            <div className="p-4 pt-2 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
-              {/* Card payment hint banner */}
-              {donateMethod === 'card' && (
-                <div className="p-2.5 rounded-2xl bg-cyan-950/40 border border-cyan-500/30 text-[11px] text-cyan-200 flex items-start gap-2">
-                  <span className="text-base">🇺🇦</span>
-                  <div className="flex-1 leading-snug">
-                    {t.donateCardHint || 'Оплата будь-якою карткою України або через Apple Pay / Google Pay. Алмази нарахуються автоматично!'}
-                  </div>
-                </div>
-              )}
-
-              {/* Pending Card Payment Check Box */}
-              {pendingCardPayment && (
-                <div className="p-3 rounded-2xl bg-amber-950/40 border border-amber-400/50 flex flex-col gap-2 animate-fade-in shadow-lg shadow-amber-500/10">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-black text-amber-200 flex items-center gap-1.5">
-                      <span>⏳</span>
-                      <span>{lang === 'uk' ? pendingCardPayment.titleUk : pendingCardPayment.titleRu} ({pendingCardPayment.uah} ₴)</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setPendingCardPayment(null)}
-                      className="text-[10px] text-white/50 hover:text-white px-1.5 py-0.5 rounded bg-white/5 cursor-pointer"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-amber-100/70 leading-relaxed">
-                    {lang === 'uk'
-                      ? 'Після підтвердження платежу в банку натисніть кнопку нижче для миттєвого зарахування діамантів:'
-                      : 'После подтверждения платежа в банке нажмите кнопку ниже для мгновенного зачисления алмазов:'}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleCheckCardPayment}
-                    disabled={isCheckingPayment}
-                    className="w-full py-2.5 rounded-xl font-black text-xs bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/25 active:scale-95 transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
-                  >
-                    {isCheckingPayment ? (
-                      <span>{t.donateChecking || 'Перевіряємо надходження…'}</span>
-                    ) : (
-                      <>
-                        <span>🔄</span>
-                        <span>{t.donateCheckBtn || 'Перевірити оплату'}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
-
+            <div className="p-4 space-y-3 overflow-y-auto flex-1 custom-scrollbar">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {DONATE_PACKAGES.map((pkg) => {
                   const title = lang === 'uk' ? pkg.titleUk : pkg.titleRu;
@@ -3093,11 +2900,6 @@ export default function App() {
                         >
                           {isBuying ? (
                             <span>{t.donateLoading || 'Завантаження…'}</span>
-                          ) : donateMethod === 'card' ? (
-                            <>
-                              <span>{pkg.uah}</span>
-                              <span>₴</span>
-                            </>
                           ) : (
                             <>
                               <span>{pkg.stars}</span>
