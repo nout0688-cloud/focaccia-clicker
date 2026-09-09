@@ -55,8 +55,14 @@ import {
   SKIN_LIST,
   RARITY_LABELS,
   calculateUpgradeChance,
+  CASES,
+  rollCaseDrop,
+  getSkinLevel,
+  getSkinLevelMultiplier,
+  getSkinLevelUpgradeCost,
   type SkinItem,
   type SkinRarity,
+  type CaseItem,
 } from './game/skins';
 import {
   CAT_LEVELS,
@@ -235,6 +241,7 @@ interface SaveState {
   skins?: {
     owned: string[];
     equipped: string;
+    levels?: Record<string, number>;
   };
   cat?: {
     unlocked: boolean;
@@ -541,12 +548,20 @@ export default function App() {
   const [copiedOrderCode, setCopiedOrderCode] = useState(false);
   const [showMonoHelp, setShowMonoHelp] = useState(false);
 
-  // ===== 🎨 SKINS & UPGRADER STATE =====
+  // ===== 🎨 SKINS, CASES & UPGRADER STATE =====
   const [showSkinsModal, setShowSkinsModal] = useState(false);
-  const [skinsTab, setSkinsTab] = useState<'inventory' | 'upgrader'>('inventory');
+  const [skinsTab, setSkinsTab] = useState<'inventory' | 'cases' | 'upgrader'>('inventory');
   const [holdProgress, setHoldProgress] = useState(0);
   const [portalWarping, setPortalWarping] = useState(false);
   const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Cases and Unboxing Roulette state
+  const [activeCase, setActiveCase] = useState<CaseItem | null>(null);
+  const [caseOddsModal, setCaseOddsModal] = useState<CaseItem | null>(null);
+  const [isOpeningCase, setIsOpeningCase] = useState(false);
+  const [caseReel, setCaseReel] = useState<SkinItem[]>([]);
+  const [caseReelOffset, setCaseReelOffset] = useState<number>(0);
+  const [caseWonResult, setCaseWonResult] = useState<{ skin: SkinItem; isNew: boolean; newLevel: number } | null>(null);
 
   // Upgrader state
   const [upgraderSourceId, setUpgraderSourceId] = useState<string>('skin_classic');
@@ -839,6 +854,14 @@ export default function App() {
     return SKINS[id] || SKINS.skin_classic;
   }, [state.skins?.equipped]);
 
+  const activeSkinLevel = useMemo(() => {
+    return getSkinLevel(state.skins?.equipped || 'skin_classic', state.skins?.levels);
+  }, [state.skins?.equipped, state.skins?.levels]);
+
+  const activeSkinLevelMult = useMemo(() => {
+    return getSkinLevelMultiplier(activeSkinLevel);
+  }, [activeSkinLevel]);
+
   const catInfo: CatLevelInfo = useMemo(() => {
     return getCatLevelInfo(state.cat?.level || 1);
   }, [state.cat?.level]);
@@ -850,9 +873,11 @@ export default function App() {
       if (u.clickAdd) add += u.clickAdd;
       if (u.clickMult) mult *= u.clickMult;
     }
-    if (activeSkin?.clickMult) mult *= activeSkin.clickMult;
+    if (activeSkin?.clickMult) {
+      mult *= (1 + (activeSkin.clickMult - 1) * activeSkinLevelMult);
+    }
     return add * mult * prestigeMult;
-  }, [state.upgrades, prestigeMult, activeSkin?.clickMult]);
+  }, [state.upgrades, prestigeMult, activeSkin?.clickMult, activeSkinLevelMult]);
 
   const cps = useMemo(() => {
     let base = 0;
@@ -872,14 +897,16 @@ export default function App() {
       if (u.cpsMult && state.upgrades.includes(u.id)) mult *= u.cpsMult;
     }
     if (state.vipUpgrades?.includes('vip_chef')) mult *= 1.3;
-    if (activeSkin?.cpsMult) mult *= activeSkin.cpsMult;
+    if (activeSkin?.cpsMult) {
+      mult *= (1 + (activeSkin.cpsMult - 1) * activeSkinLevelMult);
+    }
     if (state.cat?.unlocked && catInfo?.cpsBonus) mult *= (1 + catInfo.cpsBonus);
     mult *= (1 + dPercentTotal);
     if (activeEvent) mult *= activeEvent.cpsMult;
     return base * mult * prestigeMult;
-  }, [state.buildings, state.diamondBuildings, state.upgrades, state.vipUpgrades, brokenBuilding, activeEvent, prestigeMult, activeSkin?.cpsMult, state.cat?.unlocked, catInfo?.cpsBonus]);
+  }, [state.buildings, state.diamondBuildings, state.upgrades, state.vipUpgrades, brokenBuilding, activeEvent, prestigeMult, activeSkin?.cpsMult, activeSkinLevelMult, state.cat?.unlocked, catInfo?.cpsBonus]);
 
-  const frenzyMult = (frenzy > 0 ? (state.vipUpgrades?.includes('vip_frenzy') ? 8 : 7) : 1) * (frenzy > 0 && activeSkin?.id === 'skin_demon' ? 1.5 : 1);
+  const frenzyMult = (frenzy > 0 ? (state.vipUpgrades?.includes('vip_frenzy') ? 8 : 7) : 1) * (frenzy > 0 && activeSkin?.id === 'skin_demon' ? (1 + 0.5 * activeSkinLevelMult) : 1);
   const comboMult = 1 + Math.min(combo, 100) * 0.02;
   const cpsRef = useRef(cps);
   cpsRef.current = cps * frenzyMult;
@@ -902,9 +929,11 @@ export default function App() {
     for (const u of CLICK_UPGRADES) {
       if (u.energyRegen && state.upgrades.includes(u.id)) mult *= u.energyRegen;
     }
-    if (activeSkin?.energyRegenMult) mult *= activeSkin.energyRegenMult;
+    if (activeSkin?.energyRegenMult) {
+      mult *= (1 + (activeSkin.energyRegenMult - 1) * activeSkinLevelMult);
+    }
     return mult;
-  }, [state.upgrades, activeSkin?.energyRegenMult]);
+  }, [state.upgrades, activeSkin?.energyRegenMult, activeSkinLevelMult]);
 
   /* ---- Active cosmetics & Live Try-on ---- */
   const effectiveFrameId = previewFrame || state.cosmetics?.equippedFrame || 'frame_default';
@@ -2010,7 +2039,7 @@ export default function App() {
 
     const hasCritUp = stateRef.current.vipUpgrades?.includes('vip_crit');
     const baseCritChance = hasCritUp ? 0.08 : 0.05;
-    const critChance = baseCritChance + (activeSkin?.critChance || 0);
+    const critChance = baseCritChance + (activeSkin?.critChance || 0) * activeSkinLevelMult;
     const critMultVal = hasCritUp ? 12 : 10;
     const crit = !burning && Math.random() < critChance;
     const gain = clickPower * comboMult * frenzyMult * (crit ? critMultVal : 1) * (burning ? 0.05 : 1);
@@ -2077,7 +2106,8 @@ export default function App() {
 
       // Read damage from the current stateRef to avoid stale closure on vipUpgrades
       const { damage: baseDamage, icon } = getBossDamage(stateRef.current.vipUpgrades);
-      const damage = Math.floor(baseDamage * (activeSkin?.bossDamageMult || 1));
+      const skinBossMult = activeSkin?.bossDamageMult ? (1 + (activeSkin.bossDamageMult - 1) * activeSkinLevelMult) : 1;
+      const damage = Math.floor(baseDamage * skinBossMult);
       const newHp = currentBoss.currentHp - damage;
 
       addFloat(window.innerWidth / 2, window.innerHeight * 0.35, `-${damage} ${icon}`, 'text-red-400 text-2xl font-black');
@@ -2466,6 +2496,166 @@ export default function App() {
         );
       }
     }, 3600);
+  };
+
+  const handleOpenCase = (c: CaseItem) => {
+    if (isOpeningCase) return;
+
+    if (c.priceType === 'focaccia' && state.focaccia < c.price) {
+      addToast(
+        lang === 'uk' ? 'Недостатньо фокач!' : 'Недостаточно фокачч!',
+        lang === 'uk' ? `Потрібно ${formatNum(c.price)} 🫓` : `Нужно ${formatNum(c.price)} 🫓`,
+        '🥖'
+      );
+      return;
+    }
+    if (c.priceType === 'diamonds' && state.diamonds < c.price) {
+      addToast(
+        lang === 'uk' ? 'Недостатньо діамантів!' : 'Недостаточно алмазов!',
+        lang === 'uk' ? `Потрібно ${c.price} 💎` : `Нужно ${c.price} 💎`,
+        '💎'
+      );
+      return;
+    }
+
+    let curState = { ...stateRef.current };
+    if (c.priceType === 'focaccia') {
+      curState.focaccia = Math.max(0, curState.focaccia - c.price);
+    } else {
+      curState.diamonds = Math.max(0, curState.diamonds - c.price);
+    }
+
+    const winningSkin = rollCaseDrop(c);
+    const winningIdx = 32;
+    const totalCards = 40;
+    const reel: SkinItem[] = [];
+
+    for (let i = 0; i < totalCards; i++) {
+      if (i === winningIdx) {
+        reel.push(winningSkin);
+      } else {
+        reel.push(rollCaseDrop(c));
+      }
+    }
+
+    setActiveCase(c);
+    setIsOpeningCase(true);
+    setCaseWonResult(null);
+    setCaseReel(reel);
+    setCaseReelOffset(0);
+
+    const isNew = !(curState.skins?.owned || ['skin_classic']).includes(winningSkin.id);
+    const currentOwned = curState.skins?.owned || ['skin_classic'];
+    const nextOwned = isNew ? [...currentOwned, winningSkin.id] : currentOwned;
+    const currentLevels = { ...(curState.skins?.levels || {}) };
+    const curLvl = currentLevels[winningSkin.id] || 1;
+    const nextLvl = isNew ? 1 : Math.min(5, curLvl + 1);
+    currentLevels[winningSkin.id] = nextLvl;
+
+    const nextState: SaveState = {
+      ...curState,
+      skins: {
+        ...curState.skins,
+        owned: nextOwned,
+        equipped: curState.skins?.equipped || 'skin_classic',
+        levels: currentLevels,
+      },
+    };
+
+    stateRef.current = nextState;
+    setState(nextState);
+    saveNow(nextState);
+
+    haptic.heavy();
+
+    const cardStep = 120;
+    const jitter = Math.floor((Math.random() - 0.5) * 50);
+    const targetOffset = -(winningIdx * cardStep + 56 - 160 + jitter);
+
+    setTimeout(() => {
+      setCaseReelOffset(targetOffset);
+    }, 60);
+
+    setTimeout(() => {
+      setIsOpeningCase(false);
+      setCaseWonResult({
+        skin: winningSkin,
+        isNew,
+        newLevel: nextLvl,
+      });
+      haptic.success();
+      burstConfetti(['🎉', '✨', '👑', '💎', '🫓', winningSkin.badge]);
+      if (isNew) {
+        addToast(
+          lang === 'uk' ? '🎉 НОВИЙ СКІН!' : '🎉 НОВЫЙ СКИН!',
+          lang === 'uk' ? `Отримано «${winningSkin.name}» (${winningSkin.badge})!` : `Получен «${winningSkin.nameRu}» (${winningSkin.badge})!`,
+          '🎁'
+        );
+      } else {
+        addToast(
+          lang === 'uk' ? '⭐ ДУБЛІКАТ СКІНА!' : '⭐ ДУБЛИКАТ СКИНА!',
+          lang === 'uk' ? `«${winningSkin.name}» підвищено до ★ Lv.${nextLvl}! (+15% до бонусів)` : `«${winningSkin.nameRu}» повышен до ★ Lv.${nextLvl}! (+15% ко всем бонусам)`,
+          '⭐'
+        );
+      }
+    }, 4250);
+  };
+
+  const handleUpgradeSkinLevel = (skinId: string) => {
+    const sk = SKINS[skinId];
+    if (!sk) return;
+    const curLvl = getSkinLevel(skinId, state.skins?.levels);
+    const cost = getSkinLevelUpgradeCost(sk, curLvl);
+    if (!cost) {
+      addToast(lang === 'uk' ? 'Максимальний рівень досягнуто!' : 'Максимальный уровень достигнут!', '', '⭐');
+      return;
+    }
+
+    if (state.focaccia < cost.focaccia) {
+      addToast(
+        lang === 'uk' ? 'Недостатньо фокач для прокачки!' : 'Недостаточно фокачч для прокачки!',
+        lang === 'uk' ? `Потрібно ${formatNum(cost.focaccia)} 🫓` : `Нужно ${formatNum(cost.focaccia)} 🫓`,
+        '🥖'
+      );
+      return;
+    }
+    if (state.diamonds < cost.diamonds) {
+      addToast(
+        lang === 'uk' ? 'Недостатньо діамантів для прокачки!' : 'Недостаточно алмазов для прокачки!',
+        lang === 'uk' ? `Потрібно ${cost.diamonds} 💎` : `Нужно ${cost.diamonds} 💎`,
+        '💎'
+      );
+      return;
+    }
+
+    const curState = stateRef.current;
+    const currentLevels = { ...(curState.skins?.levels || {}) };
+    const nextLvl = Math.min(5, curLvl + 1);
+    currentLevels[skinId] = nextLvl;
+
+    const nextState: SaveState = {
+      ...curState,
+      focaccia: Math.max(0, curState.focaccia - cost.focaccia),
+      diamonds: Math.max(0, curState.diamonds - cost.diamonds),
+      skins: {
+        ...curState.skins,
+        owned: curState.skins?.owned || ['skin_classic'],
+        equipped: curState.skins?.equipped || 'skin_classic',
+        levels: currentLevels,
+      },
+    };
+
+    stateRef.current = nextState;
+    setState(nextState);
+    saveNow(nextState);
+
+    haptic.success();
+    burstConfetti(['⭐', '✨', '⬆️', '💎']);
+    addToast(
+      lang === 'uk' ? 'Скін прокачано!' : 'Скин прокачан!',
+      lang === 'uk' ? `«${sk.name}» тепер ★ Lv.${nextLvl} (+15% до всіх характеристик)!` : `«${sk.nameRu}» теперь ★ Lv.${nextLvl} (+15% ко всем характеристикам)!`,
+      '⭐'
+    );
   };
 
   const fixBuilding = (id: string) => {
@@ -4758,7 +4948,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ===== 🔮 SKINS & UPGRADER MODAL ===== */}
+      {/* ===== 🔮 SKINS, CASES & UPGRADER MODAL ===== */}
       {showSkinsModal && (
         <div className="fixed inset-0 z-[80] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
           <div className="relative w-full max-w-md bg-[#12100d] border-t sm:border border-amber-500/40 rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
@@ -4773,10 +4963,10 @@ export default function App() {
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-sm sm:text-base font-black text-white truncate">
-                    {lang === 'uk' ? 'Гардеробна Скінів & Апгрейдер' : 'Гардероб Скинов & Апгрейдер'}
+                    {lang === 'uk' ? 'Гардеробна & Кейси' : 'Гардероб & Кейсы'}
                   </h3>
                   <p className="text-[10px] text-amber-300/80 font-medium truncate">
-                    {lang === 'uk' ? 'Змінюйте вигляд та прокачуйте характеристики' : 'Меняйте облик и прокачивайте характеристики'}
+                    {lang === 'uk' ? 'Скіни, скрині та апгрейдер характеристик' : 'Скины, сундуки и апгрейдер характеристик'}
                   </p>
                 </div>
               </div>
@@ -4791,31 +4981,43 @@ export default function App() {
 
             {/* Segmented Control Tabs */}
             <div className="px-4 pt-2.5 pb-2 bg-stone-950/50 border-b border-white/5 shrink-0">
-              <div className="grid grid-cols-2 p-1 rounded-xl bg-white/5 border border-white/10 text-xs font-bold">
+              <div className="grid grid-cols-3 p-1 rounded-xl bg-white/5 border border-white/10 text-xs font-bold">
                 <button
                   type="button"
                   onClick={() => { setSkinsTab('inventory'); haptic.selection(); }}
                   className={cn(
-                    'py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5',
+                    'py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1',
                     skinsTab === 'inventory' ? 'bg-amber-500 text-stone-950 font-black shadow' : 'text-stone-400 hover:text-white'
                   )}
                 >
                   <span>🎒</span>
-                  <span>{lang === 'uk' ? 'Інвентар' : 'Инвентарь'}</span>
-                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-black/30">
+                  <span className="truncate">{lang === 'uk' ? 'Інвентар' : 'Инвентарь'}</span>
+                  <span className="text-[9px] px-1 rounded-full bg-black/30">
                     {state.skins?.owned.length || 1}/{SKIN_LIST.length}
                   </span>
                 </button>
                 <button
                   type="button"
+                  onClick={() => { setSkinsTab('cases'); haptic.selection(); }}
+                  className={cn(
+                    'py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1 relative',
+                    skinsTab === 'cases' ? 'bg-amber-500 text-stone-950 font-black shadow' : 'text-stone-400 hover:text-white'
+                  )}
+                >
+                  <span>🎁</span>
+                  <span className="truncate">{lang === 'uk' ? 'Кейси' : 'Кейсы'}</span>
+                  <span className="text-[8px] px-1 rounded-full bg-amber-400 text-stone-950 font-black animate-pulse">4</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => { setSkinsTab('upgrader'); haptic.selection(); }}
                   className={cn(
-                    'py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5',
+                    'py-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1',
                     skinsTab === 'upgrader' ? 'bg-amber-500 text-stone-950 font-black shadow' : 'text-stone-400 hover:text-white'
                   )}
                 >
                   <span>⚡</span>
-                  <span>{lang === 'uk' ? 'Апгрейдер' : 'Апгрейдер'}</span>
+                  <span className="truncate">{lang === 'uk' ? 'Апгрейдер' : 'Апгрейдер'}</span>
                 </button>
               </div>
             </div>
@@ -4832,9 +5034,12 @@ export default function App() {
                     <img src={activeSkin.img} alt="" className="w-full h-full object-cover" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 mb-1">
+                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                       <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-black border', RARITY_LABELS[activeSkin.rarity].color, RARITY_LABELS[activeSkin.rarity].border)}>
                         {activeSkin.badge}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-black text-[10px] border border-amber-400/40">
+                        ★ Lv.{activeSkinLevel}
                       </span>
                       <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-500/30">
                         ✓ {lang === 'uk' ? 'Активний' : 'Активен'}
@@ -4845,26 +5050,38 @@ export default function App() {
                     </div>
                     <div className="text-[11px] text-amber-200/90 font-medium line-clamp-2 mt-0.5">
                       {lang === 'uk' ? activeSkin.bonusDesc : activeSkin.bonusDescRu}
+                      {activeSkinLevel > 1 && (
+                        <span className="text-emerald-300 font-bold ml-1">
+                          (+{Math.round((activeSkinLevelMult - 1) * 100)}% {lang === 'uk' ? 'буст' : 'буст'})
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 {/* Skins Grid */}
                 <div className="space-y-2.5">
-                  <div className="text-xs font-black text-stone-400 uppercase tracking-wider">
-                    {lang === 'uk' ? 'Колекція скінів:' : 'Коллекция скинов:'}
+                  <div className="flex items-center justify-between text-xs font-black text-stone-400 uppercase tracking-wider">
+                    <span>{lang === 'uk' ? 'Колекція скінів:' : 'Коллекция скинов:'}</span>
+                    <span className="text-amber-400/80 font-mono">
+                      {state.skins?.owned.length || 1}/{SKIN_LIST.length}
+                    </span>
                   </div>
+
                   <div className="grid grid-cols-1 gap-2.5">
                     {SKIN_LIST.map((sk) => {
-                      const isOwned = state.skins?.owned.includes(sk.id);
-                      const isEquipped = state.skins?.equipped === sk.id;
+                      const isOwned = (state.skins?.owned || ['skin_classic']).includes(sk.id);
+                      const isEquipped = (state.skins?.equipped || 'skin_classic') === sk.id;
                       const rarity = RARITY_LABELS[sk.rarity];
+                      const skinLvl = getSkinLevel(sk.id, state.skins?.levels);
+                      const skinLvlMult = getSkinLevelMultiplier(skinLvl);
+                      const upgradeCost = isOwned ? getSkinLevelUpgradeCost(sk, skinLvl) : null;
 
                       return (
                         <div
                           key={sk.id}
                           className={cn(
-                            'p-3 rounded-2xl border transition-all flex items-center justify-between gap-3',
+                            'p-3 rounded-2xl border transition-all flex flex-col gap-2',
                             isEquipped
                               ? 'bg-amber-500/10 border-amber-400/60 shadow-md'
                               : isOwned
@@ -4872,62 +5089,105 @@ export default function App() {
                               : 'bg-stone-950/60 border-white/5 opacity-60'
                           )}
                         >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-14 h-14 rounded-xl overflow-hidden border border-white/20 bg-stone-950 shrink-0 relative">
-                              <img
-                                src={sk.img}
-                                alt=""
-                                className={cn('w-full h-full object-cover', !isOwned && 'grayscale opacity-50')}
-                              />
-                              {!isOwned && (
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-xs">
-                                  🔒
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-14 h-14 rounded-xl overflow-hidden border border-white/20 bg-stone-950 shrink-0 relative shadow">
+                                <img
+                                  src={sk.img}
+                                  alt=""
+                                  className={cn('w-full h-full object-cover', !isOwned && 'grayscale opacity-50')}
+                                />
+                                {!isOwned && (
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-xs">
+                                    🔒
+                                  </div>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                                  <span className={cn('px-1.5 py-0.2 rounded text-[9px] font-bold border', rarity.color, rarity.border)}>
+                                    {sk.badge}
+                                  </span>
+                                  {isOwned && (
+                                    <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold text-[9px] border border-amber-400/30">
+                                      ★ Lv.{skinLvl}
+                                    </span>
+                                  )}
                                 </div>
-                              )}
+                                <div className="text-xs font-black text-white truncate">
+                                  {lang === 'uk' ? sk.name : sk.nameRu}
+                                </div>
+                                <div className="text-[10px] text-amber-200/80 line-clamp-1">
+                                  {lang === 'uk' ? sk.bonusDesc : sk.bonusDescRu}
+                                  {isOwned && skinLvl > 1 && (
+                                    <span className="text-emerald-300 font-bold ml-1">
+                                      (+{Math.round((skinLvlMult - 1) * 100)}%)
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5 mb-0.5">
-                                <span className={cn('px-1.5 py-0.2 rounded text-[9px] font-bold border', rarity.color, rarity.border)}>
-                                  {sk.badge}
+
+                            <div className="shrink-0 flex items-center gap-1.5">
+                              {isEquipped ? (
+                                <span className="px-2.5 py-1 rounded-xl bg-amber-500/20 border border-amber-400/50 text-[11px] font-black text-amber-300">
+                                  ✓ {lang === 'uk' ? 'Вдягнено' : 'Надето'}
                                 </span>
-                              </div>
-                              <div className="text-xs font-black text-white truncate">
-                                {lang === 'uk' ? sk.name : sk.nameRu}
-                              </div>
-                              <div className="text-[10px] text-amber-200/80 line-clamp-1">
-                                {lang === 'uk' ? sk.bonusDesc : sk.bonusDescRu}
-                              </div>
+                              ) : isOwned ? (
+                                <button
+                                  type="button"
+                                  onClick={() => equipSkin(sk.id)}
+                                  className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/15 transition active:scale-95 cursor-pointer"
+                                >
+                                  {lang === 'uk' ? 'Вдягти' : 'Надеть'}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSkinsTab('cases');
+                                    haptic.selection();
+                                  }}
+                                  className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs border border-amber-400/40 transition active:scale-95 cursor-pointer flex items-center gap-1"
+                                >
+                                  <span>🎁</span>
+                                  <span>{lang === 'uk' ? 'З кейсу' : 'Из кейса'}</span>
+                                </button>
+                              )}
                             </div>
                           </div>
 
-                          <div className="shrink-0">
-                            {isEquipped ? (
-                              <span className="px-2.5 py-1 rounded-xl bg-amber-500/20 border border-amber-400/50 text-[11px] font-black text-amber-300">
-                                ✓ {lang === 'uk' ? 'Вдягнено' : 'Надето'}
-                              </span>
-                            ) : isOwned ? (
-                              <button
-                                type="button"
-                                onClick={() => equipSkin(sk.id)}
-                                className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs border border-white/15 transition active:scale-95 cursor-pointer"
-                              >
-                                {lang === 'uk' ? 'Вдягти' : 'Надеть'}
-                              </button>
-                            ) : (
+                          {/* Quick Actions Row if owned */}
+                          {isOwned && (
+                            <div className="flex items-center justify-between pt-2 border-t border-white/5 text-[10px] gap-2 flex-wrap">
+                              {upgradeCost ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpgradeSkinLevel(sk.id)}
+                                  className="px-2 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1 transition active:scale-95 cursor-pointer"
+                                >
+                                  <span>★</span>
+                                  <span>{lang === 'uk' ? `Прокачати до Lv.${skinLvl + 1}:` : `Улучшить до Lv.${skinLvl + 1}:`}</span>
+                                  <span className="underline">{formatNum(upgradeCost.focaccia)} 🫓, {upgradeCost.diamonds} 💎</span>
+                                </button>
+                              ) : (
+                                <span className="text-amber-400/80 font-bold">👑 MAX РІВЕНЬ (★ Lv.5)</span>
+                              )}
+
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setUpgraderTargetId(sk.id);
+                                  setUpgraderSourceId(sk.id);
                                   setSkinsTab('upgrader');
                                   haptic.selection();
                                 }}
-                                className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold text-xs border border-amber-400/40 transition active:scale-95 cursor-pointer flex items-center gap-1"
+                                className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-white border border-white/10 font-medium flex items-center gap-1 transition active:scale-95 cursor-pointer ml-auto"
                               >
                                 <span>⚡</span>
-                                <span>{lang === 'uk' ? 'Отримати' : 'Получить'}</span>
+                                <span>{lang === 'uk' ? 'В Апгрейдер' : 'В Апгрейдер'}</span>
                               </button>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -4936,7 +5196,120 @@ export default function App() {
               </div>
             )}
 
-            {/* Tab 2: UPGRADER */}
+            {/* Tab 2: CASES */}
+            {skinsTab === 'cases' && (
+              <div className="p-4 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
+                {/* Banner */}
+                <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-500/20 via-yellow-500/10 to-stone-900 border border-amber-500/30 flex items-center gap-3">
+                  <div className="text-2xl animate-bounce">🎁</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-black text-amber-300">
+                      {lang === 'uk' ? 'Скрині зі скінами та апгрейдами' : 'Сундуки со скинами и апгрейдами'}
+                    </div>
+                    <div className="text-[10px] text-stone-300">
+                      {lang === 'uk' ? 'Відкривайте за фокачі або діаманти! Дублікати прокачують зірковий рівень скінів (до ★ Lv.5).' : 'Открывайте за фокаччи или алмазы! Дубликаты прокачивают звёздный уровень скинов (до ★ Lv.5).'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Cases Grid */}
+                <div className="grid grid-cols-1 gap-3">
+                  {CASES.map((c) => {
+                    const canAfford = c.priceType === 'focaccia' ? state.focaccia >= c.price : state.diamonds >= c.price;
+                    return (
+                      <div
+                        key={c.id}
+                        className={cn(
+                          'p-3.5 rounded-2xl border flex flex-col justify-between relative overflow-hidden bg-gradient-to-b transition-all',
+                          c.gradient, c.border
+                        )}
+                        style={{ boxShadow: `0 0 20px ${c.glow}` }}
+                      >
+                        {/* Top header: Badge & Chances info button */}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className="px-2 py-0.5 rounded-full bg-black/60 border border-white/10 text-[10px] font-black text-amber-300">
+                            {c.badge}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setCaseOddsModal(c)}
+                            className="px-2 py-0.5 rounded-lg bg-white/10 hover:bg-white/20 text-stone-300 hover:text-white text-[10px] font-bold border border-white/10 flex items-center gap-1 cursor-pointer transition"
+                          >
+                            <span>ℹ️</span>
+                            <span>{lang === 'uk' ? 'Шанси' : 'Шансы'}</span>
+                          </button>
+                        </div>
+
+                        {/* Center: Big Icon and Title */}
+                        <div className="flex items-center gap-3 my-1">
+                          <div className="w-14 h-14 rounded-2xl bg-black/50 border border-white/15 flex items-center justify-center text-3xl shadow-inner shrink-0">
+                            {c.icon}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-black text-white truncate">
+                              {lang === 'uk' ? c.name : c.nameRu}
+                            </div>
+                            <div className="text-[10px] text-stone-300 line-clamp-2 mt-0.5">
+                              {lang === 'uk' ? c.desc : c.descRu}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Drops preview row */}
+                        <div className="mt-2.5 pt-2 border-t border-white/10">
+                          <div className="text-[9px] text-stone-400 font-bold uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                            <span>{lang === 'uk' ? 'Можливий лут:' : 'Возможный лут:'}</span>
+                            <span className="text-amber-400/80">{c.drops.length} {lang === 'uk' ? 'варіантів' : 'вариантов'}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+                            {c.drops.map((drop) => {
+                              const sk = SKINS[drop.skinId];
+                              if (!sk) return null;
+                              const rarity = RARITY_LABELS[sk.rarity];
+                              return (
+                                <div
+                                  key={drop.skinId}
+                                  title={`${lang === 'uk' ? sk.name : sk.nameRu} (${rarity[lang]})`}
+                                  className={cn(
+                                    'w-8 h-8 rounded-lg overflow-hidden border shrink-0 relative bg-black/60 shadow-sm',
+                                    rarity.border
+                                  )}
+                                >
+                                  <img src={sk.img} alt="" className="w-full h-full object-cover" />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Open Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCase(c)}
+                          disabled={!canAfford || isOpeningCase}
+                          className={cn(
+                            'mt-3 w-full py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 shadow-lg cursor-pointer active:scale-98',
+                            canAfford
+                              ? c.priceType === 'diamonds'
+                                ? 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-stone-950 font-black shadow-[0_0_15px_rgba(6,182,212,0.4)]'
+                                : 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-stone-950 font-black shadow-[0_0_15px_rgba(245,158,11,0.4)]'
+                              : 'bg-stone-800 text-stone-500 border border-white/5 cursor-not-allowed'
+                          )}
+                        >
+                          <span>🎁</span>
+                          <span>{lang === 'uk' ? 'Відкрити за' : 'Открыть за'}</span>
+                          <span className="font-mono underline">
+                            {c.priceType === 'focaccia' ? `${formatNum(c.price)} 🫓` : `${c.price} 💎`}
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Tab 3: UPGRADER */}
             {skinsTab === 'upgrader' && (
               (() => {
                 const srcSkin = SKINS[upgraderSourceId] || SKINS.skin_classic;
@@ -4962,7 +5335,7 @@ export default function App() {
                           disabled={isUpgrading}
                           className="w-full text-xs font-bold bg-stone-950 text-white border border-white/15 rounded-lg py-1 px-1.5 truncate cursor-pointer"
                         >
-                          {state.skins?.owned.map((id) => {
+                          {(state.skins?.owned || ['skin_classic']).map((id) => {
                             const sk = SKINS[id];
                             if (!sk) return null;
                             return (
@@ -5040,7 +5413,6 @@ export default function App() {
                             transition: isUpgrading ? 'transform 3.6s cubic-bezier(0.12, 0.9, 0.18, 1)' : 'none',
                           }}
                         >
-                          {/* Arrow pointer pointed upward */}
                           <div className="w-2.5 h-20 relative -top-7 flex flex-col items-center">
                             <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[14px] border-b-amber-400 filter drop-shadow-[0_0_6px_#f59e0b]" />
                             <div className="w-1.5 h-12 bg-amber-400 rounded-full shadow-[0_0_8px_#f59e0b]" />
@@ -5097,11 +5469,11 @@ export default function App() {
                     {/* Run Button */}
                     <button
                       type="button"
-                      disabled={isUpgrading || state.skins?.owned.includes(tgtSkin.id)}
+                      disabled={isUpgrading || (state.skins?.owned || ['skin_classic']).includes(tgtSkin.id)}
                       onClick={handleRunUpgrader}
                       className={cn(
                         'w-full py-3.5 rounded-2xl font-black text-sm transition active:scale-95 cursor-pointer shadow-lg flex items-center justify-center gap-2',
-                        isUpgrading || state.skins?.owned.includes(tgtSkin.id)
+                        isUpgrading || (state.skins?.owned || ['skin_classic']).includes(tgtSkin.id)
                           ? 'bg-stone-800 text-stone-500 cursor-not-allowed border border-white/5'
                           : 'bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-stone-950 hover:brightness-110 shadow-amber-500/30'
                       )}
@@ -5110,7 +5482,7 @@ export default function App() {
                       <span>
                         {isUpgrading
                           ? (lang === 'uk' ? 'Апгрейд у процесі…' : 'Апгрейд в процессе…')
-                          : state.skins?.owned.includes(tgtSkin.id)
+                          : (state.skins?.owned || ['skin_classic']).includes(tgtSkin.id)
                           ? (lang === 'uk' ? 'Скін уже відкрито' : 'Скин уже открыт')
                           : (lang === 'uk' ? `Апгрейдити (${totalChance}%)` : `Апгрейдить (${totalChance}%)`)}
                       </span>
@@ -5122,6 +5494,261 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ===== 🎁 CASE UNBOXING ROULETTE OVERLAY ===== */}
+      {activeCase && (
+        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex flex-col items-center justify-center p-4 select-none safe-bottom animate-fade-in">
+          <div className="w-full max-w-sm sm:max-w-md flex flex-col items-center space-y-4">
+            {/* Header */}
+            <div className="text-center space-y-1">
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-3xl">{activeCase.icon}</span>
+                <h3 className="text-lg font-black text-white">
+                  {lang === 'uk' ? activeCase.name : activeCase.nameRu}
+                </h3>
+              </div>
+              <p className="text-xs text-amber-300/80 font-medium">
+                {isOpeningCase
+                  ? (lang === 'uk' ? '🎰 Крутимо рулетку…' : '🎰 Крутим рулетку…')
+                  : caseWonResult
+                  ? (lang === 'uk' ? '✨ Вітаємо з отриманням! ✨' : '✨ Поздравляем с получением! ✨')
+                  : (lang === 'uk' ? 'Приготуйтеся до відкриття' : 'Приготовьтесь к открытию')}
+              </p>
+            </div>
+
+            {/* Roulette Track Viewport */}
+            <div className="relative w-full h-40 bg-stone-950 border-2 border-amber-500/60 rounded-3xl shadow-[0_0_40px_rgba(245,158,11,0.25),inset_0_0_30px_rgba(0,0,0,0.9)] overflow-hidden flex items-center justify-center">
+              {/* Top pointer */}
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none">
+                <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[14px] border-t-amber-400 filter drop-shadow-[0_0_8px_#f59e0b]" />
+              </div>
+              {/* Bottom pointer */}
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none">
+                <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[14px] border-b-amber-400 filter drop-shadow-[0_0_8px_#f59e0b]" />
+              </div>
+              {/* Center vertical beam line */}
+              <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-amber-400/90 shadow-[0_0_12px_#f59e0b] z-20 pointer-events-none" />
+
+              {/* Edge gradients */}
+              <div className="absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-stone-950 via-stone-950/80 to-transparent z-20 pointer-events-none" />
+              <div className="absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-stone-950 via-stone-950/80 to-transparent z-20 pointer-events-none" />
+
+              {/* Scrolling Cards Reel */}
+              <div
+                className="flex items-center gap-2 will-change-transform"
+                style={{
+                  transform: `translateX(${caseReelOffset}px)`,
+                  transition: isOpeningCase ? 'transform 4.2s cubic-bezier(0.12, 0.85, 0.15, 1)' : 'none',
+                }}
+              >
+                {caseReel.map((sk, idx) => {
+                  const r = RARITY_LABELS[sk.rarity];
+                  return (
+                    <div
+                      key={idx}
+                      className={cn(
+                        'w-[112px] h-[132px] shrink-0 rounded-2xl border-2 flex flex-col items-center justify-between p-2 bg-gradient-to-b shadow-md relative overflow-hidden',
+                        r.border, sk.colorGrad
+                      )}
+                      style={{ boxShadow: `0 0 15px ${sk.glowColor}` }}
+                    >
+                      <span className={cn('px-1.5 py-0.2 rounded text-[8px] font-black border', r.color, r.border)}>
+                        {sk.badge}
+                      </span>
+                      <div className="w-14 h-14 rounded-xl overflow-hidden border border-white/20 shadow my-0.5 bg-black/40">
+                        <img src={sk.img} alt="" className="w-full h-full object-cover" />
+                      </div>
+                      <div className="text-[10px] font-black text-white text-center truncate w-full">
+                        {lang === 'uk' ? sk.name : sk.nameRu}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Victory Result Card */}
+            {caseWonResult && !isOpeningCase && (
+              <div className="w-full flex flex-col items-center space-y-3 animate-bounce-short">
+                <div
+                  className={cn(
+                    'p-4 rounded-3xl border-2 flex flex-col items-center relative overflow-hidden w-full bg-gradient-to-b text-center',
+                    caseWonResult.skin.colorGrad, caseWonResult.skin.borderColor
+                  )}
+                  style={{ boxShadow: `0 0 45px ${caseWonResult.skin.glowColor}` }}
+                >
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className={cn('px-2.5 py-0.5 rounded-full text-[10px] font-black border', RARITY_LABELS[caseWonResult.skin.rarity].color, RARITY_LABELS[caseWonResult.skin.rarity].border)}>
+                      {caseWonResult.skin.badge}
+                    </span>
+                    {caseWonResult.isNew ? (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-black text-[10px] border border-emerald-400/40">
+                        🎉 {lang === 'uk' ? 'НОВИЙ!' : 'НОВЫЙ!'}
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-black text-[10px] border border-amber-400/40">
+                        ⭐ Lv.{caseWonResult.newLevel}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-white/40 shadow-2xl my-1 bg-black/50">
+                    <img src={caseWonResult.skin.img} alt="" className="w-full h-full object-cover" />
+                  </div>
+
+                  <div className="text-base font-black text-white mt-1">
+                    {lang === 'uk' ? caseWonResult.skin.name : caseWonResult.skin.nameRu}
+                  </div>
+
+                  <div className="text-xs text-amber-200/90 font-medium px-2">
+                    {lang === 'uk' ? caseWonResult.skin.bonusDesc : caseWonResult.skin.bonusDescRu}
+                  </div>
+
+                  {caseWonResult.isNew ? (
+                    <div className="text-[10px] text-emerald-300 font-bold bg-emerald-950/60 px-2.5 py-1 rounded-xl border border-emerald-500/30 mt-2">
+                      {lang === 'uk' ? '✓ Скін додано до вашої колекції!' : '✓ Скин добавлен в вашу коллекцию!'}
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-amber-300 font-bold bg-amber-950/60 px-2.5 py-1 rounded-xl border border-amber-500/30 mt-2">
+                      {lang === 'uk' ? `⭐ Дублікат! Рівень підвищено до ★ Lv.${caseWonResult.newLevel} (+15% до всіх характеристик)` : `⭐ Дубликат! Уровень повышен до ★ Lv.${caseWonResult.newLevel} (+15% ко всем характеристикам)`}
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex flex-col gap-2 w-full">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      equipSkin(caseWonResult.skin.id);
+                      setActiveCase(null);
+                      setCaseWonResult(null);
+                    }}
+                    className="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-sm shadow-xl transition active:scale-95 cursor-pointer"
+                  >
+                    {lang === 'uk' ? 'Вдягти зараз ✨' : 'Надеть сейчас ✨'}
+                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUpgraderSourceId(caseWonResult.skin.id);
+                        setSkinsTab('upgrader');
+                        setActiveCase(null);
+                        setCaseWonResult(null);
+                      }}
+                      className="py-2.5 rounded-xl bg-stone-900 hover:bg-stone-850 text-white font-bold text-xs border border-white/15 transition active:scale-95 cursor-pointer"
+                    >
+                      {lang === 'uk' ? '⚡ В Апгрейдер' : '⚡ В Апгрейдер'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeCase) handleOpenCase(activeCase);
+                      }}
+                      className="py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 text-white font-black text-xs border border-amber-400/40 transition active:scale-95 cursor-pointer"
+                    >
+                      {lang === 'uk' ? '🎁 Відкрити ще' : '🎁 Открыть ещё'}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveCase(null);
+                      setCaseWonResult(null);
+                    }}
+                    className="text-xs text-stone-400 hover:text-white transition py-1 cursor-pointer"
+                  >
+                    {lang === 'uk' ? 'Закрити' : 'Закрыть'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== ℹ️ CASE ODDS MODAL ===== */}
+      {caseOddsModal && (
+        <div className="fixed inset-0 z-[110] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 select-none animate-fade-in">
+          <div className="relative w-full max-w-sm bg-[#14120e] border border-amber-500/40 rounded-3xl p-4 shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+            <div className="flex items-center justify-between pb-2 border-b border-white/10 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">{caseOddsModal.icon}</span>
+                <div>
+                  <div className="text-sm font-black text-white">
+                    {lang === 'uk' ? caseOddsModal.name : caseOddsModal.nameRu}
+                  </div>
+                  <div className="text-[10px] text-amber-300/80">
+                    {lang === 'uk' ? 'Таблиця ймовірностей випадіння' : 'Таблица вероятностей выпадения'}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCaseOddsModal(null)}
+                className="w-7 h-7 rounded-full bg-white/10 text-white/70 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2 overflow-y-auto flex-1 custom-scrollbar pr-1">
+              {(() => {
+                const totalWeight = caseOddsModal.drops.reduce((acc, d) => acc + d.weight, 0);
+                return caseOddsModal.drops.map((drop) => {
+                  const sk = SKINS[drop.skinId];
+                  if (!sk) return null;
+                  const r = RARITY_LABELS[sk.rarity];
+                  const pct = Math.round((drop.weight / totalWeight) * 1000) / 10;
+                  return (
+                    <div
+                      key={drop.skinId}
+                      className="p-2.5 rounded-xl bg-stone-900/80 border border-white/10 flex items-center justify-between gap-2.5"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={cn('w-10 h-10 rounded-lg overflow-hidden border shrink-0 bg-black', r.border)}>
+                          <img src={sk.img} alt="" className="w-full h-full object-cover" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1">
+                            <span className={cn('px-1.5 py-0.2 rounded text-[8px] font-bold border', r.color, r.border)}>
+                              {sk.badge}
+                            </span>
+                          </div>
+                          <div className="text-xs font-black text-white truncate">
+                            {lang === 'uk' ? sk.name : sk.nameRu}
+                          </div>
+                          <div className="text-[9px] text-amber-200/70 truncate">
+                            {lang === 'uk' ? sk.bonusDesc : sk.bonusDescRu}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-xs font-black text-amber-300 font-mono">
+                          {pct}%
+                        </div>
+                        <div className="text-[8px] text-stone-400">
+                          {lang === 'uk' ? 'шанс' : 'шанс'}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setCaseOddsModal(null)}
+              className="mt-3 w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs transition cursor-pointer"
+            >
+              {lang === 'uk' ? 'Зрозуміло' : 'Понятно'}
+            </button>
+          </div>
+        </div>
+      )}
+
 
       {/* ===== FULLSCREEN PROFILE / ACCOUNT EDITOR ===== */}
       {profileModalOpen && (
@@ -6475,15 +7102,19 @@ export default function App() {
               </button>
             </div>
 
-            {/* Quick access to skins */}
+            {/* Quick access to skins & cases */}
             <button
               type="button"
               onClick={() => { setShowSkinsModal(true); haptic.selection(); }}
               className="mt-2.5 px-3 py-1 rounded-full bg-zinc-900/80 hover:bg-zinc-850 border border-white/10 hover:border-amber-500/40 text-[11px] text-amber-200/80 font-medium flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm"
             >
               <span>🔮</span>
-              <span>{lang === 'uk' ? 'Гардероб & Скіни' : 'Гардероб & Скины'}</span>
+              <span>{lang === 'uk' ? 'Гардероб & Кейси' : 'Гардероб & Кейсы'}</span>
               <span className="text-[10px] text-amber-400 font-bold">({activeSkin.badge})</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 text-[9px] font-black border border-amber-500/30 flex items-center gap-0.5">
+                <span>🎁</span>
+                <span>NEW</span>
+              </span>
             </button>
 
             {/* Stats row */}
