@@ -187,8 +187,20 @@ export const DIAMOND_BUILDINGS_I18N: Record<string, Record<Lang, LocalizedItem>>
 
 export const VIP_UPGRADES_I18N: Record<string, Record<Lang, LocalizedItem>> = {
   vip_knife: {
-    uk: { name: 'Шеф-ніж', desc: 'Подвійний урон по босах (2 HP за тап)' },
-    ru: { name: 'Шеф-нож', desc: 'Двойной урон по боссам (2 HP за тап)' },
+    uk: { name: 'Шеф-ніж', desc: '+1 урон по босах (2 HP за тап)' },
+    ru: { name: 'Шеф-нож', desc: '+1 урон по боссам (2 HP за тап)' },
+  },
+  vip_hammer: {
+    uk: { name: 'Бойова скалка', desc: '+2 урону по босах (важка кулінарна зброя)' },
+    ru: { name: 'Боевая скалка', desc: '+2 урона по боссам (тяжёлое кулинарное оружие)' },
+  },
+  vip_sword: {
+    uk: { name: 'Меч піцайоло', desc: '+4 урону по босах (гострий клинок майстра)' },
+    ru: { name: 'Меч пиццайоло', desc: '+4 урона по боссам (стальной клинок мастера)' },
+  },
+  vip_plasma: {
+    uk: { name: 'Плазмовий різак', desc: '+7 урону по босах (розсікає навіть титанів)' },
+    ru: { name: 'Плазменный резак', desc: '+7 урона по боссам (рассекает даже титанов)' },
   },
   vip_trap: {
     uk: { name: 'Пастка для шкідників', desc: 'Шкідники крадуть удвічі менше фокач' },
@@ -491,7 +503,7 @@ export const TRANSLATIONS = {
       '• 💎 Діаманти та ВІП-прокачки НЕ зникають після ребіртху',
     ],
     resetBtn: '🗑️ Скинути гру повністю',
-    gameVersion: 'ФОКАЧА КЛІКЕР v1.2.7',
+    gameVersion: 'ФОКАЧА КЛІКЕР v1.2.8',
 
     // Bottom Nav
     navShop: 'Прокачки',
@@ -788,7 +800,7 @@ export const TRANSLATIONS = {
       '• 💎 Алмазы и ВИП-прокачки НЕ пропадают после ребиртха',
     ],
     resetBtn: '🗑️ Сбросить игру полностью',
-    gameVersion: 'ФОКАЧЧА КЛИКЕР v1.2.7',
+    gameVersion: 'ФОКАЧЧА КЛИКЕР v1.2.8',
 
     // Bottom Nav
     navShop: 'Прокачки',

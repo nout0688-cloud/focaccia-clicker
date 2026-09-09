@@ -9,6 +9,7 @@ import {
   diamondBuildingCost,
   formatCps,
   formatNum,
+  getBossDamage,
 } from './game/data';
 import {
   Lang,
@@ -1934,10 +1935,10 @@ export default function App() {
       if (!currentBoss) return null;
 
       // Read damage from the current stateRef to avoid stale closure on vipUpgrades
-      const damage = stateRef.current.vipUpgrades?.includes('vip_knife') ? 2 : 1;
+      const { damage, icon } = getBossDamage(stateRef.current.vipUpgrades);
       const newHp = currentBoss.currentHp - damage;
 
-      addFloat(window.innerWidth / 2, window.innerHeight * 0.35, `-${damage} ⚔️`, 'text-red-400 text-2xl font-black');
+      addFloat(window.innerWidth / 2, window.innerHeight * 0.35, `-${damage} ${icon}`, 'text-red-400 text-2xl font-black');
 
       if (newHp <= 0) {
         // Boss defeated — apply rewards outside this setter via setState
@@ -3929,7 +3930,12 @@ export default function App() {
                 >
                   <span className="text-xl">{boss.emoji}</span>
                   <span>{formatTemplate(t.attackBtn, boss.currentHp, boss.maxHp)}</span>
-                  <span className="text-xs opacity-75">{state.vipUpgrades?.includes('vip_knife') ? '⚔️ x2' : '⚔️ x1'}</span>
+                  <span className="text-xs opacity-90 font-black bg-black/40 px-1.5 py-0.5 rounded-md border border-white/10">
+                    {(() => {
+                      const bd = getBossDamage(state.vipUpgrades);
+                      return `${bd.icon} x${bd.damage}`;
+                    })()}
+                  </span>
                 </button>
               </div>
             ) : null}

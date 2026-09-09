@@ -175,7 +175,10 @@ export interface VipUpgrade {
 }
 
 export const VIP_UPGRADES: VipUpgrade[] = [
-  { id: 'vip_knife', name: 'Шеф-ніж', emoji: '🗡️', desc: 'Подвійний урон по босах (2 HP за тап)', cost: 5 },
+  { id: 'vip_knife', name: 'Шеф-ніж', emoji: '🗡️', desc: '+1 урон по босах (2 HP за тап)', cost: 5 },
+  { id: 'vip_hammer', name: 'Бойова скалка', emoji: '🪵', desc: '+2 урону по босах (важка кулінарна зброя)', cost: 25 },
+  { id: 'vip_sword', name: 'Меч піцайоло', emoji: '⚔️', desc: '+4 урону по босах (гострий клинок майстра)', cost: 60 },
+  { id: 'vip_plasma', name: 'Плазмовий різак', emoji: '⚡', desc: '+7 урону по босах (розсікає навіть титанів)', cost: 120 },
   { id: 'vip_trap', name: 'Пастка для шкідників', emoji: '🪤', desc: 'Шкідники крадуть удвічі менше фокач', cost: 10 },
   { id: 'vip_energy', name: 'Надзаряд', emoji: '⚡', desc: '+25 до максимальної енергії', cost: 15 },
   { id: 'vip_golden', name: 'Золота конюшина', emoji: '🍀', desc: 'Золота фокача з’являється удвічі частіше', cost: 20 },
@@ -232,3 +235,15 @@ export function formatCps(n: number): string {
   if (n < 10) return n.toFixed(1);
   return formatNum(n);
 }
+
+export function getBossDamage(vipUpgrades?: string[]): { damage: number; icon: string } {
+  const v = vipUpgrades || [];
+  let damage = 1;
+  let icon = '👊';
+  if (v.includes('vip_knife')) { damage += 1; icon = '🗡️'; }
+  if (v.includes('vip_hammer')) { damage += 2; icon = '🪵'; }
+  if (v.includes('vip_sword')) { damage += 4; icon = '⚔️'; }
+  if (v.includes('vip_plasma')) { damage += 7; icon = '⚡'; }
+  return { damage, icon };
+}
+
