@@ -1,3 +1,5 @@
+export const MONOBANK_JAR_URL = 'https://send.monobank.ua/jar/9jugPBu9om';
+
 export interface DonatePackage {
   id: string;
   titleUk: string;
@@ -5,6 +7,7 @@ export interface DonatePackage {
   descUk: string;
   descRu: string;
   stars: number;
+  priceUah: number;
   diamonds: number;
   emoji: string;
   badge?: string;
@@ -19,6 +22,7 @@ export const DONATE_PACKAGES: DonatePackage[] = [
     descUk: '100 💎 + зброя «Бойова скалка» 🪵 проти босів',
     descRu: '100 💎 + оружие «Боевая скалка» 🪵 против боссов',
     stars: 15,
+    priceUah: 15,
     diamonds: 100,
     emoji: '⚡',
     badge: 'ВИГІДА -70%',
@@ -31,6 +35,7 @@ export const DONATE_PACKAGES: DonatePackage[] = [
     descUk: '50 сяючих 💎 для швидких покупок',
     descRu: '50 сияющих 💎 для быстрых покупок',
     stars: 10,
+    priceUah: 10,
     diamonds: 50,
     emoji: '💎',
   },
@@ -41,6 +46,7 @@ export const DONATE_PACKAGES: DonatePackage[] = [
     descUk: '150 💎 (+15 бонусних каменів)',
     descRu: '150 💎 (+15 бонусных камней)',
     stars: 25,
+    priceUah: 25,
     diamonds: 150,
     emoji: '💰',
     badge: 'ХІТ',
@@ -52,6 +58,7 @@ export const DONATE_PACKAGES: DonatePackage[] = [
     descUk: '500 💎 (+75 бонусних каменів)',
     descRu: '500 💎 (+75 бонусных камней)',
     stars: 75,
+    priceUah: 60,
     diamonds: 500,
     emoji: '🧰',
     badge: '+20% БОНУС',
@@ -63,6 +70,7 @@ export const DONATE_PACKAGES: DonatePackage[] = [
     descUk: '1500 💎 (+300 бонусних каменів)',
     descRu: '1500 💎 (+300 бонусных камней)',
     stars: 199,
+    priceUah: 150,
     diamonds: 1500,
     emoji: '👑',
     badge: 'МАКСИМУМ',
@@ -74,6 +82,7 @@ export const DONATE_PACKAGES: DonatePackage[] = [
     descUk: '25 💎 + титул 💖 Меценат у профілі',
     descRu: '25 💎 + титул 💖 Меценат в профиле',
     stars: 10,
+    priceUah: 10,
     diamonds: 25,
     emoji: '💖',
   },
