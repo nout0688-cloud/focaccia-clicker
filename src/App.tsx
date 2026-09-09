@@ -250,6 +250,7 @@ interface SaveState {
     level: number;
     pestsCaught: number;
     skin?: string;
+    ownedSkins?: string[];
   };
 }
 
@@ -354,6 +355,7 @@ const defaultState = (): SaveState => ({
     level: 1,
     pestsCaught: 0,
     skin: 'murchik',
+    ownedSkins: ['murchik'],
   },
 });
 
@@ -383,6 +385,9 @@ async function loadState(): Promise<SaveState> {
         level: Math.max(1, Number(parsed.cat?.level) || 1),
         pestsCaught: Number(parsed.cat?.pestsCaught) || 0,
         skin: parsed.cat?.skin || 'murchik',
+        ownedSkins: Array.isArray(parsed.cat?.ownedSkins) && parsed.cat.ownedSkins.length > 0
+          ? Array.from(new Set(['murchik', ...parsed.cat.ownedSkins, ...(parsed.cat?.skin ? [parsed.cat.skin] : [])]))
+          : Array.from(new Set(['murchik', ...(parsed.cat?.skin ? [parsed.cat.skin] : [])])),
       },
     };
   } catch { return defaultState(); }
@@ -2302,6 +2307,54 @@ export default function App() {
     setTimeout(() => setCatBubble(null), 2200);
   };
 
+  const buyCatSkin = (skinId: string) => {
+    const skin = getCatSkin(skinId);
+    const catLvl = state.cat?.level || 1;
+    if (catLvl < skin.minLevel) {
+      addToast(
+        lang === 'uk' ? 'Скін заблоковано' : 'Скин заблокирован',
+        lang === 'uk' ? `Потрібен ${skin.minLevel} рівень кота!` : `Требуется ${skin.minLevel} уровень кота!`,
+        '🔒'
+      );
+      haptic.error();
+      return;
+    }
+    const currentOwned = state.cat?.ownedSkins || ['murchik'];
+    if (currentOwned.includes(skinId)) {
+      equipCatSkin(skinId);
+      return;
+    }
+    if (state.focaccia < skin.priceFocaccia) {
+      addToast(
+        lang === 'uk' ? 'Недостатньо фокач!' : 'Недостаточно фокачч!',
+        lang === 'uk' ? `Потрібно ${formatNum(skin.priceFocaccia)} 🫓` : `Нужно ${formatNum(skin.priceFocaccia)} 🫓`,
+        '🫓'
+      );
+      haptic.error();
+      return;
+    }
+    const nextOwned = Array.from(new Set([...currentOwned, skinId]));
+    const next: SaveState = {
+      ...state,
+      focaccia: Math.max(0, state.focaccia - skin.priceFocaccia),
+      cat: {
+        ...state.cat!,
+        skin: skinId,
+        ownedSkins: nextOwned,
+      },
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+    haptic.success();
+    burstConfetti(['🎉', '✨', '🐱', '🐾', '🫓']);
+    addToast(
+      lang === 'uk' ? '🎉 Новий скін придбано!' : '🎉 Новый скин куплен!',
+      lang === 'uk' ? `«${skin.nameUk}» тепер у вашому гардеробі!` : `«${skin.nameRu}» теперь в вашем гардеробе!`,
+      '🐱'
+    );
+  };
+
   const equipCatSkin = (skinId: string) => {
     const skin = getCatSkin(skinId);
     const catLvl = state.cat?.level || 1;
@@ -2314,11 +2367,17 @@ export default function App() {
       haptic.error();
       return;
     }
+    const currentOwned = state.cat?.ownedSkins || ['murchik'];
+    if (!currentOwned.includes(skinId)) {
+      buyCatSkin(skinId);
+      return;
+    }
     const next: SaveState = {
       ...state,
       cat: {
         ...state.cat!,
         skin: skinId,
+        ownedSkins: currentOwned,
       },
     };
     stateRef.current = next;
@@ -2351,6 +2410,7 @@ export default function App() {
         level: 1,
         pestsCaught: 0,
         skin: 'murchik',
+        ownedSkins: ['murchik'],
       },
     };
     stateRef.current = next;
@@ -4974,7 +5034,7 @@ export default function App() {
                       <span>{lang === 'uk' ? 'Гардероб кота' : 'Гардероб кота'}</span>
                     </h4>
                     <span className="text-[10px] text-amber-300/80 font-bold">
-                      {lang === 'uk' ? 'Скіни з 3 рівня' : 'Скины с 3 уровня'}
+                      {lang === 'uk' ? 'Скіни з 3 рівня за фокачі' : 'Скины с 3 уровня за фокаччи'}
                     </span>
                   </div>
 
@@ -4998,22 +5058,31 @@ export default function App() {
                   <div className="grid grid-cols-1 gap-2">
                     {CAT_SKINS.map((skin) => {
                       const isEquipped = (state.cat?.skin || 'murchik') === skin.id;
-                      const isLocked = (state.cat?.level || 1) < skin.minLevel;
+                      const isOwned = (state.cat?.ownedSkins || ['murchik']).includes(skin.id);
+                      const isLevelLocked = (state.cat?.level || 1) < skin.minLevel;
+                      const canAfford = state.focaccia >= skin.priceFocaccia;
                       const skinImg = getCatSkinImg(skin.id);
 
                       return (
                         <div
                           key={skin.id}
                           onClick={() => {
-                            if (!isLocked && !isEquipped) equipCatSkin(skin.id);
+                            if (isLevelLocked) return;
+                            if (!isOwned) {
+                              buyCatSkin(skin.id);
+                            } else if (!isEquipped) {
+                              equipCatSkin(skin.id);
+                            }
                           }}
                           className={cn(
                             'p-2.5 rounded-xl border transition flex items-center gap-3 relative overflow-hidden',
                             isEquipped
                               ? 'bg-gradient-to-r from-amber-500/25 via-amber-950/40 to-stone-900 border-amber-400 shadow-md ring-1 ring-amber-400/50'
-                              : isLocked
+                              : isLevelLocked
                               ? 'bg-stone-900/30 border-white/5 opacity-70'
-                              : 'bg-stone-900/70 border-white/10 hover:border-amber-500/40 cursor-pointer active:scale-[0.98]'
+                              : isOwned
+                              ? 'bg-stone-900/70 border-white/10 hover:border-amber-500/40 cursor-pointer active:scale-[0.98]'
+                              : 'bg-stone-900/80 border-amber-500/20 hover:border-amber-500/50 cursor-pointer active:scale-[0.98]'
                           )}
                         >
                           {/* Skin Avatar */}
@@ -5021,9 +5090,9 @@ export default function App() {
                             <img
                               src={skinImg}
                               alt={skin.nameUk}
-                              className={cn('w-full h-full object-contain', isLocked && 'grayscale opacity-50')}
+                              className={cn('w-full h-full object-contain', isLevelLocked && 'grayscale opacity-50')}
                             />
-                            {isLocked && (
+                            {isLevelLocked && (
                               <div className="absolute inset-0 bg-black/65 rounded-xl flex items-center justify-center text-xs font-black text-amber-300">
                                 🔒
                               </div>
@@ -5032,7 +5101,7 @@ export default function App() {
 
                           {/* Skin Info */}
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-black text-xs text-white">
                                 {lang === 'uk' ? skin.nameUk : skin.nameRu}
                               </span>
@@ -5040,14 +5109,25 @@ export default function App() {
                                 {lang === 'uk' ? skin.breedUk : skin.breedRu}
                               </span>
                               {skin.minLevel > 1 && (
-                                <span className="text-[9px] font-bold text-amber-400 ml-auto shrink-0">
-                                  Lv.{skin.minLevel}+
+                                <span className={cn(
+                                  "text-[9px] font-bold ml-auto shrink-0",
+                                  isLevelLocked ? "text-rose-400" : "text-emerald-400"
+                                )}>
+                                  {isLevelLocked ? `🔒 Lv.${skin.minLevel}` : `Lv.${skin.minLevel} ✓`}
                                 </span>
                               )}
                             </div>
                             <p className="text-[10px] text-stone-300 mt-0.5 leading-tight line-clamp-2">
                               {lang === 'uk' ? skin.descUk : skin.descRu}
                             </p>
+                            {!isOwned && skin.priceFocaccia > 0 && (
+                              <div className="text-[10px] font-bold text-amber-300 mt-1 flex items-center gap-1">
+                                <span className="text-stone-400">{lang === 'uk' ? 'Ціна:' : 'Цена:'}</span>
+                                <span className={canAfford ? 'text-amber-200' : 'text-rose-400'}>
+                                  {formatNum(skin.priceFocaccia)} 🫓
+                                </span>
+                              </div>
+                            )}
                           </div>
 
                           {/* Action button */}
@@ -5057,12 +5137,7 @@ export default function App() {
                                 <span>✓</span>
                                 <span>{lang === 'uk' ? 'Обрано' : 'Выбран'}</span>
                               </span>
-                            ) : isLocked ? (
-                              <span className="px-2 py-1 rounded-xl bg-stone-800 border border-white/10 text-stone-400 font-bold text-[10px] flex items-center gap-1">
-                                <span>🔒</span>
-                                <span>Lv.{skin.minLevel}</span>
-                              </span>
-                            ) : (
+                            ) : isOwned ? (
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -5072,6 +5147,28 @@ export default function App() {
                                 className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/40 border border-amber-400/60 text-amber-200 font-black text-[10px] transition active:scale-95 cursor-pointer shadow"
                               >
                                 {lang === 'uk' ? 'Вдягти' : 'Надеть'}
+                              </button>
+                            ) : isLevelLocked ? (
+                              <span className="px-2 py-1 rounded-xl bg-stone-800 border border-white/10 text-stone-400 font-bold text-[10px] flex items-center gap-1">
+                                <span>🔒</span>
+                                <span>Lv.{skin.minLevel}</span>
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  buyCatSkin(skin.id);
+                                }}
+                                disabled={!canAfford}
+                                className={cn(
+                                  'px-3 py-1.5 rounded-xl font-black text-[10px] transition active:scale-95 cursor-pointer shadow flex items-center gap-1',
+                                  canAfford
+                                    ? 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-stone-950 shadow-amber-500/20'
+                                    : 'bg-stone-800 text-stone-500 border border-white/5 cursor-not-allowed'
+                                )}
+                              >
+                                <span>{lang === 'uk' ? 'Купити' : 'Купить'}</span>
                               </button>
                             )}
                           </div>

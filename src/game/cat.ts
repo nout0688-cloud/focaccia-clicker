@@ -102,6 +102,7 @@ export interface CatSkin {
   descUk: string;
   descRu: string;
   minLevel: number;
+  priceFocaccia: number;
   pounceBubble: string;
   chaseBubbleUk: string;
   chaseBubbleRu: string;
@@ -121,6 +122,7 @@ export const CAT_SKINS: CatSkin[] = [
     descUk: 'Вірний та працьовитий захисник пекарні від жуків.',
     descRu: 'Верный и трудолюбивый защитник пекарни от жуков.',
     minLevel: 1,
+    priceFocaccia: 0,
     pounceBubble: '🐾 ХАП!',
     chaseBubbleUk: '😼 Бачу жука!',
     chaseBubbleRu: '😼 Вижу жука!',
@@ -138,6 +140,7 @@ export const CAT_SKINS: CatSkin[] = [
     descUk: 'Британка з вічно очманілим, широко розкритим поглядом. Жуки самі тікають від її очей!',
     descRu: 'Британка с вечно ошарашенным взглядом. Жуки сами разбегаются от её глаз!',
     minLevel: 3,
+    priceFocaccia: 50_000_000,
     pounceBubble: '👀 ШО ЦЕ БУЛО?!',
     chaseBubbleUk: '😳 ТИ ХТО ТАКИЙ?!',
     chaseBubbleRu: '😳 ТЫ КТО ТАКОЙ?!',
@@ -155,6 +158,7 @@ export const CAT_SKINS: CatSkin[] = [
     descUk: 'Сірий кіт із пухнастою шерстю та характером міського боса. Ловить жуків з фірмовою незворушністю.',
     descRu: 'Серый кот с пушистой шерстью и характером городского босса. Ловит жуков с фирменным спокойствием.',
     minLevel: 3,
+    priceFocaccia: 100_000_000,
     pounceBubble: '💥 НА БАЗУ!',
     chaseBubbleUk: '😼 Стояти, дрібний!',
     chaseBubbleRu: '😼 Стоять, мелкий!',
