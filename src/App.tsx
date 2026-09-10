@@ -603,7 +603,7 @@ export default function App() {
     haptic.light();
   };
   const [shopTab, setShopTab] = useState<ShopTab>('buildings');
-  const [vipSubTab, setVipSubTab] = useState<'buildings' | 'upgrades'>('buildings');
+  const [vipSubTab, setVipSubTab] = useState<'buildings' | 'upgrades'>('upgrades');
   const [lastBoughtId, setLastBoughtId] = useState<string | null>(null);
   const [phrase, setPhrase] = useState(PHRASES_I18N.uk[0]);
   const [golden, setGolden] = useState<{ x: number; y: number } | null>(null);
@@ -9771,17 +9771,6 @@ export default function App() {
                     {/* Sub-tab switcher */}
                     <div className="flex bg-black/40 p-1 rounded-lg gap-1 border border-cyan-500/20">
                       <button
-                        onClick={() => { setVipSubTab('buildings'); haptic.light(); }}
-                        className={cn(
-                          'flex-1 py-1.5 text-xs font-bold rounded-md transition-all',
-                          vipSubTab === 'buildings'
-                            ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 shadow'
-                            : 'text-cyan-400/50 hover:text-cyan-300',
-                        )}
-                      >
-                        {t.vipBuildingsSubTab} ({totalDiamondBuildings})
-                      </button>
-                      <button
                         onClick={() => { setVipSubTab('upgrades'); haptic.light(); }}
                         className={cn(
                           'flex-1 py-1.5 text-xs font-bold rounded-md transition-all',
@@ -9791,6 +9780,17 @@ export default function App() {
                         )}
                       >
                         {t.vipUpgradesSubTab} ({state.vipUpgrades?.length || 0})
+                      </button>
+                      <button
+                        onClick={() => { setVipSubTab('buildings'); haptic.light(); }}
+                        className={cn(
+                          'flex-1 py-1.5 text-xs font-bold rounded-md transition-all',
+                          vipSubTab === 'buildings'
+                            ? 'bg-cyan-500/25 text-cyan-200 border border-cyan-500/40 shadow'
+                            : 'text-cyan-400/50 hover:text-cyan-300',
+                        )}
+                      >
+                        {t.vipBuildingsSubTab} ({totalDiamondBuildings})
                       </button>
                     </div>
                   </div>
@@ -9904,10 +9904,11 @@ export default function App() {
                       <div
                         key={u.id}
                         onClick={() => {
-                          if (!bought && can) buyVipUpgrade(u.id);
-                          else if (bought && isRepairKit) {
+                          if (isRepairKit) {
                             setShowRepairKitModal(true);
                             haptic.selection();
+                          } else if (!bought && can) {
+                            buyVipUpgrade(u.id);
                           }
                         }}
                         style={{ animationDelay: `${Math.min(i, 12) * 45}ms` }}
@@ -9915,8 +9916,10 @@ export default function App() {
                           'relative w-full overflow-hidden text-left rounded-xl p-2.5 flex flex-col gap-2 transition-all animate-card',
                           bought
                             ? isRepairKit
-                              ? 'glass-card border-orange-500/40 bg-gradient-to-r from-orange-950/30 to-amber-950/20 cursor-pointer hover:border-orange-400 active:scale-[0.99]'
+                              ? 'glass-card border-orange-500/50 bg-gradient-to-r from-orange-950/40 via-amber-950/25 to-black/50 shadow-[0_0_20px_rgba(249,115,22,0.15)] cursor-pointer hover:border-orange-400 active:scale-[0.99]'
                               : 'glass-card border-emerald-500/30 bg-emerald-950/20 opacity-80'
+                            : isRepairKit
+                            ? 'glass-card border-orange-500/40 bg-gradient-to-r from-orange-950/30 via-black/40 to-black/50 glass-card-hover cursor-pointer active:scale-[0.98]'
                             : can
                             ? 'glass-card border-cyan-500/30 glass-card-hover cursor-pointer active:scale-[0.98]'
                             : 'glass-card opacity-40 cursor-not-allowed',
@@ -9925,23 +9928,37 @@ export default function App() {
                         <div className="flex items-center gap-2.5 w-full">
                           <div className={cn(
                             'w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0',
-                            isRepairKit ? 'bg-orange-500/15 border border-orange-400/30 text-2xl' : 'bg-cyan-500/15'
+                            isRepairKit ? 'bg-orange-500/20 border border-orange-400/40 text-2xl shadow-[0_0_12px_rgba(249,115,22,0.3)]' : 'bg-cyan-500/15'
                           )}>
                             {u.emoji}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="font-bold text-[13px] text-cyan-100/90 flex justify-between items-center">
-                              <span className={cn(isRepairKit && 'text-amber-200 font-black')}>{vuText.name}</span>
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={cn(isRepairKit && 'text-amber-200 font-black')}>{vuText.name}</span>
+                                {isRepairKit && (
+                                  <span className="px-1.5 py-0.2 rounded-md bg-orange-500/25 border border-orange-400/40 text-[9px] font-black text-orange-300 uppercase tracking-wider">
+                                    {lang === 'uk' ? 'ТОП' : 'ТОП'}
+                                  </span>
+                                )}
+                              </div>
                               {bought ? (
-                                <span className="text-emerald-400 text-xs font-bold flex items-center gap-1">
+                                <span className="text-emerald-400 text-xs font-bold flex items-center gap-1 shrink-0">
                                   {t.boughtCheck}
                                 </span>
                               ) : null}
                             </div>
                             <div className="text-[10px] text-cyan-300/60 leading-tight mt-0.5">{vuText.desc}</div>
                             {!bought && (
-                              <div className={cn('text-[10px] font-bold mt-1', can ? 'text-cyan-300' : 'text-red-400/70')}>
-                                {formatTemplate(t.diamondsCost, u.cost)}
+                              <div className="flex items-center justify-between mt-1">
+                                <div className={cn('text-[10px] font-bold', can ? 'text-cyan-300' : 'text-red-400/70')}>
+                                  {formatTemplate(t.diamondsCost, u.cost)}
+                                </div>
+                                {isRepairKit && (
+                                  <span className="text-[10px] text-amber-300/80 font-bold">
+                                    {lang === 'uk' ? 'Детальніше ➔' : 'Подробнее ➔'}
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>
