@@ -50,6 +50,7 @@ import monoGuideImg from './assets/mono-guide.jpg';
 import catImg from './assets/cat.png';
 import catBonyaImg from './assets/cat_bonya.png';
 import catBambassImg from './assets/cat_bambass.png';
+import repairKitImg from './assets/repair_kit.png';
 import {
   SKINS,
   SKIN_LIST,
@@ -4528,69 +4529,61 @@ export default function App() {
             </button>
           )}
 
-          {/* 🧰 REPAIR KIT FLOATING WIDGET (stacked directly above the cat) */}
-          <button
-            type="button"
+          {/* 🧰 REPAIR KIT STICKER (placed side-by-side with the cat on the floor) */}
+          <div
             onClick={() => { setShowRepairKitModal(true); haptic.selection(); }}
-            className={cn(
-              'fixed right-3 bottom-[154px] z-35 p-2 rounded-2xl bg-zinc-950/85 hover:bg-zinc-900 border shadow-xl flex items-center gap-2 cursor-pointer transition active:scale-95 group backdrop-blur-sm',
-              brokenBuilding
-                ? 'border-amber-400 shadow-amber-500/30 animate-pulse'
-                : state.repairKit?.unlocked
-                ? 'border-orange-500/40 text-orange-300 shadow-orange-500/10'
-                : 'border-zinc-700/60 text-zinc-400'
-            )}
+            className="fixed z-35 select-none cursor-pointer group hover:scale-105 active:scale-95 transition-transform"
+            style={{
+              right: state.cat?.unlocked ? '90px' : '14px',
+              bottom: state.cat?.unlocked ? '76px' : '88px',
+            }}
             title={lang === 'uk' ? 'Автоматичний ремкомплект' : 'Автоматический ремкомплект'}
           >
-            <div
-              className={cn(
-                'w-9 h-9 rounded-xl border flex items-center justify-center text-lg shrink-0 shadow-inner relative',
-                state.repairKit?.unlocked
-                  ? 'border-orange-500/60 bg-gradient-to-br from-orange-500/20 to-amber-500/10 text-orange-200'
-                  : 'border-zinc-700 bg-zinc-800/40 text-zinc-400'
-              )}
-            >
-              <span>🧰</span>
+            <div className="relative w-15 h-15 sm:w-18 sm:h-18 drop-shadow-[0_4px_16px_rgba(0,0,0,0.65)]">
+              <img
+                src={repairKitImg}
+                alt="Repair Kit"
+                className="w-full h-full object-contain pointer-events-none filter drop-shadow-[0_2px_8px_rgba(234,88,12,0.3)]"
+                draggable={false}
+              />
+
+              {/* Status Badge */}
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setShowRepairKitModal(true); haptic.selection(); }}
+                className={cn(
+                  'absolute -bottom-1 -right-1 px-1.5 py-0.2 rounded-full font-black text-[9px] shadow flex items-center gap-0.5 cursor-pointer border',
+                  state.repairKit?.unlocked
+                    ? (state.repairKit?.charges || 0) > 0
+                      ? 'bg-emerald-500 text-stone-950 border-emerald-300'
+                      : 'bg-red-500 text-white border-red-300'
+                    : 'bg-amber-500 text-stone-950 border-amber-300'
+                )}
+              >
+                {state.repairKit?.unlocked ? (
+                  <>
+                    <span>🧰</span>
+                    <span>{state.repairKit.charges || 0}</span>
+                  </>
+                ) : (
+                  <>
+                    <span>🔒</span>
+                    <span>Рем</span>
+                  </>
+                )}
+              </button>
+
+              {/* Ping alert if building is currently broken */}
               {brokenBuilding && (
-                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                <span className="absolute -top-1 -right-1 flex h-4 w-4">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                  <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border border-white text-[9px] text-white font-black items-center justify-center shadow">
+                    !
+                  </span>
                 </span>
               )}
             </div>
-            <div className="text-left">
-              <div className="text-[11px] font-black text-white flex items-center gap-1">
-                <span>{lang === 'uk' ? 'Ремкомплект' : 'Ремкомплект'}</span>
-                {state.repairKit?.unlocked ? (
-                  <span
-                    className={cn(
-                      'text-[9px] font-black px-1.5 py-0.2 rounded border',
-                      (state.repairKit?.charges || 0) > 0
-                        ? 'text-emerald-300 bg-emerald-950/80 border-emerald-500/40'
-                        : 'text-red-300 bg-red-950/80 border-red-500/40'
-                    )}
-                  >
-                    {state.repairKit?.charges || 0}
-                  </span>
-                ) : (
-                  <span className="text-[9px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/30 px-1 rounded">
-                    🔒
-                  </span>
-                )}
-              </div>
-              <div className="text-[9px] font-medium leading-none mt-0.5">
-                {state.repairKit?.unlocked ? (
-                  state.repairKit.autoRepairEnabled !== false ? (
-                    <span className="text-emerald-400 font-bold">● {lang === 'uk' ? 'Авто' : 'Авто'}</span>
-                  ) : (
-                    <span className="text-zinc-400">○ {lang === 'uk' ? 'Вимк.' : 'Выкл.'}</span>
-                  )
-                ) : (
-                  <span className="text-amber-300/80 font-bold">75 💎 / 25M</span>
-                )}
-              </div>
-            </div>
-          </button>
+          </div>
         </>
       )}
 
@@ -6074,8 +6067,8 @@ export default function App() {
             {/* Header */}
             <div className="px-4 py-3 border-b border-white/10 bg-zinc-950/90 flex items-center justify-between z-10">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-orange-500/20 border border-orange-400/50 flex items-center justify-center text-xl shadow">
-                  🧰
+                <div className="w-10 h-10 rounded-xl bg-orange-500/15 border border-orange-400/40 flex items-center justify-center p-1 shadow">
+                  <img src={repairKitImg} alt="" className="w-full h-full object-contain" />
                 </div>
                 <div>
                   <h3 className="text-sm font-black text-white flex items-center gap-1.5">
@@ -6106,8 +6099,8 @@ export default function App() {
                 /* LOCKED VIEW */
                 <div className="space-y-3.5">
                   <div className="p-4 rounded-2xl bg-gradient-to-b from-orange-950/40 to-stone-900 border border-orange-500/30 flex flex-col items-center text-center space-y-2.5">
-                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500/20 to-amber-500/10 border-2 border-orange-400/50 flex items-center justify-center text-3xl shadow-lg">
-                      🧰
+                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-orange-500/20 to-amber-500/10 border-2 border-orange-400/50 flex items-center justify-center p-2 shadow-lg">
+                      <img src={repairKitImg} alt="" className="w-full h-full object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)]" />
                     </div>
                     <div>
                       <h4 className="text-base font-black text-white">
