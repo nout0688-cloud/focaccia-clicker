@@ -441,40 +441,51 @@ export function getSkinLevelUpgradeCost(skin: SkinItem, currentLevel: number): {
   };
 }
 
+/** Плата за спробу апгрейду з базової фокачі (щоб не було безкінечного абузу) */
+export function getClassicUpgradeFee(targetSkin: SkinItem): number {
+  if (!targetSkin) return 500000;
+  if (targetSkin.tier === 2) return 500000; // 500k фокач
+  if (targetSkin.tier === 3) return 3000000; // 3M фокач
+  if (targetSkin.tier === 4) return 15000000; // 15M фокач
+  if (targetSkin.tier === 5) return 60000000; // 60M фокач
+  return 500000;
+}
+
 /** Розрахунок шансу в апгрейдері */
 export function calculateUpgradeChance(
   sourceSkin: SkinItem,
   targetSkin: SkinItem,
   boostDiamonds: number = 0
 ): { baseChance: number; boostChance: number; totalChance: number } {
-  // Базову класичну фокачу не можна апгрейдити (захист від абузу)
-  if (!sourceSkin || sourceSkin.id === 'skin_classic') {
+  if (!sourceSkin || !targetSkin) {
     return { baseChance: 0, boostChance: 0, totalChance: 0 };
   }
 
+  const isClassic = sourceSkin.id === 'skin_classic';
   const tierDiff = targetSkin.tier - sourceSkin.tier;
   let baseChance = 50;
 
   if (tierDiff <= 0) {
-    baseChance = 75;
+    baseChance = isClassic ? 45 : 75;
   } else if (tierDiff === 1) {
-    if (targetSkin.tier === 2) baseChance = 50; // common -> rare
+    if (targetSkin.tier === 2) baseChance = isClassic ? 35 : 50; // common -> rare
     else if (targetSkin.tier === 3) baseChance = 35; // rare -> epic
     else if (targetSkin.tier === 4) baseChance = 22; // epic -> legendary
     else if (targetSkin.tier === 5) baseChance = 12; // legendary -> mythic
   } else if (tierDiff === 2) {
-    if (targetSkin.tier === 3) baseChance = 22;
+    if (targetSkin.tier === 3) baseChance = isClassic ? 18 : 22;
     else if (targetSkin.tier === 4) baseChance = 14;
     else if (targetSkin.tier === 5) baseChance = 7;
   } else if (tierDiff === 3) {
-    baseChance = targetSkin.tier === 5 ? 4 : 8;
+    baseChance = targetSkin.tier === 5 ? 4 : (isClassic ? 6 : 8);
   } else {
-    baseChance = 3;
+    baseChance = 2;
   }
 
-  // Буст алмазами: кожен 1 алмаз додає ~0.5% шансу, максимум +40%
+  // Буст алмазами: кожен 1 алмаз додає +0.5% шансу, максимум +40%
   const boostChance = Math.min(40, boostDiamonds * 0.5);
   const totalChance = Math.min(85, Math.max(1, Math.round((baseChance + boostChance) * 10) / 10));
 
   return { baseChance, boostChance, totalChance };
 }
+
