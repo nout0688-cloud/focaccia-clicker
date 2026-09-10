@@ -4982,7 +4982,7 @@ export default function App() {
                             {starterPkg.priceUah} ₴
                           </div>
                           <div className="text-xs text-white/40 line-through font-mono">
-                            35 ₴
+                            60 ₴
                           </div>
                         </div>
 
