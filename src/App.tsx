@@ -142,6 +142,42 @@ const DevBadge = ({ className, size = 'md' }: { className?: string; size?: 'sm' 
   );
 };
 
+const PlayerAvatar = ({
+  src,
+  username,
+  name,
+  className = 'w-full h-full object-cover',
+  fallbackClassName = 'text-base font-black text-amber-200',
+}: {
+  src?: string | null;
+  username?: string | null;
+  name?: string | null;
+  className?: string;
+  fallbackClassName?: string;
+}) => {
+  const [hasError, setHasError] = useState(false);
+  const cleanUsername = username ? String(username).replace(/^@/, '').trim() : '';
+  const tgFallback = cleanUsername ? `https://t.me/i/userpic/320/${cleanUsername}.jpg` : null;
+
+  const currentUrl = !hasError
+    ? (src || tgFallback)
+    : (src && tgFallback && src !== tgFallback ? tgFallback : null);
+
+  if (currentUrl) {
+    return (
+      <img
+        src={currentUrl}
+        alt={name || 'Avatar'}
+        className={className}
+        onError={() => setHasError(true)}
+      />
+    );
+  }
+
+  const initial = (name?.[0] || '👨‍🍳').toUpperCase();
+  return <span className={fallbackClassName}>{initial}</span>;
+};
+
 /* ---- Storage: Smart conflict resolver (localStorage + CloudStorage) ---- */
 const storage = {
   async get(key: string): Promise<string | null> {
@@ -348,7 +384,7 @@ const defaultState = (): SaveState => ({
     equippedNameColor: 'name_default',
     showcase: ['clicks', 'total', 'diamonds'],
   },
-  skinsResetVersion: 1,
+  skinsResetVersion: 2,
   lastSkinsReset: 0,
   skins: {
     owned: ['skin_classic'],
@@ -372,7 +408,7 @@ async function loadState(): Promise<SaveState> {
     const def = defaultState();
 
     // Enforce skins wipe: all players start fresh with only skin_classic
-    const SKINS_RESET_VER = 1;
+    const SKINS_RESET_VER = 2;
     const hasResetSkins = Number(parsed.skinsResetVersion) >= SKINS_RESET_VER;
     const ownedSkins = hasResetSkins && Array.isArray(parsed.skins?.owned) && parsed.skins.owned.length > 0
       ? parsed.skins.owned
@@ -607,6 +643,7 @@ export default function App() {
   const [isAdminDistributing, setIsAdminDistributing] = useState(false);
   const [isMaintenance, setIsMaintenance] = useState(false);
   const [isTogglingMaintenance, setIsTogglingMaintenance] = useState(false);
+  const [adminResetSkinTarget, setAdminResetSkinTarget] = useState('');
 
   // ===== 🐱 BAKERY CAT STATE =====
   const [showCatModal, setShowCatModal] = useState(false);
@@ -700,7 +737,7 @@ export default function App() {
         showcase: cur.cosmetics?.showcase || ['clicks', 'total', 'diamonds'],
         frame: cur.cosmetics?.equippedFrame || 'frame_default',
         color: cur.cosmetics?.equippedNameColor || 'name_default',
-        avatar: tgUser.photo_url || '',
+        avatar: tgUser.photo_url || (tgUser.username ? `https://t.me/i/userpic/320/${tgUser.username}.jpg` : ''),
       }),
     })
       .then((r) => r.json())
@@ -798,7 +835,9 @@ export default function App() {
                     skins: {
                       owned: ['skin_classic'],
                       equipped: 'skin_classic',
+                      levels: {},
                     },
+                    skinsResetVersion: 2,
                     lastSkinsReset: data.skinsResetTime || Date.now(),
                   };
                   stateRef.current = next;
@@ -3000,7 +3039,9 @@ export default function App() {
             skins: {
               owned: ['skin_classic'],
               equipped: 'skin_classic',
+              levels: {},
             },
+            skinsResetVersion: 2,
             lastSkinsReset: data.skinsResetTime || Date.now(),
           };
           stateRef.current = next;
@@ -3015,6 +3056,49 @@ export default function App() {
       }
     } catch (err: any) {
       addToast('Помилка', err?.message || 'Error', '❌');
+    } finally {
+      setIsAdminDistributing(false);
+    }
+  };
+
+  const handleAdminResetSkinsUser = async (target: string) => {
+    if (!isDevUser(tgUser?.id) || isAdminDistributing) return;
+    if (!target.trim()) {
+      addToast(
+        lang === 'uk' ? 'Помилка' : 'Ошибка',
+        lang === 'uk' ? 'Вкажіть @username або ID гравця' : 'Укажите @username или ID игрока',
+        '⚠️'
+      );
+      return;
+    }
+    setIsAdminDistributing(true);
+    haptic.warning();
+    try {
+      const res = await fetch(`${API_BASE}/api/reward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: tgUser?.id || ADMIN_ID,
+          action: 'reset_skins_user',
+          target: target.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        haptic.success();
+        addToast(
+          lang === 'uk' ? 'Скіни забрано! 🧹' : 'Скины забраны! 🧹',
+          lang === 'uk'
+            ? `Скіни гравця ${target} очищено до класичної фокачі`
+            : `Скины игрока ${target} очищены до классической фокаччи`,
+          '🧹'
+        );
+        setAdminResetSkinTarget('');
+      } else {
+        addToast(lang === 'uk' ? 'Помилка' : 'Ошибка', data?.error || 'User not found', '❌');
+      }
+    } catch (err: any) {
+      addToast(lang === 'uk' ? 'Помилка мережі' : 'Ошибка сети', err?.message || 'Error', '❌');
     } finally {
       setIsAdminDistributing(false);
     }
@@ -5846,25 +5930,51 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Section 3: Skins reset */}
-              <div className="glass-card rounded-2xl p-3.5 border border-white/10 space-y-2">
+              {/* Section 3: Skins reset & take away */}
+              <div className="glass-card rounded-2xl p-3.5 border border-white/10 space-y-3">
                 <div className="text-xs font-black text-amber-200 flex items-center gap-1.5">
                   <span>🧹</span>
-                  <span>{lang === 'uk' ? 'Скидання скінів' : 'Сброс скинов'}</span>
+                  <span>{lang === 'uk' ? 'Керування скінами (Забрати скіни)' : 'Управление скинами (Забрать скины)'}</span>
                 </div>
                 <p className="text-[10px] text-amber-300/60 leading-relaxed">
                   {lang === 'uk'
-                    ? 'Скіни вже автоматично скинуто до класичної фокачі для всіх. Натисніть кнопку, якщо бажаєте примусово повторити скидання.'
-                    : 'Скины уже автоматически сброшены до классической фокаччи для всех. Нажмите кнопку, если хотите принудительно повторить сброс.'}
+                    ? 'Забирає всі скіни фокачі, повертаючи акаунт до базової класичної фокачі.'
+                    : 'Забирает все скины фокаччи, возвращая аккаунт к базовой классической фокачче.'}
                 </p>
+
+                {/* Sub-item: Take from specific player */}
+                <div className="bg-black/40 rounded-xl p-2.5 border border-white/10 space-y-2">
+                  <label className="text-[10px] font-bold text-amber-300/80 block">
+                    {lang === 'uk' ? '👤 Забрати в конкретного гравця:' : '👤 Забрать у конкретного игрока:'}
+                  </label>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={adminResetSkinTarget}
+                      onChange={(e) => setAdminResetSkinTarget(e.target.value)}
+                      placeholder="@username або ID"
+                      className="flex-1 bg-black/60 border border-white/15 rounded-xl px-2.5 py-1.5 text-xs text-white placeholder-white/30 outline-none focus:border-amber-400 font-mono"
+                    />
+                    <button
+                      type="button"
+                      disabled={isAdminDistributing || !adminResetSkinTarget.trim()}
+                      onClick={() => handleAdminResetSkinsUser(adminResetSkinTarget)}
+                      className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-red-600 to-amber-600 hover:brightness-110 disabled:opacity-40 text-white text-[11px] font-black active:scale-95 transition cursor-pointer shrink-0 shadow"
+                    >
+                      {lang === 'uk' ? 'Забрати' : 'Забрать'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sub-item: Take from all players */}
                 <button
                   type="button"
                   onClick={handleAdminResetSkinsAll}
                   disabled={isAdminDistributing}
-                  className="w-full py-2 px-3 rounded-xl bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-200 text-xs font-black active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full py-2.5 px-3 rounded-xl bg-red-600/25 hover:bg-red-600/35 border border-red-500/40 text-red-200 text-xs font-black active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer shadow"
                 >
                   <span>🧹</span>
-                  <span>{lang === 'uk' ? 'Повторно скинути скіни всім' : 'Повторно сбросить скины всем'}</span>
+                  <span>{lang === 'uk' ? 'Забрати скіни у ВСІХ гравців (RESET ALL)' : 'Забрать скины у ВСЕХ игроков (RESET ALL)'}</span>
                 </button>
               </div>
             </div>
@@ -6920,13 +7030,13 @@ export default function App() {
                 'w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden flex items-center justify-center relative shadow-2xl transition-all',
                 getAvatarFrame(effectiveFrameId).frameClass
               )}>
-                {tgUser?.photo_url ? (
-                  <img src={tgUser.photo_url} alt="Avatar" className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-4xl font-black text-amber-200">
-                    {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
-                  </span>
-                )}
+                <PlayerAvatar
+                  src={tgUser?.photo_url}
+                  username={tgUser?.username}
+                  name={tgUser?.first_name}
+                  className="w-full h-full object-cover"
+                  fallbackClassName="text-4xl font-black text-amber-200"
+                />
                 {getAvatarFrame(effectiveFrameId).cost > 0 && (
                   <div className="absolute -bottom-1 -right-1 text-xs bg-black/85 rounded-full px-2 py-0.5 border border-amber-500/40 shadow">
                     {getAvatarFrame(effectiveFrameId).emoji}
@@ -7185,13 +7295,13 @@ export default function App() {
                               'w-13 h-13 rounded-full overflow-hidden shrink-0 flex items-center justify-center relative shadow-lg',
                               f.frameClass
                             )}>
-                              {tgUser?.photo_url ? (
-                                <img src={tgUser.photo_url} alt="" className="w-full h-full object-cover" />
-                              ) : (
-                                <span className="text-base font-black text-amber-200">
-                                  {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
-                                </span>
-                              )}
+                              <PlayerAvatar
+                                src={tgUser?.photo_url}
+                                username={tgUser?.username}
+                                name={tgUser?.first_name}
+                                className="w-full h-full object-cover"
+                                fallbackClassName="text-base font-black text-amber-200"
+                              />
                             </div>
 
                             <div className="min-w-0">
@@ -7478,13 +7588,13 @@ export default function App() {
                 'w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden flex items-center justify-center relative shadow-2xl transition-all',
                 getAvatarFrame(effectiveFrameId).frameClass
               )}>
-                {tgUser?.photo_url ? (
-                  <img src={tgUser.photo_url} alt="Avatar" className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-4xl font-black text-amber-200">
-                    {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
-                  </span>
-                )}
+                <PlayerAvatar
+                  src={tgUser?.photo_url}
+                  username={tgUser?.username}
+                  name={tgUser?.first_name}
+                  className="w-full h-full object-cover"
+                  fallbackClassName="text-4xl font-black text-amber-200"
+                />
                 {getAvatarFrame(effectiveFrameId).cost > 0 && (
                   <div className="absolute -bottom-1 -right-1 text-xs bg-black/85 rounded-full px-2 py-0.5 border border-amber-500/40 shadow">
                     {getAvatarFrame(effectiveFrameId).emoji}
@@ -7720,13 +7830,13 @@ export default function App() {
                 'w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden flex items-center justify-center relative shadow-2xl transition-all',
                 getAvatarFrame(viewingProfile.frame).frameClass
               )}>
-                {viewingProfile.avatar ? (
-                  <img src={viewingProfile.avatar} alt="Avatar" className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-4xl font-black text-amber-200">
-                    {(viewingProfile.name?.[0] || '👨‍🍳').toUpperCase()}
-                  </span>
-                )}
+                <PlayerAvatar
+                  src={viewingProfile.avatar}
+                  username={viewingProfile.username}
+                  name={viewingProfile.name}
+                  className="w-full h-full object-cover"
+                  fallbackClassName="text-4xl font-black text-amber-200"
+                />
                 {getAvatarFrame(viewingProfile.frame).cost > 0 && (
                   <div className="absolute -bottom-1 -right-1 text-xs bg-black/85 rounded-full px-2 py-0.5 border border-amber-500/40 shadow">
                     {getAvatarFrame(viewingProfile.frame).emoji}
@@ -7923,13 +8033,13 @@ export default function App() {
                 'w-9 h-9 rounded-full overflow-hidden flex items-center justify-center transition-all shadow-md',
                 getAvatarFrame(state.cosmetics?.equippedFrame).frameClass
               )}>
-                {tgUser?.photo_url ? (
-                  <img src={tgUser.photo_url} alt="Avatar" className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-base font-black text-amber-200">
-                    {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
-                  </span>
-                )}
+                <PlayerAvatar
+                  src={tgUser?.photo_url}
+                  username={tgUser?.username}
+                  name={tgUser?.first_name}
+                  className="w-full h-full object-cover"
+                  fallbackClassName="text-base font-black text-amber-200"
+                />
               </div>
               <div className="absolute -bottom-1 -right-1 bg-black/80 rounded-full border border-amber-500/40 w-4 h-4 flex items-center justify-center text-[9px] shadow">
                 {getAvatarFrame(state.cosmetics?.equippedFrame).emoji}
@@ -9121,13 +9231,13 @@ export default function App() {
                     'w-8 h-8 rounded-full overflow-hidden flex items-center justify-center shrink-0 shadow-sm relative',
                     rowFrame.frameClass
                   )}>
-                    {(isMe ? tgUser?.photo_url : pl.avatar) ? (
-                      <img src={isMe ? tgUser?.photo_url : pl.avatar} alt="Avatar" className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-xs font-black text-amber-200">
-                        {displayName ? displayName[0].toUpperCase() : '👨‍🍳'}
-                      </span>
-                    )}
+                    <PlayerAvatar
+                      src={isMe ? (tgUser?.photo_url || pl.avatar) : pl.avatar}
+                      username={isMe ? (tgUser?.username || pl.username) : pl.username}
+                      name={displayName}
+                      className="w-full h-full object-cover"
+                      fallbackClassName="text-xs font-black text-amber-200"
+                    />
                     {rowFrame.cost > 0 && (
                       <div className="absolute -bottom-1 -right-1 text-[8px] leading-none bg-black/80 rounded-full px-0.5">
                         {rowFrame.emoji}
@@ -9244,13 +9354,13 @@ export default function App() {
             <div className="glass-card rounded-2xl p-3.5 border border-amber-500/25 flex items-center justify-between gap-3 shadow-lg shadow-black/40">
               <div className="flex items-center gap-3 min-w-0">
                 <div className={cn('w-12 h-12 rounded-full overflow-hidden shrink-0 flex items-center justify-center relative', getAvatarFrame(state.cosmetics?.equippedFrame).frameClass)}>
-                  {tgUser?.photo_url ? (
-                    <img src={tgUser.photo_url} alt="Avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    <span className="text-xl font-black text-amber-200">
-                      {(tgUser?.first_name?.[0] || '👨‍🍳').toUpperCase()}
-                    </span>
-                  )}
+                  <PlayerAvatar
+                    src={tgUser?.photo_url}
+                    username={tgUser?.username}
+                    name={tgUser?.first_name}
+                    className="w-full h-full object-cover"
+                    fallbackClassName="text-xl font-black text-amber-200"
+                  />
                   {getAvatarFrame(state.cosmetics?.equippedFrame).cost > 0 && (
                     <div className="absolute -bottom-1 -right-1 text-[9px] leading-none bg-black/80 rounded-full px-1 py-0.5 border border-amber-500/30">
                       {getAvatarFrame(state.cosmetics?.equippedFrame).emoji}
