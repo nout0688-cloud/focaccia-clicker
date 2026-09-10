@@ -6,6 +6,7 @@ import {
   DIAMOND_BUILDINGS,
   VIP_UPGRADES,
   buildingCost,
+  getBuildingRepairCost,
   diamondBuildingCost,
   formatCps,
   formatNum,
@@ -1817,7 +1818,7 @@ export default function App() {
       const cur = stateRef.current;
       const curT = TRANSLATIONS[langRef.current];
       const bText = getBuildingText(target.id, langRef.current);
-      const repairCost = Math.max(50, Math.floor(target.baseCost * 0.3));
+      const repairCost = getBuildingRepairCost(target);
       const rk = cur.repairKit;
 
       // Автоматичний ремкомплект
@@ -2641,8 +2642,8 @@ export default function App() {
   };
 
   // ===== 🧰 REPAIR KIT CONSTANTS & LOGIC =====
-  const REPAIR_KIT_UNLOCK_DIAMONDS = 75;
-  const REPAIR_KIT_UNLOCK_FOCACCIA = 25000000;
+  const REPAIR_KIT_UNLOCK_DIAMONDS = 150;
+  const REPAIR_KIT_UNLOCK_FOCACCIA = 2500000000; // 2.5 Billion
 
   interface RepairPackage {
     charges: number;
@@ -2652,10 +2653,10 @@ export default function App() {
   }
 
   const REPAIR_PACKAGES: RepairPackage[] = [
-    { charges: 1, costFocaccia: 1000000, costDiamonds: 2 },
-    { charges: 5, costFocaccia: 4500000, costDiamonds: 8, discountBadge: '-10%' },
-    { charges: 20, costFocaccia: 16000000, costDiamonds: 25, discountBadge: '-20%' },
-    { charges: 50, costFocaccia: 35000000, costDiamonds: 55, discountBadge: '-30%' },
+    { charges: 1, costFocaccia: 100000000, costDiamonds: 15 }, // 100M / 15 💎
+    { charges: 5, costFocaccia: 450000000, costDiamonds: 65, discountBadge: '-10%' }, // 450M / 65 💎
+    { charges: 20, costFocaccia: 1600000000, costDiamonds: 240, discountBadge: '-20%' }, // 1.6B / 240 💎
+    { charges: 50, costFocaccia: 3500000000, costDiamonds: 500, discountBadge: '-30%' }, // 3.5B / 500 💎
   ];
 
   const checkAndFixCurrentBroken = (customState?: SaveState) => {
@@ -2666,7 +2667,7 @@ export default function App() {
 
     const b = BUILDINGS.find((x) => x.id === brokenBuilding);
     if (!b) return;
-    const cost = Math.max(50, Math.floor(b.baseCost * 0.3));
+    const cost = getBuildingRepairCost(b);
     if (cur.focaccia < cost) return;
 
     const nextCharges = (rk.charges || 0) - 1;
@@ -3480,7 +3481,7 @@ export default function App() {
     const b = BUILDINGS.find((x) => x.id === id);
     if (!b) return;
     const cur = stateRef.current;
-    const cost = Math.max(50, Math.floor(b.baseCost * 0.3));
+    const cost = getBuildingRepairCost(b);
     const curT = TRANSLATIONS[langRef.current];
     const bText = getBuildingText(b.id, langRef.current);
     if (cur.focaccia < cost) {
@@ -6212,7 +6213,7 @@ export default function App() {
                   {brokenBuilding && (() => {
                     const b = BUILDINGS.find((x) => x.id === brokenBuilding);
                     if (!b) return null;
-                    const cost = Math.max(50, Math.floor(b.baseCost * 0.3));
+                    const cost = getBuildingRepairCost(b);
                     const canAfford = state.focaccia >= cost;
                     const hasCharge = (state.repairKit?.charges || 0) > 0;
                     return (
@@ -9216,7 +9217,7 @@ export default function App() {
                 const cost = buildingCost(b, owned);
                 const can = state.focaccia >= cost;
                 const isBroken = brokenBuilding === b.id;
-                const repairCost = Math.max(50, Math.floor(b.baseCost * 0.3));
+                const repairCost = getBuildingRepairCost(b);
                 const canRepair = state.focaccia >= repairCost;
                 const prevOwned = i === 0 || (state.buildings[BUILDINGS[i - 1].id] || 0) > 0;
                 const visible = owned > 0 || prevOwned || state.total >= b.baseCost * 0.5;
