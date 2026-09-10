@@ -458,11 +458,18 @@ async function loadState(): Promise<SaveState> {
           : Array.from(new Set(['murchik', ...(parsed.cat?.skin ? [parsed.cat.skin] : [])])),
       },
       repairKit: {
-        unlocked: Boolean(parsed.repairKit?.unlocked),
+        unlocked: Boolean(parsed.repairKit?.unlocked || parsed.vipUpgrades?.includes('vip_repair_kit')),
         charges: Math.max(0, Number(parsed.repairKit?.charges) || 0),
         autoRepairEnabled: parsed.repairKit?.autoRepairEnabled !== false,
         totalRepairsDone: Math.max(0, Number(parsed.repairKit?.totalRepairsDone) || 0),
       },
+      vipUpgrades: (() => {
+        const list: string[] = Array.isArray(parsed.vipUpgrades) ? [...parsed.vipUpgrades] : [];
+        if (parsed.repairKit?.unlocked && !list.includes('vip_repair_kit')) {
+          list.push('vip_repair_kit');
+        }
+        return list;
+      })(),
     };
   } catch { return defaultState(); }
 }
@@ -2720,10 +2727,14 @@ export default function App() {
       }
     }
 
+    const vipList = Array.isArray(state.vipUpgrades) ? [...state.vipUpgrades] : [];
+    if (!vipList.includes('vip_repair_kit')) vipList.push('vip_repair_kit');
+
     const next: SaveState = {
       ...state,
       diamonds: currency === 'diamonds' ? state.diamonds - REPAIR_KIT_UNLOCK_DIAMONDS : state.diamonds,
       focaccia: currency === 'focaccia' ? state.focaccia - REPAIR_KIT_UNLOCK_FOCACCIA : state.focaccia,
+      vipUpgrades: vipList,
       repairKit: {
         unlocked: true,
         charges: 3, // бонусні 3 ремонти при покупці
@@ -3548,11 +3559,23 @@ export default function App() {
     const u = VIP_UPGRADES.find((x) => x.id === id);
     if (!u) return;
     const cur = stateRef.current;
-    if (cur.diamonds < u.cost || cur.vipUpgrades?.includes(id)) return;
+    const isRepairKit = id === 'vip_repair_kit';
+    const alreadyBought = cur.vipUpgrades?.includes(id) || (isRepairKit && cur.repairKit?.unlocked);
+    if (cur.diamonds < u.cost || alreadyBought) return;
     const next: SaveState = {
       ...cur,
       diamonds: cur.diamonds - u.cost,
       vipUpgrades: [...(cur.vipUpgrades || []), id],
+      ...(isRepairKit
+        ? {
+            repairKit: {
+              unlocked: true,
+              charges: (cur.repairKit?.charges || 0) + 3,
+              autoRepairEnabled: cur.repairKit?.autoRepairEnabled !== false,
+              totalRepairsDone: cur.repairKit?.totalRepairsDone || 0,
+            },
+          }
+        : {}),
     };
     stateRef.current = next;
     setState(next);
@@ -3561,6 +3584,10 @@ export default function App() {
     const vuText = getVipUpgradeText(u.id, langRef.current);
     addToast(curT.toastVipBought, vuText.name, u.emoji);
     haptic.success();
+    if (isRepairKit) {
+      burstConfetti(['🧰', '🔧', '✨', '⚙️']);
+      checkAndFixCurrentBroken(next);
+    }
   };
 
   const buyDiamondBuilding = (id: string, isRepeat = false): boolean => {
@@ -4530,61 +4557,7 @@ export default function App() {
             </button>
           )}
 
-          {/* 🧰 REPAIR KIT STICKER (placed side-by-side with the cat on the floor) */}
-          <div
-            onClick={() => { setShowRepairKitModal(true); haptic.selection(); }}
-            className="fixed z-35 select-none cursor-pointer group hover:scale-105 active:scale-95 transition-transform"
-            style={{
-              right: state.cat?.unlocked ? '90px' : '14px',
-              bottom: state.cat?.unlocked ? '76px' : '88px',
-            }}
-            title={lang === 'uk' ? 'Автоматичний ремкомплект' : 'Автоматический ремкомплект'}
-          >
-            <div className="relative w-15 h-15 sm:w-18 sm:h-18 drop-shadow-[0_4px_16px_rgba(0,0,0,0.65)]">
-              <img
-                src={repairKitImg}
-                alt="Repair Kit"
-                className="w-full h-full object-contain pointer-events-none filter drop-shadow-[0_2px_8px_rgba(234,88,12,0.3)]"
-                draggable={false}
-              />
 
-              {/* Status Badge */}
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setShowRepairKitModal(true); haptic.selection(); }}
-                className={cn(
-                  'absolute -bottom-1 -right-1 px-1.5 py-0.2 rounded-full font-black text-[9px] shadow flex items-center gap-0.5 cursor-pointer border',
-                  state.repairKit?.unlocked
-                    ? (state.repairKit?.charges || 0) > 0
-                      ? 'bg-emerald-500 text-stone-950 border-emerald-300'
-                      : 'bg-red-500 text-white border-red-300'
-                    : 'bg-amber-500 text-stone-950 border-amber-300'
-                )}
-              >
-                {state.repairKit?.unlocked ? (
-                  <>
-                    <span>🧰</span>
-                    <span>{state.repairKit.charges || 0}</span>
-                  </>
-                ) : (
-                  <>
-                    <span>🔒</span>
-                    <span>Рем</span>
-                  </>
-                )}
-              </button>
-
-              {/* Ping alert if building is currently broken */}
-              {brokenBuilding && (
-                <span className="absolute -top-1 -right-1 flex h-4 w-4">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-4 w-4 bg-red-500 border border-white text-[9px] text-white font-black items-center justify-center shadow">
-                    !
-                  </span>
-                </span>
-              )}
-            </div>
-          </div>
         </>
       )}
 
@@ -9560,44 +9533,95 @@ export default function App() {
                   {/* DIAMOND UPGRADES SUB-TAB */}
                   {vipSubTab === 'upgrades' && VIP_UPGRADES.map((u, i) => {
                     const vuText = getVipUpgradeText(u.id, lang);
-                    const bought = state.vipUpgrades?.includes(u.id);
+                    const isRepairKit = u.id === 'vip_repair_kit';
+                    const bought = state.vipUpgrades?.includes(u.id) || (isRepairKit && state.repairKit?.unlocked);
                     const can = state.diamonds >= u.cost && !bought;
                     return (
-                      <button
+                      <div
                         key={u.id}
-                        onClick={() => buyVipUpgrade(u.id)}
-                        disabled={bought || !can}
+                        onClick={() => {
+                          if (!bought && can) buyVipUpgrade(u.id);
+                          else if (bought && isRepairKit) {
+                            setShowRepairKitModal(true);
+                            haptic.selection();
+                          }
+                        }}
                         style={{ animationDelay: `${Math.min(i, 12) * 45}ms` }}
                         className={cn(
-                          'relative w-full overflow-hidden text-left rounded-xl p-2.5 flex items-center gap-2.5 transition-all active:scale-[0.98] animate-card',
+                          'relative w-full overflow-hidden text-left rounded-xl p-2.5 flex flex-col gap-2 transition-all animate-card',
                           bought
-                            ? 'glass-card border-emerald-500/30 bg-emerald-950/20 opacity-80'
+                            ? isRepairKit
+                              ? 'glass-card border-orange-500/40 bg-gradient-to-r from-orange-950/30 to-amber-950/20 cursor-pointer hover:border-orange-400 active:scale-[0.99]'
+                              : 'glass-card border-emerald-500/30 bg-emerald-950/20 opacity-80'
                             : can
-                            ? 'glass-card border-cyan-500/30 glass-card-hover'
-                            : 'glass-card opacity-40',
+                            ? 'glass-card border-cyan-500/30 glass-card-hover cursor-pointer active:scale-[0.98]'
+                            : 'glass-card opacity-40 cursor-not-allowed',
                         )}
                       >
-                        <div className="w-10 h-10 rounded-xl bg-cyan-500/15 flex items-center justify-center text-xl shrink-0">
-                          {u.emoji}
-                        </div>
-                        <div className="flex-1">
-                          <div className="font-bold text-[13px] text-cyan-100/90 flex justify-between">
-                            <span>{vuText.name}</span>
-                            {bought && <span className="text-emerald-400 text-xs">{t.boughtCheck}</span>}
+                        <div className="flex items-center gap-2.5 w-full">
+                          <div className={cn(
+                            'w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0',
+                            isRepairKit ? 'bg-orange-500/15 border border-orange-400/30 text-2xl' : 'bg-cyan-500/15'
+                          )}>
+                            {u.emoji}
                           </div>
-                          <div className="text-[10px] text-cyan-300/60">{vuText.desc}</div>
-                          {!bought && (
-                            <div className={cn('text-[10px] font-bold mt-0.5', can ? 'text-cyan-300' : 'text-red-400/70')}>
-                              {formatTemplate(t.diamondsCost, u.cost)}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-[13px] text-cyan-100/90 flex justify-between items-center">
+                              <span className={cn(isRepairKit && 'text-amber-200 font-black')}>{vuText.name}</span>
+                              {bought ? (
+                                <span className="text-emerald-400 text-xs font-bold flex items-center gap-1">
+                                  {t.boughtCheck}
+                                </span>
+                              ) : null}
                             </div>
-                          )}
+                            <div className="text-[10px] text-cyan-300/60 leading-tight mt-0.5">{vuText.desc}</div>
+                            {!bought && (
+                              <div className={cn('text-[10px] font-bold mt-1', can ? 'text-cyan-300' : 'text-red-400/70')}>
+                                {formatTemplate(t.diamondsCost, u.cost)}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        {can && (
+
+                        {/* Button "Керувати" for Repair Kit when purchased */}
+                        {bought && isRepairKit && (
+                          <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 text-[11px]">
+                              <span className="px-2 py-0.5 rounded-lg bg-black/50 border border-white/10 font-bold font-mono text-amber-300">
+                                🧰 {state.repairKit?.charges || 0} {lang === 'uk' ? 'рем.' : 'рем.'}
+                              </span>
+                              {state.repairKit?.autoRepairEnabled !== false ? (
+                                <span className="text-[10px] text-emerald-300 font-bold bg-emerald-950/70 px-2 py-0.5 rounded-lg border border-emerald-500/40">
+                                  ● {lang === 'uk' ? 'Авто' : 'Авто'}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-zinc-400 font-medium bg-zinc-900 px-2 py-0.5 rounded-lg border border-zinc-700">
+                                  ○ {lang === 'uk' ? 'Вимк.' : 'Выкл.'}
+                                </span>
+                              )}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowRepairKitModal(true);
+                                haptic.selection();
+                              }}
+                              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 hover:brightness-110 active:scale-95 text-stone-950 font-black text-xs shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <span>⚙️</span>
+                              <span>{lang === 'uk' ? 'Керувати' : 'Управлять'}</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {can && !bought && (
                           <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-xl">
                             <span className="vip-sheen-cyan" />
                           </span>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>

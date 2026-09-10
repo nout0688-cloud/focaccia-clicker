@@ -190,6 +190,7 @@ export const VIP_UPGRADES: VipUpgrade[] = [
   { id: 'vip_frenzy', name: 'Гіпер-френзі', emoji: '🔥', desc: 'Френзі триває 25с (замість 20с) та дає x8 замість x7', cost: 50 },
   { id: 'vip_offline', name: 'Нічна пекарня', emoji: '🌙', desc: '75% доходу офлайн (замість 50%) до 12 годин', cost: 60 },
   { id: 'vip_polish', name: 'Діамантове огранювання', emoji: '💎', desc: '+25% до ефективності всіх діамантових будівель', cost: 75 },
+  { id: 'vip_repair_kit', name: 'Авто-ремкомплект', emoji: '🧰', desc: 'Автоматично лагодить поламані будівлі за кошти з балансу', cost: 150 },
 ];
 
 export const ACHIEVEMENTS: Achievement[] = [

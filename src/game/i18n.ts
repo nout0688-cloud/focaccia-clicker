@@ -246,6 +246,10 @@ export const VIP_UPGRADES_I18N: Record<string, Record<Lang, LocalizedItem>> = {
     uk: { name: 'Діамантове огранювання', desc: '+25% до ефективності всіх діамантових будівель' },
     ru: { name: 'Алмазная огранка', desc: '+25% к эффективности всех алмазных зданий' },
   },
+  vip_repair_kit: {
+    uk: { name: 'Авто-ремкомплект', desc: 'Автоматично лагодить поламані будівлі за кошти з балансу' },
+    ru: { name: 'Авто-ремкомплект', desc: 'Автоматически чинит сломанные постройки за счет баланса' },
+  },
 };
 
 export const ACHIEVEMENTS_I18N: Record<string, Record<Lang, LocalizedItem>> = {
