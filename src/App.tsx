@@ -2627,7 +2627,7 @@ export default function App() {
   };
 
   // ===== 🐱 BAKERY CAT LOGIC & AI =====
-  const handlePestCatchByCat = () => {
+  const handlePestCatchByCat = (isBg = false) => {
     if (!pest) return;
     setPest(null);
     haptic.heavy();
@@ -2657,8 +2657,12 @@ export default function App() {
     setState(next);
     saveNow(next);
 
+    const title = isBg
+      ? (lang === 'uk' ? `🐾 ${catSkinInfo.nameUk} упіймав жука в пекарні!` : `🐾 ${catSkinInfo.nameRu} поймал жука в пекарне!`)
+      : (lang === 'uk' ? `🐾 ${catSkinInfo.nameUk} упіймав жука!` : `🐾 ${catSkinInfo.nameRu} поймал жука!`);
+
     addToast(
-      lang === 'uk' ? `🐾 ${catSkinInfo.nameUk} упіймав жука!` : `🐾 ${catSkinInfo.nameRu} поймал жука!`,
+      title,
       gotDiamond
         ? (lang === 'uk' ? `+${formatNum(bonus)} фокач та 💎 +1 діамант!` : `+${formatNum(bonus)} фокачч и 💎 +1 алмаз!`)
         : (lang === 'uk' ? `+${formatNum(bonus)} фокач` : `+${formatNum(bonus)} фокачч`),
@@ -2685,39 +2689,51 @@ export default function App() {
       return () => clearTimeout(t);
     }
 
-    if (pest && page === 'clicker' && (catState === 'idle' || catState === 'returning')) {
-      setCatPose('idle');
-      setCatState('chasing');
-      setCatBubble(lang === 'uk' ? catSkinInfo.chaseBubbleUk : catSkinInfo.chaseBubbleRu);
-      setCatFacing(pest.x > catPos.x ? -1 : 1);
+    if (pest && (catState === 'idle' || catState === 'returning')) {
+      if (page === 'clicker') {
+        // Повна візуальна анімація полювання на екрані клікера
+        setCatPose('idle');
+        setCatState('chasing');
+        setCatBubble(lang === 'uk' ? catSkinInfo.chaseBubbleUk : catSkinInfo.chaseBubbleRu);
+        setCatFacing(pest.x > catPos.x ? -1 : 1);
 
-      const runDuration = catInfo.runDurationMs;
-      setCatPos({ x: pest.x, y: pest.y });
+        const runDuration = catInfo.runDurationMs;
+        setCatPos({ x: pest.x, y: pest.y });
 
-      const reachTimer = setTimeout(() => {
-        setCatState('pouncing');
-        setCatBubble(catSkinInfo.pounceBubble);
-        handlePestCatchByCat();
+        const reachTimer = setTimeout(() => {
+          setCatState('pouncing');
+          setCatBubble(catSkinInfo.pounceBubble);
+          handlePestCatchByCat(false);
 
-        const returnTimer = setTimeout(() => {
-          setCatState('returning');
-          setCatFacing(82 > pest.x ? -1 : 1);
-          setCatBubble(lang === 'uk' ? '😸 Мурр!' : '😸 Мурр!');
-          setCatPos({ x: 82, y: 76 });
+          const returnTimer = setTimeout(() => {
+            setCatState('returning');
+            setCatFacing(82 > pest.x ? -1 : 1);
+            setCatBubble(lang === 'uk' ? '😸 Мурр!' : '😸 Мурр!');
+            setCatPos({ x: 82, y: 76 });
 
-          const idleTimer = setTimeout(() => {
-            setCatState('idle');
-            setCatFacing(1);
-            setCatBubble(null);
-          }, 1200);
+            const idleTimer = setTimeout(() => {
+              setCatState('idle');
+              setCatFacing(1);
+              setCatBubble(null);
+            }, 1200);
 
-          return () => clearTimeout(idleTimer);
-        }, 500);
+            return () => clearTimeout(idleTimer);
+          }, 500);
 
-        return () => clearTimeout(returnTimer);
-      }, runDuration);
+          return () => clearTimeout(returnTimer);
+        }, runDuration);
 
-      return () => clearTimeout(reachTimer);
+        return () => clearTimeout(reachTimer);
+      } else {
+        // Гравець на іншій вкладці (наприклад, «Інше», «Магазин», «Казино» тощо) —
+        // кіт все одно вартує пекарню і самостійно ловить букашку!
+        setCatPose('idle');
+        const bgReachTimer = setTimeout(() => {
+          handlePestCatchByCat(true);
+        }, Math.min(2200, catInfo.runDurationMs + 400));
+
+        return () => clearTimeout(bgReachTimer);
+      }
     }
   }, [pest?.id, activeEvent?.emoji, state.cat?.unlocked, catInfo.runDurationMs, page, catSkinInfo, lang]);
 
