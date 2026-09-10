@@ -55,7 +55,6 @@ import {
   SKIN_LIST,
   RARITY_LABELS,
   calculateUpgradeChance,
-  getClassicUpgradeFee,
   CASES,
   rollCaseDrop,
   getSkinLevel,
@@ -2619,19 +2618,29 @@ export default function App() {
   const handleRunUpgrader = () => {
     if (isUpgrading) return;
 
-    const ownedList = state.skins?.owned || ['skin_classic'];
-    const effectiveSourceId = ownedList.includes(upgraderSourceId)
+    const eligibleSourceIds = (state.skins?.owned || []).filter((id) => id !== 'skin_classic');
+    const effectiveSourceId = eligibleSourceIds.includes(upgraderSourceId)
       ? upgraderSourceId
-      : (ownedList.find((id) => id !== 'skin_classic') || 'skin_classic');
+      : (eligibleSourceIds[0] || '');
 
-    const srcSkin = SKINS[effectiveSourceId] || SKINS.skin_classic;
+    if (!effectiveSourceId || effectiveSourceId === 'skin_classic') {
+      addToast(
+        lang === 'uk' ? 'У вас немає скінів для апгрейду!' : 'У вас нет скинов для апгрейда!',
+        lang === 'uk' ? 'Спершу відкрийте скін у кейсах 🎁' : 'Сначала откройте скин в кейсах 🎁',
+        '⚠️'
+      );
+      return;
+    }
+
+    const srcSkin = SKINS[effectiveSourceId];
+    if (!srcSkin) return;
 
     const eligibleTargetSkins = SKIN_LIST.filter(
       (sk) => sk.id !== 'skin_classic' && sk.id !== srcSkin.id
     );
     const effectiveTargetId = eligibleTargetSkins.some((sk) => sk.id === upgraderTargetId)
       ? upgraderTargetId
-      : (eligibleTargetSkins.find((sk) => !ownedList.includes(sk.id))?.id || eligibleTargetSkins[0]?.id || 'skin_chef');
+      : (eligibleTargetSkins.find((sk) => !(state.skins?.owned || []).includes(sk.id))?.id || eligibleTargetSkins[0]?.id || 'skin_chef');
     const tgtSkin = SKINS[effectiveTargetId];
     if (!tgtSkin) return;
 
@@ -2644,23 +2653,11 @@ export default function App() {
       return;
     }
 
-    if (ownedList.includes(tgtSkin.id)) {
+    if ((state.skins?.owned || []).includes(tgtSkin.id)) {
       addToast(
         lang === 'uk' ? 'У вас вже є цей скін!' : 'У вас уже есть этот скин!',
         lang === 'uk' ? 'Оберіть інший скін вищого рівня' : 'Выберите другой скин высшего уровня',
         'ℹ️'
-      );
-      return;
-    }
-
-    const isFromClassic = srcSkin.id === 'skin_classic';
-    const classicFee = isFromClassic ? getClassicUpgradeFee(tgtSkin) : 0;
-
-    if (isFromClassic && state.focaccia < classicFee) {
-      addToast(
-        lang === 'uk' ? `Недостатньо фокач! Потрібно ${formatNum(classicFee)} 🫓` : `Недостаточно фокачч! Нужно ${formatNum(classicFee)} 🫓`,
-        lang === 'uk' ? 'Заробіть фокачі для спроби апгрейду' : 'Заработайте фокаччи для попытки апгрейда',
-        '🫓'
       );
       return;
     }
@@ -2704,14 +2701,11 @@ export default function App() {
     setUpgradeResult(null);
     haptic.medium();
 
-    // Deduct upfront currency (diamonds and/or classic focaccia fee)
-    // IMPORTANT: Do NOT remove source skin here so that UI does NOT change mid-spin!
+    // Deduct upfront diamond boost
+    // NOTE: Source skin remains in inventory during spin so UI is completely stable!
     let curState = { ...stateRef.current };
     if (effectiveBoost > 0) {
       curState.diamonds = Math.max(0, curState.diamonds - effectiveBoost);
-    }
-    if (classicFee > 0) {
-      curState.focaccia = Math.max(0, curState.focaccia - classicFee);
     }
     stateRef.current = curState;
     setState(curState);
@@ -2729,10 +2723,7 @@ export default function App() {
         haptic.success();
         burstConfetti(['🎉', '✨', '👑', '💎', '🫓']);
 
-        // Remove source skin only if it was not classic
-        const nextOwned = (srcSkin.id !== 'skin_classic')
-          ? (endState.skins?.owned || ['skin_classic']).filter((id) => id !== srcSkin.id)
-          : (endState.skins?.owned || ['skin_classic']);
+        const nextOwned = (endState.skins?.owned || ['skin_classic']).filter((id) => id !== srcSkin.id);
         const finalOwned = Array.from(new Set([...nextOwned, tgtSkin.id]));
 
         endState = {
@@ -2764,16 +2755,17 @@ export default function App() {
       } else {
         haptic.error();
 
-        let finalOwned = endState.skins?.owned || ['skin_classic'];
-        let finalEquipped = endState.skins?.equipped || 'skin_classic';
+        let finalOwned = (endState.skins?.owned || ['skin_classic']).filter((id) => id !== srcSkin.id);
+        if (finalOwned.length === 0) finalOwned = ['skin_classic'];
 
-        if (srcSkin.id !== 'skin_classic') {
-          const nextOwned = finalOwned.filter((id) => id !== srcSkin.id);
-          finalOwned = nextOwned.length > 0 ? nextOwned : ['skin_classic'];
-          if (finalEquipped === srcSkin.id) {
-            finalEquipped = 'skin_classic';
-          }
+        let finalEquipped = endState.skins?.equipped || 'skin_classic';
+        if (finalEquipped === srcSkin.id) {
+          finalEquipped = 'skin_classic';
         }
+
+        // Cleanly reset upgraderSourceId to next eligible or empty (NEVER skin_classic)
+        const remainingEligible = finalOwned.filter((id) => id !== 'skin_classic');
+        setUpgraderSourceId(remainingEligible[0] || '');
 
         const consolation = Math.max(25000, Math.floor((cpsRef.current || 50) * 120));
         endState = {
@@ -2793,18 +2785,14 @@ export default function App() {
         setUpgradeResult({
           success: false,
           text: lang === 'uk'
-            ? (srcSkin.id === 'skin_classic'
-                ? `💔 НЕВДАЧА! Скін не покращено. Втішний приз: +${formatNum(consolation)} фокач.`
-                : `💔 НЕВДАЧА! Скін «${srcSkin.name}» втрачено. Втішний приз: +${formatNum(consolation)} фокач.`)
-            : (srcSkin.id === 'skin_classic'
-                ? `💔 НЕУДАЧА! Скин не улучшен. Утешительный приз: +${formatNum(consolation)} фокачч.`
-                : `💔 НЕУДАЧА! Скин «${srcSkin.nameRu}» потерян. Утешительный приз: +${formatNum(consolation)} фокачч.`),
+            ? `💔 НЕВДАЧА! Скін «${srcSkin.name}» втрачено. Втішний приз: +${formatNum(consolation)} фокач.`
+            : `💔 НЕУДАЧА! Скин «${srcSkin.nameRu}» потерян. Утешительный приз: +${formatNum(consolation)} фокачч.`,
         });
         addToast(
           lang === 'uk' ? 'Спроба невдала' : 'Попытка неудачна',
           lang === 'uk'
-            ? (srcSkin.id === 'skin_classic' ? `Бонус: +${formatNum(consolation)} фокач` : `Скін «${srcSkin.name}» втрачено. Бонус: +${formatNum(consolation)} фокач`)
-            : (srcSkin.id === 'skin_classic' ? `Бонус: +${formatNum(consolation)} фокачч` : `Скин «${srcSkin.nameRu}» потерян. Бонус: +${formatNum(consolation)} фокачч`),
+            ? `Скін «${srcSkin.name}» втрачено. Бонус: +${formatNum(consolation)} фокач`
+            : `Скин «${srcSkin.nameRu}» потерян. Бонус: +${formatNum(consolation)} фокачч`,
           '💔'
         );
       }
@@ -6420,14 +6408,43 @@ export default function App() {
                 const ownedList = state.skins?.owned || ['skin_classic'];
                 const eligibleSourceIds = ownedList.filter((id) => id !== 'skin_classic');
 
-                // Determine effective source skin
-                let effectiveSourceId = upgraderSourceId;
-                if (!effectiveSourceId || !ownedList.includes(effectiveSourceId)) {
-                  effectiveSourceId = eligibleSourceIds[0] || 'skin_classic';
+                // If player owns 0 non-classic skins, show clean empty state with button to cases
+                if (eligibleSourceIds.length === 0) {
+                  return (
+                    <div className="p-6 flex flex-col items-center justify-center text-center space-y-4 my-auto flex-1 animate-fade-in">
+                      <div className="w-20 h-20 rounded-3xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-4xl shadow-inner">
+                        🎁
+                      </div>
+                      <div className="space-y-1.5 max-w-xs">
+                        <h3 className="text-base font-black text-amber-200">
+                          {lang === 'uk' ? 'У вас немає скінів для апгрейду' : 'У вас нет скинов для апгрейда'}
+                        </h3>
+                        <p className="text-xs text-stone-400 leading-relaxed">
+                          {lang === 'uk'
+                            ? 'Базову класичну фокачу апгрейдити не можна. Відкрийте свій перший скін у Кейсах 🎁, щоб грати в Апгрейдер!'
+                            : 'Базовую классическую фокаччу апгрейдить нельзя. Откройте свой первый скин в Кейсах 🎁, чтобы играть в Апгрейдер!'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setSkinsTab('cases'); haptic.selection(); }}
+                        className="px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-400 to-yellow-500 hover:brightness-110 text-stone-950 font-black text-xs transition active:scale-95 shadow-lg shadow-amber-500/20 cursor-pointer flex items-center gap-2"
+                      >
+                        <span>🎁</span>
+                        <span>{lang === 'uk' ? 'Відкрити Кейси' : 'Открыть Кейсы'}</span>
+                      </button>
+                    </div>
+                  );
                 }
 
-                const srcSkin = SKINS[effectiveSourceId] || SKINS.skin_classic;
-                const isFromClassic = srcSkin.id === 'skin_classic';
+                // Determine effective source skin (STRICTLY non-classic)
+                let effectiveSourceId = upgraderSourceId;
+                if (!effectiveSourceId || !eligibleSourceIds.includes(effectiveSourceId)) {
+                  effectiveSourceId = eligibleSourceIds[0];
+                }
+
+                const srcSkin = SKINS[effectiveSourceId] || SKINS[eligibleSourceIds[0]];
+                if (!srcSkin) return null;
 
                 // Eligible target skins: non-classic, and not srcSkin
                 const eligibleTargetSkins = SKIN_LIST.filter(
@@ -6438,9 +6455,6 @@ export default function App() {
                   : (eligibleTargetSkins.find((sk) => !ownedList.includes(sk.id))?.id || eligibleTargetSkins[0]?.id || 'skin_chef');
                 const tgtSkin = SKINS[effectiveTargetId] || eligibleTargetSkins[0];
 
-                const classicFee = isFromClassic ? getClassicUpgradeFee(tgtSkin) : 0;
-                const canAffordClassicFee = !isFromClassic || state.focaccia >= classicFee;
-
                 const effectiveBoostDiamonds = Math.min(upgraderBoostDiamonds, state.diamonds);
                 const { boostChance, totalChance } = calculateUpgradeChance(srcSkin, tgtSkin, effectiveBoostDiamonds);
                 const winSliceDeg = Math.round((totalChance / 100) * 360);
@@ -6450,24 +6464,13 @@ export default function App() {
                 return (
                   <div className="p-4 space-y-3.5 overflow-y-auto flex-1 custom-scrollbar">
                     {/* Informative Header Banner */}
-                    <div className={cn(
-                      'p-2.5 rounded-2xl border flex items-center justify-between gap-2.5 text-xs shadow-md transition-all',
-                      isFromClassic
-                        ? 'bg-amber-950/40 border-amber-500/30 text-amber-200'
-                        : 'bg-stone-900/90 border-white/10 text-stone-300'
-                    )}>
+                    <div className="p-2.5 rounded-2xl border border-white/10 bg-stone-900/90 flex items-center justify-between gap-2.5 text-xs shadow-md transition-all text-stone-300">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-xl shrink-0">{isFromClassic ? '🫓' : '⚡'}</span>
+                        <span className="text-xl shrink-0">⚡</span>
                         <div className="min-w-0 text-[11px] leading-tight">
-                          {isFromClassic ? (
-                            lang === 'uk'
-                              ? `Спроба апгрейду з базової фокачі: ${formatNum(classicFee)} 🫓. Базова фокача ніколи не зникає!`
-                              : `Попытка апгрейда с базовой фокаччи: ${formatNum(classicFee)} 🫓. Базовая фокачча никогда не исчезает!`
-                          ) : (
-                            lang === 'uk'
-                              ? `Скін «${srcSkin.name}» бере участь у рулетці без оплати фокачами. Ризик втратити скін при невдачі.`
-                              : `Скин «${srcSkin.nameRu}» участвует в рулетке без оплаты фокаччами. Риск потерять скин при неудаче.`
-                          )}
+                          {lang === 'uk'
+                            ? `Скін «${srcSkin.name}» бере участь у рулетці. У разі успіху ви отримаєте «${tgtSkin.name}»!`
+                            : `Скин «${srcSkin.nameRu}» участвует в рулетке. В случае успеха вы получите «${tgtSkin.nameRu}»!`}
                         </div>
                       </div>
                       <button
@@ -6481,21 +6484,15 @@ export default function App() {
 
                     {/* Source & Target Skin Selectors */}
                     <div className="grid grid-cols-2 gap-2">
-                      {/* Left: Source Skin */}
+                      {/* Left: Source Skin (ONLY NON-CLASSIC) */}
                       <div className="p-2.5 rounded-2xl bg-stone-900/80 border border-white/10 flex flex-col items-center text-center transition-all">
                         <div className="flex items-center justify-between w-full mb-1">
                           <span className="text-[10px] text-stone-400 font-bold uppercase">
                             {lang === 'uk' ? 'Ваш скін' : 'Ваш скин'}
                           </span>
-                          {isFromClassic ? (
-                            <span className="text-[8px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
-                              БАЗОВИЙ
-                            </span>
-                          ) : (
-                            <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
-                              У ВАС
-                            </span>
-                          )}
+                          <span className="text-[8px] px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                            У ВАС
+                          </span>
                         </div>
                         <div className="w-14 h-14 rounded-xl overflow-hidden border border-white/20 mb-1.5 bg-stone-950 shadow">
                           <img src={srcSkin.img} alt="" className="w-full h-full object-cover" />
@@ -6509,7 +6506,7 @@ export default function App() {
                           disabled={isUpgrading}
                           className="w-full text-[11px] font-bold bg-stone-950 text-white border border-white/15 rounded-lg py-1 px-1.5 truncate cursor-pointer"
                         >
-                          {/* Owned non-classic skins */}
+                          {/* ONLY owned non-classic skins. Classic is NEVER listed! */}
                           {eligibleSourceIds.map((id) => {
                             const sk = SKINS[id];
                             if (!sk) return null;
@@ -6520,10 +6517,6 @@ export default function App() {
                               </option>
                             );
                           })}
-                          {/* Classic Focaccia */}
-                          <option value="skin_classic">
-                            🫓 {lang === 'uk' ? 'Звичайна фокача (Базова)' : 'Обычная фокачча (Базовая)'}
-                          </option>
                         </select>
                         <span className={cn('px-1.5 py-0.2 rounded text-[8px] font-bold border mt-1 truncate max-w-full', RARITY_LABELS[srcSkin.rarity].color, RARITY_LABELS[srcSkin.rarity].border)}>
                           {srcSkin.badge}
@@ -6650,11 +6643,6 @@ export default function App() {
                                 +{boostChance}% 💎
                               </div>
                             )}
-                            {isFromClassic && (
-                              <div className="text-[8px] text-amber-400 font-mono leading-none mt-0.5">
-                                -{formatNum(classicFee)} 🫓
-                              </div>
-                            )}
                           </div>
                         </div>
                       </div>
@@ -6724,11 +6712,11 @@ export default function App() {
                     {/* Run Button */}
                     <button
                       type="button"
-                      disabled={isUpgrading || isTargetOwned || (isFromClassic && !canAffordClassicFee)}
+                      disabled={isUpgrading || isTargetOwned}
                       onClick={handleRunUpgrader}
                       className={cn(
                         'w-full py-3.5 rounded-2xl font-black text-sm transition active:scale-95 cursor-pointer shadow-lg flex items-center justify-center gap-2',
-                        isUpgrading || isTargetOwned || (isFromClassic && !canAffordClassicFee)
+                        isUpgrading || isTargetOwned
                           ? 'bg-stone-800 text-stone-500 cursor-not-allowed border border-white/5'
                           : 'bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-stone-950 hover:brightness-110 shadow-amber-500/30'
                       )}
@@ -6739,12 +6727,6 @@ export default function App() {
                           ? (lang === 'uk' ? 'Апгрейд у процесі…' : 'Апгрейд в процессе…')
                           : isTargetOwned
                           ? (lang === 'uk' ? 'Цей скін вже є у вас' : 'Этот скин уже есть у вас')
-                          : isFromClassic && !canAffordClassicFee
-                          ? (lang === 'uk' ? `Недостатньо фокач (треба ${formatNum(classicFee)} 🫓)` : `Недостаточно фокачч (нужно ${formatNum(classicFee)} 🫓)`)
-                          : isFromClassic
-                          ? (lang === 'uk'
-                              ? `Апгрейдити (${totalChance}%) • ${formatNum(classicFee)} 🫓 ${effectiveBoostDiamonds > 0 ? `• -${effectiveBoostDiamonds} 💎` : ''}`
-                              : `Апгрейдить (${totalChance}%) • ${formatNum(classicFee)} 🫓 ${effectiveBoostDiamonds > 0 ? `• -${effectiveBoostDiamonds} 💎` : ''}`)
                           : (lang === 'uk'
                               ? `Апгрейдити (${totalChance}%) ${effectiveBoostDiamonds > 0 ? `• -${effectiveBoostDiamonds} 💎` : ''}`
                               : `Апгрейдить (${totalChance}%) ${effectiveBoostDiamonds > 0 ? `• -${effectiveBoostDiamonds} 💎` : ''}`)}
