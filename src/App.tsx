@@ -245,6 +245,8 @@ interface SaveState {
     equipped: string;
     levels?: Record<string, number>;
   };
+  skinsResetVersion?: number;
+  lastSkinsReset?: number;
   cat?: {
     unlocked: boolean;
     level: number;
@@ -346,6 +348,8 @@ const defaultState = (): SaveState => ({
     equippedNameColor: 'name_default',
     showcase: ['clicks', 'total', 'diamonds'],
   },
+  skinsResetVersion: 1,
+  lastSkinsReset: 0,
   skins: {
     owned: ['skin_classic'],
     equipped: 'skin_classic',
@@ -366,9 +370,22 @@ async function loadState(): Promise<SaveState> {
     const parsed = JSON.parse(raw);
     delete parsed.photo;
     const def = defaultState();
+
+    // Enforce skins wipe: all players start fresh with only skin_classic
+    const SKINS_RESET_VER = 1;
+    const hasResetSkins = Number(parsed.skinsResetVersion) >= SKINS_RESET_VER;
+    const ownedSkins = hasResetSkins && Array.isArray(parsed.skins?.owned) && parsed.skins.owned.length > 0
+      ? parsed.skins.owned
+      : ['skin_classic'];
+    const equippedSkin = hasResetSkins && parsed.skins?.equipped && ownedSkins.includes(parsed.skins.equipped)
+      ? parsed.skins.equipped
+      : 'skin_classic';
+
     return {
       ...def,
       ...parsed,
+      skinsResetVersion: SKINS_RESET_VER,
+      lastSkinsReset: Number(parsed.lastSkinsReset) || 0,
       cosmetics: {
         ...def.cosmetics!,
         ...(parsed.cosmetics || {}),
@@ -377,8 +394,9 @@ async function loadState(): Promise<SaveState> {
         showcase: parsed.cosmetics?.showcase?.length ? parsed.cosmetics.showcase : def.cosmetics!.showcase,
       },
       skins: {
-        owned: Array.isArray(parsed.skins?.owned) && parsed.skins.owned.length > 0 ? parsed.skins.owned : ['skin_classic'],
-        equipped: parsed.skins?.equipped || 'skin_classic',
+        owned: ownedSkins,
+        equipped: equippedSkin,
+        levels: hasResetSkins ? (parsed.skins?.levels || {}) : {},
       },
       cat: {
         unlocked: Boolean(parsed.cat?.unlocked),
@@ -582,6 +600,12 @@ export default function App() {
   const [spinnerAngle, setSpinnerAngle] = useState(0);
   const [upgradeResult, setUpgradeResult] = useState<{ success: boolean; skinWon?: SkinItem; text: string } | null>(null);
 
+  // ===== 👑 ADMIN & MASS DISTRIBUTION STATE =====
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminDistributeType, setAdminDistributeType] = useState<'foc' | 'gem'>('foc');
+  const [adminDistributeAmount, setAdminDistributeAmount] = useState<string>('50000000');
+  const [isAdminDistributing, setIsAdminDistributing] = useState(false);
+
   // ===== 🐱 BAKERY CAT STATE =====
   const [showCatModal, setShowCatModal] = useState(false);
   const [catState, setCatState] = useState<'idle' | 'chasing' | 'pouncing' | 'returning' | 'hiding'>('idle');
@@ -726,7 +750,7 @@ export default function App() {
       // Check for admin rewards or reset order
       const checkAdmin = (userState: SaveState) => {
         if (!tgUser?.id) return;
-        fetch(`https://focaccia-bot.vercel.app/api/reward?userId=${tgUser.id}&lastReset=${userState.lastReset || 0}`)
+        fetch(`https://focaccia-bot.vercel.app/api/reward?userId=${tgUser.id}&lastReset=${userState.lastReset || 0}&lastSkinsReset=${userState.lastSkinsReset || 0}`)
           .then((r) => r.json())
           .then((data) => {
             if (typeof data?.karma === 'number') setKarma(data.karma);
@@ -751,6 +775,26 @@ export default function App() {
               setTimeout(reportSync, 100);
             } else {
               const curT = TRANSLATIONS[langRef.current];
+              if (data?.resetSkins) {
+                setState((p) => {
+                  const next: SaveState = {
+                    ...p,
+                    skins: {
+                      owned: ['skin_classic'],
+                      equipped: 'skin_classic',
+                    },
+                    lastSkinsReset: data.skinsResetTime || Date.now(),
+                  };
+                  stateRef.current = next;
+                  saveNow(next);
+                  return next;
+                });
+                addToast(
+                  langRef.current === 'uk' ? 'Скидання скінів 🧹' : 'Сброс скинов 🧹',
+                  langRef.current === 'uk' ? 'Адміністратор скинув усі скіни до стандарту' : 'Администратор сбросил все скины до стандарта',
+                  '🧹'
+                );
+              }
               if (data?.reward && data.reward > 0) {
                 setState((p) => {
                   const next = { ...p, focaccia: p.focaccia + data.reward, total: p.total + data.reward };
@@ -2582,9 +2626,21 @@ export default function App() {
     let curState = { ...stateRef.current };
     if (effectiveBoost > 0) {
       curState.diamonds = Math.max(0, curState.diamonds - effectiveBoost);
-      setState(curState);
-      stateRef.current = curState;
     }
+
+    // Remove source skin from inventory (consumed by upgrader)
+    const ownedAfterRemoval = (curState.skins?.owned || ['skin_classic']).filter((id) => id !== srcSkin.id);
+    const wasEquipped = curState.skins?.equipped === srcSkin.id;
+    curState = {
+      ...curState,
+      skins: {
+        ...curState.skins,
+        owned: ownedAfterRemoval.length > 0 ? ownedAfterRemoval : ['skin_classic'],
+        equipped: wasEquipped ? 'skin_classic' : (curState.skins?.equipped || 'skin_classic'),
+      },
+    };
+    stateRef.current = curState;
+    setState(curState);
 
     const roll = Math.random() * 100;
     const isWin = roll <= totalChance;
@@ -2622,7 +2678,7 @@ export default function App() {
         setUpgradeResult({
           success: true,
           skinWon: tgtSkin,
-          text: lang === 'uk' ? `🎉 УСПІХ! Ви отримали «${tgtSkin.name}»!` : `🎉 УСПЕХ! Вы получили «${tgtSkin.nameRu}»!`,
+          text: lang === 'uk' ? `🎉 УСПІХ! «${srcSkin.name}» → «${tgtSkin.name}»!` : `🎉 УСПЕХ! «${srcSkin.nameRu}» → «${tgtSkin.nameRu}»!`,
         });
         addToast(
           lang === 'uk' ? '🎉 АПГРЕЙД УСПІШНИЙ!' : '🎉 АПГРЕЙД УСПЕШЕН!',
@@ -2642,11 +2698,11 @@ export default function App() {
         saveNow(next);
         setUpgradeResult({
           success: false,
-          text: lang === 'uk' ? `💔 НЕВДАЧА! Втішний приз: +${formatNum(consolation)} фокач.` : `💔 НЕУДАЧА! Утешительный приз: +${formatNum(consolation)} фокачч.`,
+          text: lang === 'uk' ? `💔 НЕВДАЧА! Скін «${srcSkin.name}» втрачено. Втішний приз: +${formatNum(consolation)} фокач.` : `💔 НЕУДАЧА! Скин «${srcSkin.nameRu}» потерян. Утешительный приз: +${formatNum(consolation)} фокачч.`,
         });
         addToast(
           lang === 'uk' ? 'Спроба невдала' : 'Попытка неудачна',
-          lang === 'uk' ? `Втішний бонус: +${formatNum(consolation)} фокач` : `Утешительный бонус: +${formatNum(consolation)} фокачч`,
+          lang === 'uk' ? `Скін «${srcSkin.name}» втрачено. Бонус: +${formatNum(consolation)} фокач` : `Скин «${srcSkin.nameRu}» потерян. Бонус: +${formatNum(consolation)} фокачч`,
           '💔'
         );
       }
@@ -2818,6 +2874,134 @@ export default function App() {
       lang === 'uk' ? `«${sk.name}» тепер ★ Lv.${nextLvl} (+15% до всіх характеристик)!` : `«${sk.nameRu}» теперь ★ Lv.${nextLvl} (+15% ко всем характеристикам)!`,
       '⭐'
     );
+  };
+
+  // ===== 👑 ADMIN MASS DISTRIBUTION & CREATOR ACTIONS =====
+  const handleAdminDistribute = async (cur: 'foc' | 'gem', amount: number) => {
+    if (!isDevUser(tgUser?.id) || isAdminDistributing) return;
+    if (!amount || amount <= 0) {
+      addToast(
+        lang === 'uk' ? 'Помилка' : 'Ошибка',
+        lang === 'uk' ? 'Вкажіть коректну кількість' : 'Укажите корректное количество',
+        '⚠️'
+      );
+      return;
+    }
+    setIsAdminDistributing(true);
+    haptic.heavy();
+    try {
+      const res = await fetch(`${API_BASE}/api/reward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: tgUser?.id || ADMIN_ID,
+          action: 'distribute',
+          cur,
+          amount,
+        }),
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        haptic.success();
+        burstConfetti(['🌍', '🎁', '💎', '✨', '🫓']);
+        addToast(
+          lang === 'uk' ? '🎉 Роздача успішна!' : '🎉 Раздача успешна!',
+          lang === 'uk'
+            ? `Нараховано по ${cur === 'gem' ? `+${amount} 💎` : `${formatNum(amount)} 🫓`} для ${data.count} гравців!`
+            : `Начислено по ${cur === 'gem' ? `+${amount} 💎` : `${formatNum(amount)} 🫓`} для ${data.count} игроков!`,
+          cur === 'gem' ? '💎' : '🎁'
+        );
+        // Also credit admin immediately
+        setState((p) => {
+          const next = {
+            ...p,
+            focaccia: cur === 'foc' ? p.focaccia + amount : p.focaccia,
+            total: cur === 'foc' ? p.total + amount : p.total,
+            diamonds: cur === 'gem' ? (p.diamonds || 0) + amount : p.diamonds,
+          };
+          stateRef.current = next;
+          saveNow(next);
+          return next;
+        });
+      } else {
+        addToast(
+          lang === 'uk' ? 'Помилка' : 'Ошибка',
+          data?.error || (lang === 'uk' ? 'Не вдалося роздати' : 'Не удалось раздать'),
+          '❌'
+        );
+      }
+    } catch (err: any) {
+      addToast(
+        lang === 'uk' ? 'Помилка мережі' : 'Ошибка сети',
+        err?.message || 'Network error',
+        '❌'
+      );
+    } finally {
+      setIsAdminDistributing(false);
+    }
+  };
+
+  const handleAdminSelfGive = (cur: 'foc' | 'gem', amount: number) => {
+    if (!isDevUser(tgUser?.id)) return;
+    haptic.success();
+    setState((p) => {
+      const next = {
+        ...p,
+        focaccia: cur === 'foc' ? p.focaccia + amount : p.focaccia,
+        total: cur === 'foc' ? p.total + amount : p.total,
+        diamonds: cur === 'gem' ? (p.diamonds || 0) + amount : p.diamonds,
+      };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+    addToast(
+      lang === 'uk' ? '⚡ Видано собі' : '⚡ Выдано себе',
+      cur === 'gem' ? `+${amount} 💎` : `+${formatNum(amount)} 🫓`,
+      '⚡'
+    );
+  };
+
+  const handleAdminResetSkinsAll = async () => {
+    if (!isDevUser(tgUser?.id) || isAdminDistributing) return;
+    setIsAdminDistributing(true);
+    haptic.warning();
+    try {
+      const res = await fetch(`${API_BASE}/api/reward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: tgUser?.id || ADMIN_ID,
+          action: 'reset_skins_all',
+        }),
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        haptic.success();
+        setState((p) => {
+          const next: SaveState = {
+            ...p,
+            skins: {
+              owned: ['skin_classic'],
+              equipped: 'skin_classic',
+            },
+            lastSkinsReset: data.skinsResetTime || Date.now(),
+          };
+          stateRef.current = next;
+          saveNow(next);
+          return next;
+        });
+        addToast(
+          lang === 'uk' ? 'Скіни скинуто усім! 🧹' : 'Скины сброшены всем! 🧹',
+          lang === 'uk' ? 'Всі гравці тепер мають лише класичну фокачу' : 'У всех игроков теперь только классическая фокачча',
+          '🧹'
+        );
+      }
+    } catch (err: any) {
+      addToast('Помилка', err?.message || 'Error', '❌');
+    } finally {
+      setIsAdminDistributing(false);
+    }
   };
 
   const fixBuilding = (id: string) => {
@@ -5258,6 +5442,228 @@ export default function App() {
                     👑 {lang === 'uk' ? 'МАКСИМАЛЬНИЙ РІВЕНЬ — КІТ-ЛЕГЕНДА' : 'МАКСИМАЛЬНЫЙ УРОВЕНЬ — КОТ-ЛЕГЕНДА'}
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 👑 ADMIN & DISTRIBUTION MODAL ===== */}
+      {showAdminModal && isDevUser(tgUser?.id) && (
+        <div className="fixed inset-0 z-[95] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
+          <div className="relative w-full max-w-md bg-[#140e0b] border-t sm:border border-red-500/40 rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Ambient Background Glow */}
+            <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-80 h-36 bg-red-600/20 rounded-full blur-3xl pointer-events-none" />
+
+            {/* Header */}
+            <div className="px-4 py-3.5 border-b border-white/10 bg-zinc-950/90 flex items-center justify-between z-10 shrink-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 to-amber-500 border border-amber-300/40 flex items-center justify-center text-xl shadow shrink-0">
+                  👑
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-black text-white truncate">
+                      {lang === 'uk' ? 'Адмін-панель' : 'Админ-панель'}
+                    </h3>
+                    <DevBadge size="sm" />
+                  </div>
+                  <p className="text-[10px] text-amber-300/60 truncate">
+                    {lang === 'uk' ? 'Керування роздачами та гравцями' : 'Управление раздачами и игроками'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdminModal(false)}
+                className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 text-white/70 hover:text-white flex items-center justify-center text-lg font-bold transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content Body */}
+            <div className="p-4 space-y-4 overflow-y-auto flex-1 z-10">
+              {/* Section 1: Mass Distribution */}
+              <div className="glass-card rounded-2xl p-3.5 border border-amber-500/25 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-black text-amber-200">
+                    <span>🌍</span>
+                    <span>{lang === 'uk' ? 'Роздати ВСІМ гравцям' : 'Раздать ВСЕМ игрокам'}</span>
+                  </div>
+                  <span className="text-[10px] text-amber-400/60 font-mono">
+                    {adminDistributeType === 'foc' ? '🫓 Фокачі' : '💎 Алмази'}
+                  </span>
+                </div>
+
+                {/* Currency selector toggle */}
+                <div className="grid grid-cols-2 gap-1.5 bg-black/40 p-1 rounded-xl border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => { setAdminDistributeType('foc'); setAdminDistributeAmount('50000000'); haptic.selection(); }}
+                    className={cn(
+                      'py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                      adminDistributeType === 'foc'
+                        ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-black shadow-md shadow-amber-500/20'
+                        : 'text-amber-300/60 hover:text-amber-200'
+                    )}
+                  >
+                    <span>🫓</span>
+                    <span>{lang === 'uk' ? 'Фокачі' : 'Фокаччи'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAdminDistributeType('gem'); setAdminDistributeAmount('100'); haptic.selection(); }}
+                    className={cn(
+                      'py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                      adminDistributeType === 'gem'
+                        ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-md shadow-cyan-500/20'
+                        : 'text-cyan-300/60 hover:text-cyan-200'
+                    )}
+                  >
+                    <span>💎</span>
+                    <span>{lang === 'uk' ? 'Алмази' : 'Алмазы'}</span>
+                  </button>
+                </div>
+
+                {/* Amount presets */}
+                <div className="grid grid-cols-3 gap-1.5">
+                  {adminDistributeType === 'foc' ? (
+                    <>
+                      {['10000000', '50000000', '100000000', '500000000', '1000000000', '5000000000'].map((amt) => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => { setAdminDistributeAmount(amt); haptic.selection(); }}
+                          className={cn(
+                            'py-1.5 px-2 rounded-xl text-[11px] font-black border transition-all active:scale-95 cursor-pointer',
+                            adminDistributeAmount === amt
+                              ? 'bg-amber-500/30 border-amber-400 text-amber-200 shadow-sm'
+                              : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
+                          )}
+                        >
+                          +{formatNum(Number(amt))}
+                        </button>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      {['25', '50', '100', '250', '500', '1000'].map((amt) => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => { setAdminDistributeAmount(amt); haptic.selection(); }}
+                          className={cn(
+                            'py-1.5 px-2 rounded-xl text-[11px] font-black border transition-all active:scale-95 cursor-pointer',
+                            adminDistributeAmount === amt
+                              ? 'bg-cyan-500/30 border-cyan-400 text-cyan-200 shadow-sm'
+                              : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
+                          )}
+                        >
+                          +{amt} 💎
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+
+                {/* Custom amount input */}
+                <div>
+                  <label className="text-[10px] text-amber-300/60 font-bold block mb-1">
+                    {lang === 'uk' ? 'Власна кількість:' : 'Своё количество:'}
+                  </label>
+                  <input
+                    type="number"
+                    value={adminDistributeAmount}
+                    onChange={(e) => setAdminDistributeAmount(e.target.value)}
+                    placeholder="1000000"
+                    className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-sm font-mono text-white placeholder-white/30 focus:border-amber-400 outline-none"
+                  />
+                </div>
+
+                {/* Execute distribution button */}
+                <button
+                  type="button"
+                  disabled={isAdminDistributing || !Number(adminDistributeAmount)}
+                  onClick={() => handleAdminDistribute(adminDistributeType, Number(adminDistributeAmount))}
+                  className={cn(
+                    'w-full py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-98',
+                    isAdminDistributing
+                      ? 'bg-white/10 text-white/40 cursor-wait'
+                      : adminDistributeType === 'foc'
+                        ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:brightness-110 text-black shadow-amber-500/30 cursor-pointer'
+                        : 'bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 hover:brightness-110 text-white shadow-cyan-500/30 cursor-pointer'
+                  )}
+                >
+                  <span>{isAdminDistributing ? '⏳' : '🚀'}</span>
+                  <span>
+                    {isAdminDistributing
+                      ? (lang === 'uk' ? 'Роздаю...' : 'Раздаю...')
+                      : (lang === 'uk'
+                          ? `Роздати ВСІМ по ${adminDistributeType === 'gem' ? `+${adminDistributeAmount} 💎` : `${formatNum(Number(adminDistributeAmount) || 0)} 🫓`}`
+                          : `Раздать ВСЕМ по ${adminDistributeType === 'gem' ? `+${adminDistributeAmount} 💎` : `${formatNum(Number(adminDistributeAmount) || 0)} 🫓`}`)}
+                  </span>
+                </button>
+              </div>
+
+              {/* Section 2: Quick Give to Self */}
+              <div className="glass-card rounded-2xl p-3.5 border border-white/10 space-y-2.5">
+                <div className="text-xs font-black text-amber-200 flex items-center gap-1.5">
+                  <span>⚡</span>
+                  <span>{lang === 'uk' ? 'Швидка видача собі' : 'Быстрая выдача себе'}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleAdminSelfGive('foc', 100000000)}
+                    className="py-2 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-200 text-xs font-bold active:scale-95 transition cursor-pointer"
+                  >
+                    +100M 🫓 собі
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdminSelfGive('foc', 1000000000)}
+                    className="py-2 px-3 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-200 text-xs font-bold active:scale-95 transition cursor-pointer"
+                  >
+                    +1 млрд 🫓 собі
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdminSelfGive('gem', 100)}
+                    className="py-2 px-3 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-200 text-xs font-bold active:scale-95 transition cursor-pointer"
+                  >
+                    +100 💎 собі
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAdminSelfGive('gem', 1000)}
+                    className="py-2 px-3 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-200 text-xs font-bold active:scale-95 transition cursor-pointer"
+                  >
+                    +1,000 💎 собі
+                  </button>
+                </div>
+              </div>
+
+              {/* Section 3: Skins reset */}
+              <div className="glass-card rounded-2xl p-3.5 border border-white/10 space-y-2">
+                <div className="text-xs font-black text-amber-200 flex items-center gap-1.5">
+                  <span>🧹</span>
+                  <span>{lang === 'uk' ? 'Скидання скінів' : 'Сброс скинов'}</span>
+                </div>
+                <p className="text-[10px] text-amber-300/60 leading-relaxed">
+                  {lang === 'uk'
+                    ? 'Скіни вже автоматично скинуто до класичної фокачі для всіх. Натисніть кнопку, якщо бажаєте примусово повторити скидання.'
+                    : 'Скины уже автоматически сброшены до классической фокаччи для всех. Нажмите кнопку, если хотите принудительно повторить сброс.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleAdminResetSkinsAll}
+                  disabled={isAdminDistributing}
+                  className="w-full py-2 px-3 rounded-xl bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-200 text-xs font-black active:scale-95 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <span>🧹</span>
+                  <span>{lang === 'uk' ? 'Повторно скинути скіни всім' : 'Повторно сбросить скины всем'}</span>
+                </button>
               </div>
             </div>
           </div>
@@ -8642,7 +9048,16 @@ export default function App() {
                     ) : (
                       <span>ID: {tgUser?.id || '—'}</span>
                     )}
-                    {isDevUser(tgUser?.id) && <DevBadge size="sm" />}
+                    {isDevUser(tgUser?.id) && (
+                      <button
+                        type="button"
+                        onClick={() => { setShowAdminModal(true); haptic.medium(); }}
+                        className="cursor-pointer hover:scale-105 active:scale-95 transition-all"
+                        title="Відкрити адмін-панель"
+                      >
+                        <DevBadge size="sm" />
+                      </button>
+                    )}
                   </div>
                   <div className="text-[10px] text-amber-500/60 mt-0.5 truncate">
                     {t.profileCardDesc}
@@ -8658,6 +9073,34 @@ export default function App() {
                 <span>{t.openProfileBtn}</span>
               </button>
             </div>
+
+            {/* Creator / Developer Quick Card */}
+            {isDevUser(tgUser?.id) && (
+              <div className="glass-card rounded-2xl p-3 border border-red-500/40 bg-gradient-to-r from-red-950/40 via-amber-950/30 to-black/60 shadow-lg shadow-red-950/30 flex items-center justify-between gap-3 animate-card">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 via-amber-500 to-orange-500 flex items-center justify-center text-xl shadow-md shrink-0 border border-amber-300/40">
+                    👑
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs sm:text-sm font-black text-amber-200 flex items-center gap-1.5">
+                      <span>{lang === 'uk' ? 'Панель творця' : 'Панель создателя'}</span>
+                      <DevBadge size="sm" />
+                    </div>
+                    <div className="text-[10px] text-amber-300/60 truncate mt-0.5">
+                      {lang === 'uk' ? 'Роздача фокач та алмазів усім' : 'Раздача фокачч и алмазов всем'}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setShowAdminModal(true); haptic.heavy(); }}
+                  className="shrink-0 px-3.5 py-2 rounded-xl bg-gradient-to-r from-red-600 via-amber-500 to-orange-500 hover:brightness-110 text-white font-black text-xs shadow-md shadow-red-500/30 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>⚡</span>
+                  <span>{lang === 'uk' ? 'Адмінка' : 'Админка'}</span>
+                </button>
+              </div>
+            )}
 
             <div className="grid grid-cols-3 gap-1.5">
               {[
