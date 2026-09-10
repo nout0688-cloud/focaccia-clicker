@@ -887,7 +887,7 @@ export default function App() {
             if (typeof data?.maintenance === 'boolean') {
               const isM = data.maintenance;
               setIsMaintenance(isM);
-              if (isM && !hasMaintenanceKicked && maintenanceCountdown === null) {
+              if (isM && !isDevUser(tgUser?.id) && !hasMaintenanceKicked && maintenanceCountdown === null) {
                 saveNow();
                 reportSync();
                 setMaintenanceCountdown(10);
@@ -1226,7 +1226,7 @@ export default function App() {
 
 /* ---- Відлік до викидання з гри при раптовій техперерві (з сильною вібрацією кожну секунду) ---- */
   useEffect(() => {
-    if (maintenanceCountdown === null) return;
+    if (maintenanceCountdown === null || isDevUser(tgUser?.id)) return;
 
     // Сильна вібрація на кожній секунді відліку!
     haptic.heavy();
@@ -1235,17 +1235,7 @@ export default function App() {
       setMaintenanceCountdown(null);
       saveNow();
       reportSync();
-      if (isDevUser(tgUser?.id)) {
-        addToast(
-          langRef.current === 'uk' ? '✅ Тест завершено!' : '✅ Тест завершён!',
-          langRef.current === 'uk'
-            ? 'Таймер 10с та вібрація відпрацювали. Ви розробник, тому доступ відкритий.'
-            : 'Таймер 10с и вибрация отработали. Вы разработчик, поэтому доступ открыт.',
-          '🛠️'
-        );
-      } else {
-        setHasMaintenanceKicked(true);
-      }
+      setHasMaintenanceKicked(true);
       return;
     }
 
@@ -1268,8 +1258,8 @@ export default function App() {
           const isM = data.maintenance;
           if (isM) {
             setIsMaintenance(true);
-            // Якщо людина грала під час увімкнення техперерви — вмикаємо таймер у кутку екрана
-            if (!hasMaintenanceKicked && maintenanceCountdown === null) {
+            // Якщо звичайний гравець грав під час увімкнення техперерви — вмикаємо таймер у кутку екрана (адміну доступ не обмежується)
+            if (!isDevUser(tgUser?.id) && !hasMaintenanceKicked && maintenanceCountdown === null) {
               saveNow();
               reportSync();
               setMaintenanceCountdown(10);
@@ -4891,8 +4881,8 @@ export default function App() {
         </span>
       ))}
 
-      {/* Попередження про технічну перерву: таймер у кутку екрана та віньєтка */}
-      {maintenanceCountdown !== null && (
+      {/* Попередження про технічну перерву: таймер у кутку екрана та віньєтка (тільки для звичайних гравців) */}
+      {maintenanceCountdown !== null && !isDevUser(tgUser?.id) && (
         <>
           {/* Пульсуюча червона віньєтка по краях екрана для привернення уваги */}
           <div className="pointer-events-none fixed inset-0 z-[9990] shadow-[inset_0_0_90px_rgba(239,68,68,0.55)] ring-4 ring-inset ring-red-500/60 animate-pulse" />
@@ -6735,23 +6725,11 @@ export default function App() {
                   </span>
                 </button>
 
-                {/* Кнопка тестування таймера викидання для адміна */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMaintenanceCountdown(10);
-                    haptic.heavy();
-                    addToast(
-                      lang === 'uk' ? '🚨 Тестовий відлік запущено!' : '🚨 Тестовый отсчет запущен!',
-                      lang === 'uk' ? 'Таймер 10с та сильна вібрація активовані' : 'Таймер 10с и сильная вибрация активированы',
-                      '🚨'
-                    );
-                  }}
-                  className="w-full py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 active:scale-98 text-white/90 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer border border-white/10"
-                >
-                  <span>🧪</span>
-                  <span>{lang === 'uk' ? 'Тестувати таймер викидання (10с)' : 'Тестировать таймер выброса (10с)'}</span>
-                </button>
+                <div className="text-[10px] text-amber-200/60 text-center px-1">
+                  {lang === 'uk'
+                    ? 'ℹ️ Під час техперерви звичайні гравці бачать 10с таймер та блокуються. Адміністратору вхід завжди відкритий.'
+                    : 'ℹ️ Во время техперерыва обычные игроки видят 10с таймер и блокируются. Администратору вход всегда открыт.'}
+                </div>
               </div>
 
               {/* Section 1: Mass Distribution */}
