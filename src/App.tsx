@@ -1988,7 +1988,7 @@ export default function App() {
       const cur = stateRef.current;
       const curT = TRANSLATIONS[langRef.current];
       const bText = getBuildingText(target.id, langRef.current);
-      const repairCost = getBuildingRepairCost(target);
+      const repairCost = getBuildingRepairCost(target, cur.prestige);
       const rk = cur.repairKit;
 
       // Автоматичний ремкомплект
@@ -2934,6 +2934,11 @@ export default function App() {
     { charges: 50, costFocaccia: 12000000000, costDiamonds: 500, discountBadge: '-31%' }, // 12B / 500 💎
   ];
 
+  const getRepairPackageFocacciaCost = (pkg: RepairPackage, prestige = stateRef.current?.prestige ?? state.prestige) => {
+    const rebirthMult = 1 + Math.max(0, prestige) * 0.2;
+    return Math.floor(pkg.costFocaccia * rebirthMult);
+  };
+
   const checkAndFixCurrentBroken = (customState?: SaveState) => {
     const cur = customState || stateRef.current;
     if (!brokenBuilding) return;
@@ -2942,7 +2947,7 @@ export default function App() {
 
     const b = BUILDINGS.find((x) => x.id === brokenBuilding);
     if (!b) return;
-    const cost = getBuildingRepairCost(b);
+    const cost = getBuildingRepairCost(b, cur.prestige);
     if (cur.focaccia < cost) return;
 
     const nextCharges = (rk.charges || 0) - 1;
@@ -3025,7 +3030,7 @@ export default function App() {
 
   const buyRepairCharges = (pkg: RepairPackage, currency: 'diamonds' | 'focaccia') => {
     if (!state.repairKit?.unlocked) return;
-    const cost = currency === 'diamonds' ? pkg.costDiamonds : pkg.costFocaccia;
+    const cost = currency === 'diamonds' ? pkg.costDiamonds : getRepairPackageFocacciaCost(pkg, state.prestige);
 
     if (currency === 'diamonds') {
       if (state.diamonds < cost) {
@@ -3760,7 +3765,7 @@ export default function App() {
     const b = BUILDINGS.find((x) => x.id === id);
     if (!b) return;
     const cur = stateRef.current;
-    const cost = getBuildingRepairCost(b);
+    const cost = getBuildingRepairCost(b, cur.prestige);
     const curT = TRANSLATIONS[langRef.current];
     const bText = getBuildingText(b.id, langRef.current);
     if (cur.focaccia < cost) {
@@ -6525,7 +6530,7 @@ export default function App() {
                   {brokenBuilding && (() => {
                     const b = BUILDINGS.find((x) => x.id === brokenBuilding);
                     if (!b) return null;
-                    const cost = getBuildingRepairCost(b);
+                    const cost = getBuildingRepairCost(b, state.prestige);
                     const canAfford = state.focaccia >= cost;
                     const hasCharge = (state.repairKit?.charges || 0) > 0;
                     return (
@@ -6535,9 +6540,16 @@ export default function App() {
                             <span>⚠️</span>
                             <span>{lang === 'uk' ? `Зламано: ${getBuildingText(b.id, lang).name}` : `Сломано: ${getBuildingText(b.id, lang).name}`}</span>
                           </div>
-                          <span className="text-xs font-mono font-bold text-red-200">
-                            {formatNum(cost)} 🫓
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {state.prestige > 0 && (
+                              <span className="text-[9px] font-bold text-fuchsia-300 bg-fuchsia-950/80 border border-fuchsia-500/40 px-1 py-0.2 rounded">
+                                +{state.prestige * 20}%
+                              </span>
+                            )}
+                            <span className="text-xs font-mono font-bold text-red-200">
+                              {formatNum(cost)} 🫓
+                            </span>
+                          </div>
                         </div>
                         <button
                           type="button"
@@ -6565,51 +6577,61 @@ export default function App() {
                         <span>🛒</span>
                         <span>{lang === 'uk' ? 'Купити ремонти' : 'Купить ремонты'}</span>
                       </span>
-                      <span className="text-[10px] text-orange-300/80 font-medium">
-                        1 {lang === 'uk' ? 'рем' : 'рем'} = 1 {lang === 'uk' ? 'будівля' : 'здание'}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {state.prestige > 0 && (
+                          <span className="text-[9px] text-fuchsia-300 font-bold bg-fuchsia-950/70 border border-fuchsia-500/30 px-1.5 py-0.5 rounded-md">
+                            🔄 +{state.prestige * 20}%
+                          </span>
+                        )}
+                        <span className="text-[10px] text-orange-300/80 font-medium">
+                          1 {lang === 'uk' ? 'рем' : 'рем'} = 1 {lang === 'uk' ? 'будівля' : 'здание'}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="space-y-2">
-                      {REPAIR_PACKAGES.map((pkg, idx) => (
-                        <div
-                          key={idx}
-                          className="p-2.5 rounded-2xl bg-zinc-900/80 border border-white/10 flex items-center justify-between gap-2 shadow-sm"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg">🔧</span>
-                            <div>
-                              <div className="text-xs font-black text-white flex items-center gap-1.5">
-                                <span>+{pkg.charges} {pkg.charges === 1 ? (lang === 'uk' ? 'ремонт' : 'ремонт') : (lang === 'uk' ? 'ремонтів' : 'ремонтов')}</span>
-                                {pkg.discountBadge && (
-                                  <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold text-[9px] border border-amber-400/30">
-                                    {pkg.discountBadge}
-                                  </span>
-                                )}
+                      {REPAIR_PACKAGES.map((pkg, idx) => {
+                        const pkgFocacciaCost = getRepairPackageFocacciaCost(pkg, state.prestige);
+                        return (
+                          <div
+                            key={idx}
+                            className="p-2.5 rounded-2xl bg-zinc-900/80 border border-white/10 flex items-center justify-between gap-2 shadow-sm"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg">🔧</span>
+                              <div>
+                                <div className="text-xs font-black text-white flex items-center gap-1.5">
+                                  <span>+{pkg.charges} {pkg.charges === 1 ? (lang === 'uk' ? 'ремонт' : 'ремонт') : (lang === 'uk' ? 'ремонтів' : 'ремонтов')}</span>
+                                  {pkg.discountBadge && (
+                                    <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold text-[9px] border border-amber-400/30">
+                                      {pkg.discountBadge}
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => buyRepairCharges(pkg, 'focaccia')}
-                              disabled={state.focaccia < pkg.costFocaccia}
-                              className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 disabled:opacity-30 disabled:cursor-not-allowed text-amber-200 font-mono font-bold text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
-                            >
-                              🫓 {formatNum(pkg.costFocaccia)}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => buyRepairCharges(pkg, 'diamonds')}
-                              disabled={state.diamonds < pkg.costDiamonds}
-                              className="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 disabled:opacity-30 disabled:cursor-not-allowed text-cyan-200 font-mono font-bold text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
-                            >
-                              💎 {pkg.costDiamonds}
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => buyRepairCharges(pkg, 'focaccia')}
+                                disabled={state.focaccia < pkgFocacciaCost}
+                                className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 disabled:opacity-30 disabled:cursor-not-allowed text-amber-200 font-mono font-bold text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
+                              >
+                                🫓 {formatNum(pkgFocacciaCost)}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => buyRepairCharges(pkg, 'diamonds')}
+                                disabled={state.diamonds < pkg.costDiamonds}
+                                className="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 disabled:opacity-30 disabled:cursor-not-allowed text-cyan-200 font-mono font-bold text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
+                              >
+                                💎 {pkg.costDiamonds}
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -9547,7 +9569,7 @@ export default function App() {
                 const cost = buildingCost(b, owned);
                 const can = state.focaccia >= cost;
                 const isBroken = brokenBuilding === b.id;
-                const repairCost = getBuildingRepairCost(b);
+                const repairCost = getBuildingRepairCost(b, state.prestige);
                 const canRepair = state.focaccia >= repairCost;
                 const prevOwned = i === 0 || (state.buildings[BUILDINGS[i - 1].id] || 0) > 0;
                 const visible = owned > 0 || prevOwned || state.total >= b.baseCost * 0.5;

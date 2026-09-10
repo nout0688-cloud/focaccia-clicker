@@ -218,7 +218,10 @@ export const ACHIEVEMENTS: Achievement[] = [
 
 export const buildingCost = (b: Building, owned: number) => Math.floor(b.baseCost * Math.pow(1.25, owned));
 
-export const getBuildingRepairCost = (b: Building) => Math.max(1000, Math.floor(b.baseCost * 5));
+export const getBuildingRepairCost = (b: Building, prestige: number = 0): number => {
+  const rebirthMult = 1 + Math.max(0, prestige) * 0.2; // +20% за кожен рівень ребіртху
+  return Math.floor(Math.max(1000, b.baseCost * 5) * rebirthMult);
+};
 
 export function formatNum(n: number): string {
   if (!isFinite(n)) return '∞';
