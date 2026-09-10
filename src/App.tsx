@@ -51,6 +51,8 @@ import monoGuideImg from './assets/mono-guide.jpg';
 import catImg from './assets/cat.png';
 import catBonyaImg from './assets/cat_bonya.png';
 import catBambassImg from './assets/cat_bambass.png';
+import catLickingImg from './assets/cat_licking.png';
+import catSleepingImg from './assets/cat_sleeping.png';
 import repairKitImg from './assets/repair_kit.png';
 import {
   SKINS,
@@ -680,6 +682,7 @@ export default function App() {
   // ===== 🐱 BAKERY CAT STATE =====
   const [showCatModal, setShowCatModal] = useState(false);
   const [catState, setCatState] = useState<'idle' | 'chasing' | 'pouncing' | 'returning' | 'hiding'>('idle');
+  const [catPose, setCatPose] = useState<'idle' | 'licking' | 'sleeping'>('idle');
   const [catPos, setCatPos] = useState<{ x: number; y: number }>({ x: 82, y: 76 });
   const [catBubble, setCatBubble] = useState<string | null>(null);
   const [catFacing, setCatFacing] = useState<1 | -1>(1);
@@ -1016,8 +1019,28 @@ export default function App() {
   const activeCatImg = useMemo(() => {
     if (state.cat?.skin === 'bonya') return catBonyaImg;
     if (state.cat?.skin === 'bambass') return catBambassImg;
+    if (catPose === 'sleeping') return catSleepingImg;
+    if (catPose === 'licking') return catLickingImg;
     return catImg;
-  }, [state.cat?.skin]);
+  }, [state.cat?.skin, catPose]);
+  // Cat poses and sleep schedule (Sleeps after 21:00 or before 07:00; licks paws / idles during daytime)
+  useEffect(() => {
+    if (!state.cat?.unlocked) return;
+    const updatePose = () => {
+      if (catState === 'chasing' || catState === 'pouncing' || catState === 'returning') return;
+      const hour = new Date().getHours();
+      const isNight = hour >= 21 || hour < 7;
+      if (isNight) {
+        setCatPose('sleeping');
+      } else {
+        setCatPose(Math.random() < 0.35 ? 'licking' : 'idle');
+      }
+    };
+    updatePose();
+    const iv = setInterval(updatePose, 25000);
+    return () => clearInterval(iv);
+  }, [state.cat?.unlocked, catState]);
+
 
   const getCatSkinImg = (skinId: string) => {
     if (skinId === 'bonya') return catBonyaImg;
@@ -1689,26 +1712,36 @@ export default function App() {
     return () => clearInterval(iv);
   }, [loading, addToast]);
 
-  /* ---- Pest spawner & nibble ---- */
+  /* ---- Pest spawner & nibble (moderated frequency: ~1.25 to 2 minutes) ---- */
   useEffect(() => {
     if (loading) return;
-    const iv = setInterval(() => {
-      if (pest || stateRef.current.total < 500) return;
-      const curT = TRANSLATIONS[langRef.current];
-      const pType = PEST_TYPES[Math.floor(Math.random() * PEST_TYPES.length)];
-      const pName = getPestName(pType.emoji, langRef.current);
-      setPest({
-        id: Date.now(),
-        x: 15 + Math.random() * 70,
-        y: 25 + Math.random() * 45,
-        name: pName,
-        emoji: pType.emoji,
-        dir: Math.random() < 0.5 ? 1 : -1,
-      });
-      addToast(curT.toastPestArrived, formatTemplate(curT.toastPestArrivedDesc, pName), pType.emoji);
-      haptic.medium();
-    }, 45000);
-    return () => clearInterval(iv);
+    let timerId: NodeJS.Timeout;
+
+    const scheduleNextPest = () => {
+      // Natural interval between 75s and 120s
+      const delay = 75000 + Math.random() * 45000;
+      timerId = setTimeout(() => {
+        if (!pest && stateRef.current.total >= 500) {
+          const curT = TRANSLATIONS[langRef.current];
+          const pType = PEST_TYPES[Math.floor(Math.random() * PEST_TYPES.length)];
+          const pName = getPestName(pType.emoji, langRef.current);
+          setPest({
+            id: Date.now(),
+            x: 15 + Math.random() * 70,
+            y: 25 + Math.random() * 45,
+            name: pName,
+            emoji: pType.emoji,
+            dir: Math.random() < 0.5 ? 1 : -1,
+          });
+          addToast(curT.toastPestArrived, formatTemplate(curT.toastPestArrivedDesc, pName), pType.emoji);
+          haptic.medium();
+        }
+        scheduleNextPest();
+      }, delay);
+    };
+
+    scheduleNextPest();
+    return () => clearTimeout(timerId);
   }, [loading, pest, addToast]);
 
   // Pest auto-escape and focaccia stealing
@@ -2446,6 +2479,7 @@ export default function App() {
     }
 
     if (pest && page === 'clicker' && (catState === 'idle' || catState === 'returning')) {
+      setCatPose('idle');
       setCatState('chasing');
       setCatBubble(lang === 'uk' ? catSkinInfo.chaseBubbleUk : catSkinInfo.chaseBubbleRu);
       setCatFacing(pest.x > catPos.x ? -1 : 1);
@@ -2488,9 +2522,31 @@ export default function App() {
     setTimeout(() => {
       setCatPetHearts((prev) => prev.filter((h) => h.id !== id));
     }, 1000);
-    const purrs = lang === 'uk' ? catSkinInfo.purrsUk : catSkinInfo.purrsRu;
-    setCatBubble(purrs[Math.floor(Math.random() * purrs.length)]);
-    setTimeout(() => setCatBubble(null), 2200);
+
+    const hour = new Date().getHours();
+    const isNight = hour >= 21 || hour < 7;
+
+    const phrases = (isNight || catPose === 'sleeping')
+      ? (lang === 'uk'
+          ? ['Хррр-мррр… 💤', 'Мур-сон… 😴', 'Цссс, я сплю… 🌙', 'Мяу-хрр 💤']
+          : ['Хррр-мррр… 💤', 'Мур-сон… 😴', 'Тссс, я сплю… 🌙', 'Мяу-хрр 💤'])
+      : catPose === 'licking'
+      ? (lang === 'uk'
+          ? ['*облизує лапку* 🐾', 'Смачно! 🥐', 'Мррр-лапка! ✨', 'Чистюля Мурчик! 🐱']
+          : ['*облизывает лапку* 🐾', 'Вкусно! 🥐', 'Мррр-лапка! ✨', 'Чистюля Мурчик! 🐱'])
+      : (lang === 'uk' ? catSkinInfo.purrsUk : catSkinInfo.purrsRu);
+
+    setCatBubble(phrases[Math.floor(Math.random() * phrases.length)]);
+    setTimeout(() => setCatBubble(null), 2400);
+
+    // If sleeping, wake up briefly for 4 seconds
+    if (catPose === 'sleeping') {
+      setCatPose('idle');
+      setTimeout(() => {
+        const h = new Date().getHours();
+        if (h >= 21 || h < 7) setCatPose('sleeping');
+      }, 4000);
+    }
   };
 
   const buyCatSkin = (skinId: string) => {
@@ -2843,8 +2899,8 @@ export default function App() {
     const nextLvl = winningNextLvlRef.current;
 
     const winningIdx = 32;
-    const cardStep = 126;
-    const targetOffset = -(winningIdx * cardStep + 58);
+    const cardStep = 128; // 118px card width + 10px gap
+    const targetOffset = -(winningIdx * cardStep + 59);
     setCaseReelOffset(targetOffset);
 
     caseOpeningLock.current = false;
@@ -3174,10 +3230,10 @@ export default function App() {
     winningIsNewRef.current = isNew;
     winningNextLvlRef.current = nextLvl;
 
-    // 116px card width + 10px gap = 126px step
-    // Reel starts at left: 50% (center of pointer). Card 0 center is at +58px.
-    const cardStep = 126;
-    const targetOffset = -(winningIdx * cardStep + 58);
+    // 118px card width + 10px gap = 128px step
+    // Reel starts at left: 50% (center of pointer). Card 0 center is at +59px.
+    const cardStep = 128;
+    const targetOffset = -(winningIdx * cardStep + 59);
 
     if (caseTimeoutRef.current) clearTimeout(caseTimeoutRef.current);
 
@@ -4516,8 +4572,12 @@ export default function App() {
                 </span>
               ))}
 
-              {/* Cat Image Sticker */}
-              <div className="relative w-16 h-16 sm:w-20 sm:h-20 drop-shadow-[0_4px_16px_rgba(0,0,0,0.6)] group-hover:scale-105 transition-transform">
+              {/* Cat Image Sticker with Dynamic Poses */}
+              <div className={cn(
+                "relative w-16 h-16 sm:w-20 sm:h-20 drop-shadow-[0_4px_16px_rgba(0,0,0,0.6)] group-hover:scale-105 transition-transform",
+                catPose === 'sleeping' && catState === 'idle' ? 'animate-cat-sleep' :
+                catPose === 'licking' && catState === 'idle' ? 'animate-cat-lick' : ''
+              )}>
                 <img
                   src={activeCatImg}
                   alt="Cat"
@@ -4525,6 +4585,14 @@ export default function App() {
                   style={{ transform: `scaleX(${catFacing})` }}
                   draggable={false}
                 />
+
+                {/* Sleeping Zzz badge */}
+                {catPose === 'sleeping' && catState === 'idle' && (
+                  <span className="absolute -top-3.5 -right-1 px-1.5 py-0.5 rounded-full bg-indigo-950/85 border border-indigo-400/50 text-[10px] font-black text-indigo-200 select-none animate-bounce pointer-events-none shadow-md">
+                    💤 Zzz
+                  </span>
+                )}
+
                 <button
                   type="button"
                   onClick={(e) => { e.stopPropagation(); setShowCatModal(true); haptic.selection(); }}
@@ -6917,8 +6985,9 @@ export default function App() {
 
                         {/* Center: Big Icon and Title */}
                         <div className="flex items-center gap-3 my-1">
-                          <div className="w-14 h-14 rounded-2xl bg-black/50 border border-white/15 flex items-center justify-center text-3xl shadow-inner shrink-0">
-                            {c.icon}
+                          <div className="w-16 h-16 rounded-2xl bg-black/60 border border-white/20 overflow-hidden shadow-lg shrink-0 p-1 relative">
+                            <img src={c.img} alt={c.name} className="w-full h-full object-cover rounded-xl" />
+                            <span className="pointer-events-none absolute inset-0 rounded-2xl ring-1 ring-white/10" />
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="text-sm font-black text-white truncate">
@@ -7369,20 +7438,22 @@ export default function App() {
 
           <div className="w-full max-w-sm sm:max-w-md flex flex-col items-center space-y-3 my-auto py-2 z-20">
             {/* Case Showcase Header */}
-            <div className="text-center flex flex-col items-center space-y-2">
-              {/* Floating Pedestal Icon */}
+            <div className="text-center flex flex-col items-center space-y-1.5">
+              {/* 3D Rendered Case Image (Replacing Emoji) */}
               <div className="relative group">
                 <div
-                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl border-2 flex items-center justify-center text-3xl sm:text-4xl shadow-2xl relative overflow-hidden transition-transform duration-300 group-hover:scale-105"
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl border-2 shadow-2xl relative overflow-hidden transition-transform duration-300 group-hover:scale-105 p-1 bg-black/50"
                   style={{
                     borderColor: '#f59e0b',
                     boxShadow: `0 0 35px ${activeCase.glow}`,
-                    background: 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(0,0,0,0.6) 100%)',
                   }}
                 >
-                  <span className="animate-bounce" style={{ animationDuration: '2.5s' }}>
-                    {activeCase.icon}
-                  </span>
+                  <img
+                    src={activeCase.img}
+                    alt={activeCase.name}
+                    className="w-full h-full object-cover rounded-2xl filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)] animate-pulse"
+                    style={{ animationDuration: '3s' }}
+                  />
                   <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl">
                     <span className="vip-sheen-gold" />
                   </span>
@@ -7390,23 +7461,23 @@ export default function App() {
               </div>
 
               <div>
-                <h3 className="text-xl sm:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300 drop-shadow-[0_2px_12px_rgba(245,158,11,0.4)]">
+                <h3 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300 drop-shadow-[0_2px_12px_rgba(245,158,11,0.4)]">
                   {lang === 'uk' ? activeCase.name : activeCase.nameRu}
                 </h3>
-                <p className="text-xs text-amber-200/70 font-medium max-w-xs mx-auto line-clamp-1 mt-0.5">
+                <p className="text-[11px] text-amber-200/70 font-medium max-w-xs mx-auto line-clamp-1">
                   {lang === 'uk' ? activeCase.desc : activeCase.descRu}
                 </p>
               </div>
 
               {/* Status indicator */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 pt-0.5">
                 {isOpeningCase ? (
-                  <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-xs font-black animate-pulse shadow">
+                  <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-xs font-black animate-pulse shadow">
                     <span className="animate-spin">🎰</span>
                     <span>{lang === 'uk' ? 'Крутимо рулетку…' : 'Крутим рулетку…'}</span>
                   </div>
                 ) : caseWonResult ? (
-                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-xs font-black shadow">
+                  <div className="flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-xs font-black shadow">
                     <span>✨</span>
                     <span>{lang === 'uk' ? 'Вітаємо з отриманням!' : 'Поздравляем с получением!'}</span>
                     <span>✨</span>
@@ -7419,29 +7490,32 @@ export default function App() {
               </div>
             </div>
 
-            {/* Roulette Track Viewport */}
-            <div className="relative w-full h-40 sm:h-44 bg-[#080706] border-2 border-amber-400/80 rounded-3xl shadow-[0_0_50px_rgba(245,158,11,0.25),inset_0_0_35px_rgba(0,0,0,0.95)] overflow-hidden flex items-center">
-              {/* Top pointer */}
+            {/* Roulette Track Viewport (Clean & Compact) */}
+            <div className="relative w-full h-34 sm:h-36 bg-[#080706] border-2 border-amber-400/80 rounded-3xl shadow-[0_0_40px_rgba(245,158,11,0.2),inset_0_0_30px_rgba(0,0,0,0.95)] overflow-hidden flex items-center">
+              {/* Top pointer marker */}
               <div className="absolute top-0 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none">
-                <div className="w-0 h-0 border-l-[11px] border-l-transparent border-r-[11px] border-r-transparent border-t-[18px] border-t-amber-400 filter drop-shadow-[0_0_10px_#fbbf24]" />
+                <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-t-[11px] border-t-amber-400 filter drop-shadow-[0_0_8px_#fbbf24]" />
               </div>
-              {/* Bottom pointer */}
+              {/* Bottom pointer marker */}
               <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none">
-                <div className="w-0 h-0 border-l-[11px] border-l-transparent border-r-[11px] border-r-transparent border-b-[18px] border-b-amber-400 filter drop-shadow-[0_0_10px_#fbbf24]" />
+                <div className="w-0 h-0 border-l-[8px] border-l-transparent border-r-[8px] border-r-transparent border-b-[11px] border-b-amber-400 filter drop-shadow-[0_0_8px_#fbbf24]" />
               </div>
-              {/* Center vertical neon laser beam line */}
-              <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-gradient-to-b from-amber-300 via-yellow-200 to-amber-300 shadow-[0_0_16px_#f59e0b] z-20 pointer-events-none opacity-90" />
+              {/* Center vertical neon laser line (dimmed when won so it doesn't divide the face) */}
+              <div className={cn(
+                "absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-gradient-to-b from-amber-300 via-yellow-200 to-amber-300 shadow-[0_0_12px_#f59e0b] z-20 pointer-events-none transition-opacity duration-300",
+                caseWonResult && !isOpeningCase ? "opacity-25" : "opacity-90"
+              )} />
 
               {/* Edge Vignette Gradients */}
-              <div className="absolute inset-y-0 left-0 w-20 sm:w-24 bg-gradient-to-r from-[#080706] via-[#080706]/90 to-transparent z-20 pointer-events-none" />
-              <div className="absolute inset-y-0 right-0 w-20 sm:w-24 bg-gradient-to-l from-[#080706] via-[#080706]/90 to-transparent z-20 pointer-events-none" />
+              <div className="absolute inset-y-0 left-0 w-16 sm:w-20 bg-gradient-to-r from-[#080706] via-[#080706]/90 to-transparent z-20 pointer-events-none" />
+              <div className="absolute inset-y-0 right-0 w-16 sm:w-20 bg-gradient-to-l from-[#080706] via-[#080706]/90 to-transparent z-20 pointer-events-none" />
 
               {/* Scrolling Cards Reel */}
               <div
                 className="absolute top-0 bottom-0 left-1/2 flex items-center gap-[10px] will-change-transform"
                 style={{
                   transform: `translateX(${caseReelOffset}px)`,
-                  transition: isOpeningCase ? 'transform 4.0s cubic-bezier(0.08, 0.82, 0.17, 1)' : 'none',
+                  transition: isOpeningCase ? 'transform 3.8s cubic-bezier(0.12, 0.8, 0.2, 1)' : 'none',
                 }}
               >
                 {caseReel.map((sk, idx) => {
@@ -7451,21 +7525,21 @@ export default function App() {
                     <div
                       key={idx}
                       className={cn(
-                        'w-[116px] h-[134px] sm:h-[142px] shrink-0 rounded-2xl border-2 flex flex-col items-center justify-between p-2 shadow-lg relative overflow-hidden transition-all duration-300 bg-gradient-to-b',
+                        'w-[118px] h-[124px] shrink-0 rounded-2xl border-2 flex flex-col items-center justify-between p-2 shadow-lg relative overflow-hidden transition-all duration-300 bg-gradient-to-b',
                         r.border, sk.colorGrad,
                         isWinningTarget
-                          ? 'ring-4 ring-yellow-400 scale-105 shadow-[0_0_35px_rgba(250,204,21,0.9)] z-10'
-                          : 'opacity-95'
+                          ? 'border-yellow-400 ring-2 ring-yellow-400/90 shadow-[0_0_25px_rgba(250,204,21,0.9)] z-10'
+                          : 'opacity-90'
                       )}
-                      style={{ boxShadow: isWinningTarget ? undefined : `0 0 16px ${sk.glowColor}` }}
+                      style={{ boxShadow: isWinningTarget ? undefined : `0 0 12px ${sk.glowColor}` }}
                     >
                       <span className={cn('px-2 py-0.2 rounded-full text-[8px] font-black tracking-wide uppercase border shadow-sm', r.color, r.border)}>
                         {sk.badge}
                       </span>
-                      <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden border border-white/20 shadow-md my-0.5 bg-black/60 flex items-center justify-center p-1">
-                        <img src={sk.img} alt="" className="w-full h-full object-contain filter drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)]" />
+                      <div className="w-13 h-13 rounded-xl overflow-hidden border border-white/20 shadow-md my-0.5 bg-black/60 flex items-center justify-center p-1">
+                        <img src={sk.img} alt="" className="w-full h-full object-cover rounded-lg" />
                       </div>
-                      <div className="text-[10px] font-black text-white text-center truncate w-full tracking-tight">
+                      <div className="text-[10px] font-black text-white text-center truncate w-full tracking-tight px-1">
                         {lang === 'uk' ? sk.name : sk.nameRu}
                       </div>
                     </div>
@@ -7479,52 +7553,52 @@ export default function App() {
               <button
                 type="button"
                 onClick={skipCaseAnimation}
-                className="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-amber-500/10 flex items-center gap-1.5 animate-pulse"
+                className="px-4 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-amber-500/10 flex items-center gap-1.5 animate-pulse"
               >
                 <span>⚡</span>
                 <span>{lang === 'uk' ? 'Пропустити анімацію' : 'Пропустить анимацию'}</span>
               </button>
             )}
 
-            {/* Victory Result Card */}
+            {/* Victory Result Card (Compact & Non-overflowing) */}
             {caseWonResult && !isOpeningCase && (
-              <div className="w-full flex flex-col items-center space-y-3 animate-fade-in">
+              <div className="w-full flex flex-col items-center space-y-2.5 animate-fade-in">
                 <div
                   className={cn(
-                    'p-4 rounded-3xl border-2 flex flex-col items-center relative overflow-hidden w-full bg-gradient-to-b text-center shadow-2xl',
+                    'p-3 rounded-2xl border-2 flex flex-col items-center relative overflow-hidden w-full bg-gradient-to-b text-center shadow-xl',
                     caseWonResult.skin.colorGrad, caseWonResult.skin.borderColor
                   )}
-                  style={{ boxShadow: `0 0 50px ${caseWonResult.skin.glowColor}` }}
+                  style={{ boxShadow: `0 0 35px ${caseWonResult.skin.glowColor}` }}
                 >
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <span className={cn('px-3 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider', RARITY_LABELS[caseWonResult.skin.rarity].color, RARITY_LABELS[caseWonResult.skin.rarity].border)}>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <span className={cn('px-2.5 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider', RARITY_LABELS[caseWonResult.skin.rarity].color, RARITY_LABELS[caseWonResult.skin.rarity].border)}>
                       {caseWonResult.skin.badge}
                     </span>
                     {caseWonResult.isNew ? (
-                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-black text-[10px] border border-emerald-400/40">
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-black text-[9px] border border-emerald-400/40">
                         🎉 {lang === 'uk' ? 'НОВИЙ!' : 'НОВЫЙ!'}
                       </span>
                     ) : (
-                      <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-black text-[10px] border border-amber-400/40">
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-black text-[9px] border border-amber-400/40">
                         ⭐ Lv.{caseWonResult.newLevel}
                       </span>
                     )}
                   </div>
 
-                  <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-white/30 shadow-2xl my-1 bg-black/60 flex items-center justify-center p-2">
-                    <img src={caseWonResult.skin.img} alt="" className="w-full h-full object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)]" />
+                  <div className="w-18 h-18 sm:w-20 sm:h-20 rounded-2xl overflow-hidden border-2 border-white/30 shadow-xl my-0.5 bg-black/60 flex items-center justify-center p-1.5">
+                    <img src={caseWonResult.skin.img} alt="" className="w-full h-full object-cover rounded-xl filter drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)]" />
                   </div>
 
-                  <div className="text-lg font-black text-white mt-1">
+                  <div className="text-base font-black text-white mt-0.5">
                     {lang === 'uk' ? caseWonResult.skin.name : caseWonResult.skin.nameRu}
                   </div>
 
-                  <div className="text-xs text-amber-200/90 font-medium px-2 mt-0.5">
+                  <div className="text-[11px] text-amber-200/90 font-medium px-2">
                     {lang === 'uk' ? caseWonResult.skin.bonusDesc : caseWonResult.skin.bonusDescRu}
                   </div>
 
                   {/* Stat boost summary */}
-                  <div className="flex items-center justify-center gap-3 pt-2 text-[10px] font-bold text-white/90">
+                  <div className="flex items-center justify-center gap-2 pt-1 text-[9px] font-bold text-white/90">
                     <span className="px-2 py-0.5 rounded-lg bg-black/40 border border-white/10 text-amber-300">
                       ⚡ x{caseWonResult.skin.clickMult} {lang === 'uk' ? 'Клік' : 'Клик'}
                     </span>
@@ -7539,49 +7613,32 @@ export default function App() {
                   </div>
 
                   {caseWonResult.isNew ? (
-                    <div className="text-[10px] text-emerald-300 font-bold bg-emerald-950/60 px-3 py-1 rounded-xl border border-emerald-500/30 mt-2">
+                    <div className="text-[9px] text-emerald-300 font-bold bg-emerald-950/60 px-2.5 py-0.5 rounded-xl border border-emerald-500/30 mt-1.5">
                       {lang === 'uk' ? '✓ Скін додано до вашої колекції!' : '✓ Скин добавлен в вашу коллекцию!'}
                     </div>
                   ) : (
-                    <div className="text-[10px] text-amber-300 font-bold bg-amber-950/60 px-3 py-1 rounded-xl border border-amber-500/30 mt-2">
+                    <div className="text-[9px] text-amber-300 font-bold bg-amber-950/60 px-2.5 py-0.5 rounded-xl border border-amber-500/30 mt-1.5">
                       {lang === 'uk' ? `⭐ Дублікат! Рівень підвищено до ★ Lv.${caseWonResult.newLevel} (+15% до всіх характеристик)` : `⭐ Дубликат! Уровень повышен до ★ Lv.${caseWonResult.newLevel} (+15% ко всем характеристикам)`}
                     </div>
                   )}
                 </div>
 
-                {/* Actions */}
-                <div className="flex flex-col gap-2 w-full">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      equipSkin(caseWonResult.skin.id);
-                      setActiveCase(null);
-                      setCaseWonResult(null);
-                    }}
-                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:brightness-110 text-stone-950 font-black text-sm shadow-xl shadow-amber-500/30 transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <span>✨</span>
-                    <span>{lang === 'uk' ? 'Вдягти зараз' : 'Надеть сейчас'}</span>
-                  </button>
+                {/* Actions (Side-by-side buttons with clear visibility) */}
+                <div className="flex flex-col gap-1.5 w-full">
                   <div className="grid grid-cols-2 gap-2">
-                    {caseWonResult.skin.id !== 'skin_classic' ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUpgraderSourceId(caseWonResult.skin.id);
-                          setSkinsTab('upgrader');
-                          setActiveCase(null);
-                          setCaseWonResult(null);
-                        }}
-                        className="py-2.5 rounded-xl bg-stone-900 hover:bg-stone-850 text-white font-bold text-xs border border-white/15 transition active:scale-95 cursor-pointer"
-                      >
-                        {lang === 'uk' ? '⚡ В Апгрейдер' : '⚡ В Апгрейдер'}
-                      </button>
-                    ) : (
-                      <div className="py-2.5 rounded-xl bg-stone-950/60 text-stone-500 font-bold text-[11px] border border-white/5 flex items-center justify-center">
-                        {lang === 'uk' ? '🔒 Базовий скін' : '🔒 Базовый скин'}
-                      </div>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        equipSkin(caseWonResult.skin.id);
+                        setActiveCase(null);
+                        setCaseWonResult(null);
+                      }}
+                      className="py-2.5 rounded-xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:brightness-110 text-stone-950 font-black text-xs shadow-lg transition active:scale-95 cursor-pointer flex items-center justify-center gap-1"
+                    >
+                      <span>✨</span>
+                      <span>{lang === 'uk' ? 'Вдягти' : 'Надеть'}</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => {
@@ -7593,16 +7650,37 @@ export default function App() {
                       <span>{lang === 'uk' ? 'Відкрити ще' : 'Открыть ещё'}</span>
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveCase(null);
-                      setCaseWonResult(null);
-                    }}
-                    className="text-xs text-stone-400 hover:text-white transition py-1 cursor-pointer"
-                  >
-                    {lang === 'uk' ? 'Закрити' : 'Закрыть'}
-                  </button>
+
+                  <div className="flex items-center justify-between gap-2">
+                    {caseWonResult.skin.id !== 'skin_classic' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUpgraderSourceId(caseWonResult.skin.id);
+                          setSkinsTab('upgrader');
+                          setActiveCase(null);
+                          setCaseWonResult(null);
+                        }}
+                        className="flex-1 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-850 text-white/90 font-bold text-[11px] border border-white/10 transition active:scale-95 cursor-pointer"
+                      >
+                        {lang === 'uk' ? '⚡ В Апгрейдер' : '⚡ В Апгрейдер'}
+                      </button>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveCase(null);
+                        setCaseWonResult(null);
+                      }}
+                      className={cn(
+                        "py-1.5 rounded-xl text-stone-400 hover:text-white font-bold text-[11px] transition cursor-pointer text-center",
+                        caseWonResult.skin.id !== 'skin_classic' ? "flex-1 border border-white/5 bg-black/40" : "w-full border border-white/10 bg-white/5"
+                      )}
+                    >
+                      {lang === 'uk' ? 'Закрити' : 'Закрыть'}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -7664,7 +7742,9 @@ export default function App() {
           <div className="relative w-full max-w-sm bg-[#14120e] border border-amber-500/40 rounded-3xl p-4 shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
             <div className="flex items-center justify-between pb-2 border-b border-white/10 mb-3">
               <div className="flex items-center gap-2">
-                <span className="text-2xl">{caseOddsModal.icon}</span>
+                <div className="w-9 h-9 rounded-xl overflow-hidden border border-white/20 shadow shrink-0 p-0.5 bg-black/50">
+                  <img src={caseOddsModal.img} alt="" className="w-full h-full object-cover rounded-lg" />
+                </div>
                 <div>
                   <div className="text-sm font-black text-white">
                     {lang === 'uk' ? caseOddsModal.name : caseOddsModal.nameRu}

@@ -638,6 +638,25 @@ button { -webkit-tap-highlight-color: transparent; }
   animation: cat-idle 2.4s ease-in-out infinite;
 }
 
+@keyframes cat-sleep {
+  0%, 100% { transform: scale(1) translateY(0); }
+  50% { transform: scale(1.02, 0.98) translateY(1.5px); }
+}
+.animate-cat-sleep {
+  animation: cat-sleep 3s ease-in-out infinite;
+}
+
+@keyframes cat-lick {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-3deg) translateY(-2px); }
+  50% { transform: rotate(0deg); }
+  75% { transform: rotate(3deg) translateY(-1px); }
+}
+.animate-cat-lick {
+  animation: cat-lick 1.8s ease-in-out infinite;
+}
+
+
 @keyframes cat-pounce {
   0% { transform: scale(1); }
   40% { transform: scale(1.3) translateY(-8px) rotate(-10deg); }

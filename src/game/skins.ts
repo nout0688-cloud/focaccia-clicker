@@ -1,4 +1,8 @@
-import focacciaImg from '../assets/focaccia.png';
+import skinClassicImg from '../assets/skins/skin_classic.png';
+import caseBakeryImg from '../assets/cases/case_bakery.jpg';
+import caseEmpireImg from '../assets/cases/case_empire.jpg';
+import caseDiamondImg from '../assets/cases/case_diamond.jpg';
+import caseCelestialImg from '../assets/cases/case_celestial.jpg';
 import skinChefImg from '../assets/skins/skin_chef.jpg';
 import skinCyberImg from '../assets/skins/skin_cyber.jpg';
 import skinRoyalImg from '../assets/skins/skin_royal.jpg';
@@ -50,7 +54,7 @@ export const SKINS: Record<string, SkinItem> = {
     name: 'Класична Фокача',
     nameRu: 'Классическая Фокачча',
     rarity: 'common',
-    img: focacciaImg,
+    img: skinClassicImg,
     desc: 'Оригінальна, хрустка та неймовірно смачна домашня фокача.',
     descRu: 'Оригинальная, хрустящая и невероятно вкусная домашняя фокачча.',
     bonusDesc: 'Базовий смак (стандартні показники)',
@@ -303,6 +307,7 @@ export interface CaseItem {
   desc: string;
   descRu: string;
   icon: string;
+  img: string;
   priceType: 'focaccia' | 'diamonds';
   price: number;
   drops: CaseDrop[];
@@ -320,6 +325,7 @@ export const CASES: CaseItem[] = [
     desc: 'Базова дерев’яна скриня з ароматом свіжої здоби та шанс на епічний кібер-смак.',
     descRu: 'Базовый деревянный сундук с ароматом свежей выпечки и шанс на эпический кибер-вкус.',
     icon: '🥖',
+    img: caseBakeryImg,
     priceType: 'focaccia',
     price: 250000000,
     drops: [
@@ -341,6 +347,7 @@ export const CASES: CaseItem[] = [
     desc: 'Кована золотом скриня з королівської скарбниці з високим шансом на рідкісні скіни.',
     descRu: 'Кованый золотом сундук из королевской сокровищницы с высоким шансом на редкие скины.',
     icon: '👑',
+    img: caseEmpireImg,
     priceType: 'focaccia',
     price: 3000000000,
     drops: [
@@ -362,6 +369,7 @@ export const CASES: CaseItem[] = [
     desc: 'Високотехнологічний кристал-сейф з гарантованим епічним або легендарним лутом.',
     descRu: 'Высокотехнологичный кристалл-сейф с гарантированным эпическим или легендарным лутом.',
     icon: '💎',
+    img: caseDiamondImg,
     priceType: 'diamonds',
     price: 120,
     drops: [
@@ -383,6 +391,7 @@ export const CASES: CaseItem[] = [
     desc: 'Орбітальна капсула зоряної енергії з найвищим шансом на Міфічні шедеври!',
     descRu: 'Орбитальная капсула звёздной энергии с высочайшим шансом на Мифические шедевры!',
     icon: '🌌',
+    img: caseCelestialImg,
     priceType: 'diamonds',
     price: 280,
     drops: [
