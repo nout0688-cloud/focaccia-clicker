@@ -605,6 +605,8 @@ export default function App() {
   const [adminDistributeType, setAdminDistributeType] = useState<'foc' | 'gem'>('foc');
   const [adminDistributeAmount, setAdminDistributeAmount] = useState<string>('50000000');
   const [isAdminDistributing, setIsAdminDistributing] = useState(false);
+  const [isMaintenance, setIsMaintenance] = useState(false);
+  const [isTogglingMaintenance, setIsTogglingMaintenance] = useState(false);
 
   // ===== 🐱 BAKERY CAT STATE =====
   const [showCatModal, setShowCatModal] = useState(false);
@@ -716,6 +718,16 @@ export default function App() {
     // Ref for the admin polling interval so it can be cleared on unmount
     let adminIv: ReturnType<typeof setInterval> | undefined;
 
+    // Check maintenance status immediately on mount
+    fetch(`${API_BASE}/api/reward?userId=${tgUser?.id || 0}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (typeof data?.maintenance === 'boolean') {
+          setIsMaintenance(data.maintenance);
+        }
+      })
+      .catch(() => {});
+
     loadState().then((s) => {
       const maxHours = s.vipUpgrades?.includes('vip_offline') ? 12 : 8;
       const elapsed = Math.min((Date.now() - s.lastSave) / 1000, 60 * 60 * maxHours);
@@ -747,12 +759,16 @@ export default function App() {
       saveNow(s);
       setTimeout(reportSync, 100);
 
-      // Check for admin rewards or reset order
+      // Check for admin rewards, maintenance or reset order
       const checkAdmin = (userState: SaveState) => {
-        if (!tgUser?.id) return;
-        fetch(`https://focaccia-bot.vercel.app/api/reward?userId=${tgUser.id}&lastReset=${userState.lastReset || 0}&lastSkinsReset=${userState.lastSkinsReset || 0}`)
+        const uid = tgUser?.id || 0;
+        fetch(`https://focaccia-bot.vercel.app/api/reward?userId=${uid}&lastReset=${userState.lastReset || 0}&lastSkinsReset=${userState.lastSkinsReset || 0}`)
           .then((r) => r.json())
           .then((data) => {
+            if (typeof data?.maintenance === 'boolean') {
+              setIsMaintenance(data.maintenance);
+            }
+            if (!uid) return;
             if (typeof data?.karma === 'number') setKarma(data.karma);
             if (data?.reset) {
               const fresh = defaultState();
@@ -3004,6 +3020,52 @@ export default function App() {
     }
   };
 
+  const handleToggleMaintenance = async () => {
+    if (!isDevUser(tgUser?.id) || isTogglingMaintenance) return;
+    setIsTogglingMaintenance(true);
+    haptic.heavy();
+    const nextState = !isMaintenance;
+    try {
+      const res = await fetch(`${API_BASE}/api/reward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: tgUser?.id || ADMIN_ID,
+          action: 'set_maintenance',
+          enabled: nextState,
+        }),
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        setIsMaintenance(nextState);
+        haptic.success();
+        addToast(
+          nextState
+            ? (lang === 'uk' ? '🚧 Технічну перерву увімкнено!' : '🚧 Техперерыв включен!')
+            : (lang === 'uk' ? '🟢 Гру відкрито для всіх!' : '🟢 Игра открыта для всех!'),
+          nextState
+            ? (lang === 'uk' ? 'Гравці бачать екран перерви та підтримку @hhimd' : 'Игроки видят экран перерыва и поддержку @hhimd')
+            : (lang === 'uk' ? 'Доступ до гри повністю відновлено' : 'Доступ к игре полностью восстановлен'),
+          nextState ? '🚧' : '🟢'
+        );
+      } else {
+        addToast(
+          lang === 'uk' ? 'Помилка' : 'Ошибка',
+          data?.error || (lang === 'uk' ? 'Не вдалося змінити статус' : 'Не удалось изменить статус'),
+          '❌'
+        );
+      }
+    } catch (err: any) {
+      addToast(
+        lang === 'uk' ? 'Помилка мережі' : 'Ошибка сети',
+        err?.message || 'Network error',
+        '❌'
+      );
+    } finally {
+      setIsTogglingMaintenance(false);
+    }
+  };
+
   const fixBuilding = (id: string) => {
     const b = BUILDINGS.find((x) => x.id === id);
     if (!b) return;
@@ -3832,6 +3894,84 @@ export default function App() {
           <div className="text-amber-400 font-black text-xl tracking-widest">{t.loading}</div>
           <div className="mt-4 w-48 h-1 bg-amber-900/50 rounded-full overflow-hidden mx-auto">
             <div className="h-full bg-gradient-to-r from-amber-500 to-orange-400 rounded-full" style={{ animation: 'shimmer 1.5s ease-in-out infinite', width: '60%' }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---- Maintenance Mode (Blocked for non-dev users) ---- */
+  if (isMaintenance && !isDevUser(tgUser?.id)) {
+    return (
+      <div className="h-screen bg-[#0d0a04] text-amber-50 font-sans select-none overflow-hidden relative flex flex-col items-center justify-center p-6 text-center">
+        {/* Ambient Glowing background circles */}
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-red-600/15 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 translate-y-1/2 w-72 h-72 bg-amber-600/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 max-w-sm w-full space-y-6 animate-fade-in">
+          {/* Animated icon */}
+          <div className="relative mx-auto w-24 h-24 flex items-center justify-center">
+            <div className="absolute inset-0 bg-red-500/20 rounded-3xl blur-xl animate-pulse" />
+            <div
+              className="relative w-24 h-24 rounded-3xl bg-gradient-to-br from-red-600/40 via-amber-600/30 to-black/80 border border-red-500/40 flex items-center justify-center text-5xl shadow-2xl shadow-red-950/60"
+              style={{ animation: 'bob 2s ease-in-out infinite' }}
+            >
+              🚧
+            </div>
+          </div>
+
+          {/* Title and message */}
+          <div className="space-y-3">
+            <h1 className="text-2xl font-black text-white tracking-wide">
+              {lang === 'uk' ? 'Технічна перерва' : 'Технический перерыв'}
+            </h1>
+            <div className="glass-card rounded-2xl p-4 border border-red-500/30 bg-black/60 backdrop-blur-sm space-y-2">
+              <p className="text-sm font-bold text-amber-200/90 leading-relaxed">
+                {lang === 'uk'
+                  ? 'Технічна перерва на невизначений час.'
+                  : 'Технический перерыв на неопределенное время.'}
+              </p>
+              <p className="text-xs text-white/70 leading-relaxed">
+                {lang === 'uk'
+                  ? 'Оновлюємо гру та налаштовуємо сервери. Скоро повернемося!'
+                  : 'Обновляем игру и настраиваем серверы. Скоро вернемся!'}
+              </p>
+            </div>
+          </div>
+
+          {/* Support callout */}
+          <div className="glass-card rounded-2xl p-4 border border-cyan-500/30 bg-cyan-950/20 space-y-2">
+            <p className="text-xs font-bold text-cyan-200">
+              {lang === 'uk' ? 'Якщо є питання — писати:' : 'Если есть вопросы — писать:'}
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-base">💬</span>
+              <span className="font-mono text-sm font-black text-cyan-300">@{SUPPORT_USERNAME}</span>
+            </div>
+          </div>
+
+          {/* Actions: Contact Support & Refresh */}
+          <div className="space-y-2.5 pt-2">
+            <button
+              type="button"
+              onClick={openSupport}
+              className="w-full py-3.5 px-5 rounded-2xl bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 hover:brightness-110 active:scale-98 text-white font-black text-sm shadow-lg shadow-sky-500/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>💬</span>
+              <span>{lang === 'uk' ? `Написати в підтримку (@${SUPPORT_USERNAME})` : `Написать в поддержку (@${SUPPORT_USERNAME})`}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                haptic.selection();
+                window.location.reload();
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-white/10 hover:bg-white/15 active:scale-98 text-white/80 hover:text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <span>🔄</span>
+              <span>{lang === 'uk' ? 'Перевірити статус (Оновити)' : 'Проверить статус (Обновить)'}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -5484,6 +5624,68 @@ export default function App() {
 
             {/* Content Body */}
             <div className="p-4 space-y-4 overflow-y-auto flex-1 z-10">
+              {/* Section 0: Maintenance Mode (Технічна перерва) */}
+              <div className="glass-card rounded-2xl p-3.5 border border-red-500/40 bg-gradient-to-r from-red-950/40 via-black/50 to-amber-950/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-lg">🚧</span>
+                    <div>
+                      <div className="text-xs font-black text-white flex items-center gap-1.5">
+                        <span>{lang === 'uk' ? 'Технічна перерва' : 'Технический перерыв'}</span>
+                        <span className={cn(
+                          'text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase',
+                          isMaintenance ? 'bg-red-500/30 text-red-300 border border-red-500/40' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        )}>
+                          {isMaintenance ? (lang === 'uk' ? 'Увімкнено' : 'Включено') : (lang === 'uk' ? 'Вимкнено' : 'Выключено')}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-white/60">
+                        {lang === 'uk'
+                          ? 'Закриває доступ звичайним гравцям (ви маєте доступ)'
+                          : 'Закрывает доступ обычным игрокам (вы имеете доступ)'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-black/40 rounded-xl p-2.5 border border-white/5 text-[10px] text-amber-200/80 leading-relaxed">
+                  {isMaintenance ? (
+                    <span>
+                      🚫 <b>{lang === 'uk' ? 'Гра закрита для гравців.' : 'Игра закрыта для игроков.'}</b>{' '}
+                      {lang === 'uk'
+                        ? 'Гравці бачать екран перерви, контакт @hhimd та кнопку підтримки.'
+                        : 'Игроки видят экран перерыва, контакт @hhimd и кнопку поддержки.'}
+                    </span>
+                  ) : (
+                    <span>
+                      🟢 <b>{lang === 'uk' ? 'Гра відкрита.' : 'Игра открыта.'}</b>{' '}
+                      {lang === 'uk' ? 'Усі гравці можуть вільно грати.' : 'Все игроки могут свободно играть.'}
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={isTogglingMaintenance}
+                  onClick={handleToggleMaintenance}
+                  className={cn(
+                    'w-full py-2.5 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-md transition-all active:scale-98 cursor-pointer',
+                    isMaintenance
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:brightness-110 text-white shadow-emerald-600/30'
+                      : 'bg-gradient-to-r from-red-600 to-rose-600 hover:brightness-110 text-white shadow-red-600/30'
+                  )}
+                >
+                  <span>{isTogglingMaintenance ? '⏳' : isMaintenance ? '🟢' : '🔴'}</span>
+                  <span>
+                    {isTogglingMaintenance
+                      ? (lang === 'uk' ? 'Зміна статусу...' : 'Смена статуса...')
+                      : isMaintenance
+                        ? (lang === 'uk' ? 'Відкрити гру для всіх' : 'Открыть игру для всех')
+                        : (lang === 'uk' ? 'Закрити доступ до гри (Техперерва)' : 'Закрыть доступ к игре (Техперерыв)')}
+                  </span>
+                </button>
+              </div>
+
               {/* Section 1: Mass Distribution */}
               <div className="glass-card rounded-2xl p-3.5 border border-amber-500/25 space-y-3">
                 <div className="flex items-center justify-between">
@@ -7683,6 +7885,25 @@ export default function App() {
               {lang === 'uk' ? '← Повернутися' : '← Вернуться'}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Dev Maintenance Notice Banner */}
+      {isMaintenance && isDevUser(tgUser?.id) && (
+        <div className="relative z-20 shrink-0 bg-gradient-to-r from-red-950 via-red-900 to-amber-950 border-b border-red-500/50 px-3 py-1.5 flex items-center justify-between gap-2 text-xs select-none shadow-md">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="animate-pulse text-base">🚧</span>
+            <span className="font-black text-red-200 truncate">
+              {lang === 'uk' ? 'ТЕХПЕРЕРВА АКТИВНА: доступ для гравців закрито' : 'ТЕХПЕРЕРЫВ АКТИВЕН: доступ для игроков закрыт'}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => { setShowAdminModal(true); haptic.selection(); }}
+            className="shrink-0 px-2.5 py-1 rounded-lg bg-red-600 hover:bg-red-500 text-white font-black text-[10px] uppercase tracking-wide cursor-pointer transition active:scale-95 shadow"
+          >
+            {lang === 'uk' ? 'Адмінка' : 'Админка'}
+          </button>
         </div>
       )}
 
