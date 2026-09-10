@@ -2918,7 +2918,7 @@ export default function App() {
 
   // ===== 🧰 REPAIR KIT CONSTANTS & LOGIC =====
   const REPAIR_KIT_UNLOCK_DIAMONDS = 150;
-  const REPAIR_KIT_UNLOCK_FOCACCIA = 2500000000; // 2.5 Billion
+  const REPAIR_KIT_UNLOCK_FOCACCIA = 7500000000; // 7.5 Billion (підвищено ціну за фокачі)
 
   interface RepairPackage {
     charges: number;
@@ -2928,10 +2928,10 @@ export default function App() {
   }
 
   const REPAIR_PACKAGES: RepairPackage[] = [
-    { charges: 1, costFocaccia: 100000000, costDiamonds: 15 }, // 100M / 15 💎
-    { charges: 5, costFocaccia: 450000000, costDiamonds: 65, discountBadge: '-10%' }, // 450M / 65 💎
-    { charges: 20, costFocaccia: 1600000000, costDiamonds: 240, discountBadge: '-20%' }, // 1.6B / 240 💎
-    { charges: 50, costFocaccia: 3500000000, costDiamonds: 500, discountBadge: '-30%' }, // 3.5B / 500 💎
+    { charges: 1, costFocaccia: 350000000, costDiamonds: 15 }, // 350M / 15 💎
+    { charges: 5, costFocaccia: 1500000000, costDiamonds: 65, discountBadge: '-14%' }, // 1.5B / 65 💎
+    { charges: 20, costFocaccia: 5500000000, costDiamonds: 240, discountBadge: '-21%' }, // 5.5B / 240 💎
+    { charges: 50, costFocaccia: 12000000000, costDiamonds: 500, discountBadge: '-31%' }, // 12B / 500 💎
   ];
 
   const checkAndFixCurrentBroken = (customState?: SaveState) => {
