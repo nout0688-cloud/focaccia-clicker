@@ -708,6 +708,9 @@ export default function App() {
   const [hasMaintenanceKicked, setHasMaintenanceKicked] = useState(false);
   const isInitialCheckDone = useRef(false);
   const [adminResetSkinTarget, setAdminResetSkinTarget] = useState('');
+  const [adminGiveUserTarget, setAdminGiveUserTarget] = useState('');
+  const [adminGiveUserType, setAdminGiveUserType] = useState<'foc' | 'gem'>('gem');
+  const [adminGiveUserAmount, setAdminGiveUserAmount] = useState('100');
 
   // ===== 🐱 BAKERY CAT STATE =====
   const [showCatModal, setShowCatModal] = useState(false);
@@ -831,7 +834,7 @@ export default function App() {
     let adminIv: ReturnType<typeof setInterval> | undefined;
 
     // Check maintenance status immediately on mount
-    fetch(`${API_BASE}/api/reward?userId=${tgUser?.id || 0}`)
+    fetch(`${API_BASE}/api/reward?action=get_maintenance`)
       .then((r) => r.json())
       .then((data) => {
         if (typeof data?.maintenance === 'boolean') {
@@ -3587,6 +3590,7 @@ export default function App() {
           };
           stateRef.current = next;
           saveNow(next);
+          setTimeout(reportSync, 100);
           return next;
         });
       } else {
@@ -3619,6 +3623,7 @@ export default function App() {
       };
       stateRef.current = next;
       saveNow(next);
+      setTimeout(reportSync, 100);
       return next;
     });
     addToast(
@@ -3626,6 +3631,76 @@ export default function App() {
       cur === 'gem' ? `+${amount} 💎` : `+${formatNum(amount)} 🫓`,
       '⚡'
     );
+  };
+
+  const handleAdminGiveUser = async (target: string, cur: 'foc' | 'gem', amount: number) => {
+    if (!isDevUser(tgUser?.id) || isAdminDistributing) return;
+    if (!target.trim() || !amount || amount <= 0) {
+      addToast(
+        lang === 'uk' ? 'Помилка' : 'Ошибка',
+        lang === 'uk' ? 'Вкажіть гравця та коректну кількість' : 'Укажите игрока и корректное количество',
+        '⚠️'
+      );
+      return;
+    }
+    setIsAdminDistributing(true);
+    haptic.heavy();
+    try {
+      const res = await fetch(`${API_BASE}/api/reward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: tgUser?.id || ADMIN_ID,
+          action: 'give_user',
+          target: target.trim(),
+          cur,
+          amount,
+        }),
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        haptic.success();
+        addToast(
+          lang === 'uk' ? '✅ Нараховано!' : '✅ Начислено!',
+          lang === 'uk'
+            ? `Видано ${cur === 'gem' ? `+${amount} 💎` : `+${formatNum(amount)} 🫓`} для ${target}!`
+            : `Выдано ${cur === 'gem' ? `+${amount} 💎` : `+${formatNum(amount)} 🫓`} для ${target}!`,
+          cur === 'gem' ? '💎' : '🎁'
+        );
+        const cleanTgt = target.trim().replace(/^@/, '').toLowerCase();
+        const myUname = (tgUser?.username || '').toLowerCase();
+        const isSelf = String(data.targetId) === String(tgUser?.id || ADMIN_ID) || (myUname && cleanTgt === myUname);
+        if (isSelf) {
+          setState((p) => {
+            const next = {
+              ...p,
+              focaccia: cur === 'foc' ? p.focaccia + amount : p.focaccia,
+              total: cur === 'foc' ? p.total + amount : p.total,
+              diamonds: cur === 'gem' ? (p.diamonds || 0) + amount : p.diamonds,
+            };
+            stateRef.current = next;
+            saveNow(next);
+            setTimeout(reportSync, 100);
+            return next;
+          });
+        }
+        setAdminGiveUserTarget('');
+      } else {
+        addToast(
+          lang === 'uk' ? 'Помилка' : 'Ошибка',
+          data?.error || (lang === 'uk' ? 'Не вдалося нарахувати' : 'Не удалось начислить'),
+          '❌'
+        );
+      }
+    } catch (err: any) {
+      addToast(
+        lang === 'uk' ? 'Помилка мережі' : 'Ошибка сети',
+        err?.message || 'Network error',
+        '❌'
+      );
+    } finally {
+      setIsAdminDistributing(false);
+    }
   };
 
   const handleAdminResetSkinsAll = async () => {
@@ -6912,6 +6987,96 @@ export default function App() {
                     +1,000 💎 собі
                   </button>
                 </div>
+              </div>
+
+              {/* Section 2.5: Give to specific player */}
+              <div className="glass-card rounded-2xl p-3.5 border border-cyan-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-black text-cyan-200 flex items-center gap-1.5">
+                    <span>👤</span>
+                    <span>{lang === 'uk' ? 'Видати конкретному гравцю' : 'Выдать конкретному игроку'}</span>
+                  </div>
+                  <span className="text-[10px] text-cyan-400/60 font-mono">
+                    {adminGiveUserType === 'gem' ? '💎 Алмази' : '🫓 Фокачі'}
+                  </span>
+                </div>
+
+                {/* Target input */}
+                <div>
+                  <label className="text-[10px] text-cyan-300/80 font-bold block mb-1">
+                    {lang === 'uk' ? 'Гравець (@username або Telegram ID):' : 'Игрок (@username или Telegram ID):'}
+                  </label>
+                  <input
+                    type="text"
+                    value={adminGiveUserTarget}
+                    onChange={(e) => setAdminGiveUserTarget(e.target.value)}
+                    placeholder="@username або 1975429762"
+                    className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-white/30 focus:border-cyan-400 outline-none"
+                  />
+                </div>
+
+                {/* Currency & Amount row */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-cyan-300/80 font-bold block mb-1">
+                      {lang === 'uk' ? 'Валюта:' : 'Валюта:'}
+                    </label>
+                    <div className="grid grid-cols-2 gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => { setAdminGiveUserType('gem'); setAdminGiveUserAmount('100'); }}
+                        className={cn(
+                          'py-1.5 rounded-lg text-xs font-black transition flex items-center justify-center gap-1 cursor-pointer',
+                          adminGiveUserType === 'gem'
+                            ? 'bg-cyan-500 text-white shadow'
+                            : 'text-cyan-300/60 hover:text-cyan-200'
+                        )}
+                      >
+                        <span>💎</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setAdminGiveUserType('foc'); setAdminGiveUserAmount('50000000'); }}
+                        className={cn(
+                          'py-1.5 rounded-lg text-xs font-black transition flex items-center justify-center gap-1 cursor-pointer',
+                          adminGiveUserType === 'foc'
+                            ? 'bg-amber-500 text-black shadow'
+                            : 'text-amber-300/60 hover:text-amber-200'
+                        )}
+                      >
+                        <span>🫓</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-cyan-300/80 font-bold block mb-1">
+                      {lang === 'uk' ? 'Кількість:' : 'Количество:'}
+                    </label>
+                    <input
+                      type="number"
+                      value={adminGiveUserAmount}
+                      onChange={(e) => setAdminGiveUserAmount(e.target.value)}
+                      placeholder="100"
+                      className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-white/30 focus:border-cyan-400 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Execute button */}
+                <button
+                  type="button"
+                  disabled={isAdminDistributing || !adminGiveUserTarget.trim() || !Number(adminGiveUserAmount)}
+                  onClick={() => handleAdminGiveUser(adminGiveUserTarget, adminGiveUserType, Number(adminGiveUserAmount))}
+                  className="w-full py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-2 bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed text-white shadow-md shadow-cyan-500/20 active:scale-98 transition cursor-pointer"
+                >
+                  <span>{isAdminDistributing ? '⏳' : '⚡'}</span>
+                  <span>
+                    {lang === 'uk'
+                      ? `Нарахувати ${adminGiveUserType === 'gem' ? `+${adminGiveUserAmount} 💎` : `+${formatNum(Number(adminGiveUserAmount) || 0)} 🫓`}`
+                      : `Начислить ${adminGiveUserType === 'gem' ? `+${adminGiveUserAmount} 💎` : `+${formatNum(Number(adminGiveUserAmount) || 0)} 🫓`}`}
+                  </span>
+                </button>
               </div>
 
               {/* Section 3: Skins reset & take away */}
