@@ -290,6 +290,12 @@ interface SaveState {
     skin?: string;
     ownedSkins?: string[];
   };
+  repairKit?: {
+    unlocked: boolean;
+    charges: number;
+    autoRepairEnabled?: boolean;
+    totalRepairsDone?: number;
+  };
 }
 
 interface FloatText {
@@ -397,6 +403,12 @@ const defaultState = (): SaveState => ({
     skin: 'murchik',
     ownedSkins: ['murchik'],
   },
+  repairKit: {
+    unlocked: false,
+    charges: 0,
+    autoRepairEnabled: true,
+    totalRepairsDone: 0,
+  },
 });
 
 async function loadState(): Promise<SaveState> {
@@ -442,6 +454,12 @@ async function loadState(): Promise<SaveState> {
         ownedSkins: Array.isArray(parsed.cat?.ownedSkins) && parsed.cat.ownedSkins.length > 0
           ? Array.from(new Set(['murchik', ...parsed.cat.ownedSkins, ...(parsed.cat?.skin ? [parsed.cat.skin] : [])]))
           : Array.from(new Set(['murchik', ...(parsed.cat?.skin ? [parsed.cat.skin] : [])])),
+      },
+      repairKit: {
+        unlocked: Boolean(parsed.repairKit?.unlocked),
+        charges: Math.max(0, Number(parsed.repairKit?.charges) || 0),
+        autoRepairEnabled: parsed.repairKit?.autoRepairEnabled !== false,
+        totalRepairsDone: Math.max(0, Number(parsed.repairKit?.totalRepairsDone) || 0),
       },
     };
   } catch { return defaultState(); }
@@ -627,6 +645,11 @@ export default function App() {
   const [caseReel, setCaseReel] = useState<SkinItem[]>([]);
   const [caseReelOffset, setCaseReelOffset] = useState<number>(0);
   const [caseWonResult, setCaseWonResult] = useState<{ skin: SkinItem; isNew: boolean; newLevel: number } | null>(null);
+  const winningSkinRef = useRef<SkinItem | null>(null);
+  const winningIsNewRef = useRef(false);
+  const winningNextLvlRef = useRef(1);
+  const caseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [showRepairKitModal, setShowRepairKitModal] = useState(false);
 
   // Upgrader state
   const [upgraderSourceId, setUpgraderSourceId] = useState<string>('');
@@ -1790,10 +1813,65 @@ export default function App() {
       const owned = BUILDINGS.filter((b) => (stateRef.current.buildings[b.id] || 0) > 0);
       if (owned.length === 0) return;
       const target = owned[Math.floor(Math.random() * owned.length)];
-      setBrokenBuilding(target.id);
+      const cur = stateRef.current;
       const curT = TRANSLATIONS[langRef.current];
       const bText = getBuildingText(target.id, langRef.current);
-      addToast(curT.toastBuildingBroken, formatTemplate(curT.toastBuildingBrokenDesc, bText.name), '⚠️');
+      const repairCost = Math.max(50, Math.floor(target.baseCost * 0.3));
+      const rk = cur.repairKit;
+
+      // Автоматичний ремкомплект
+      if (rk?.unlocked && (rk.charges || 0) > 0 && rk.autoRepairEnabled !== false) {
+        if (cur.focaccia >= repairCost) {
+          const nextCharges = (rk.charges || 0) - 1;
+          const nextDone = (rk.totalRepairsDone || 0) + 1;
+          const next: SaveState = {
+            ...cur,
+            focaccia: cur.focaccia - repairCost,
+            repairKit: {
+              ...rk,
+              charges: nextCharges,
+              totalRepairsDone: nextDone,
+            },
+          };
+          stateRef.current = next;
+          setState(next);
+          saveNow(next);
+          haptic.success();
+          addToast(
+            langRef.current === 'uk' ? '🧰 Авто-ремонт!' : '🧰 Авто-ремонт!',
+            langRef.current === 'uk'
+              ? `Ремкомплект миттєво полагодив "${bText.name}" (-1 ремонт, -${formatNum(repairCost)} 🫓). Залишилось: ${nextCharges}`
+              : `Ремкомплект мгновенно починил "${bText.name}" (-1 ремонт, -${formatNum(repairCost)} 🫓). Осталось: ${nextCharges}`,
+            '🔧'
+          );
+          return;
+        } else {
+          // Не вистачає коштів на балансі
+          setBrokenBuilding(target.id);
+          haptic.error();
+          addToast(
+            langRef.current === 'uk' ? '🧰 Бракує фокач на ремонт!' : '🧰 Не хватает фокачч на ремонт!',
+            langRef.current === 'uk'
+              ? `Будівля "${bText.name}" зламалася! Для авто-ремонту потрібно ${formatNum(repairCost)} 🫓 на балансі.`
+              : `Постройка "${bText.name}" сломалась! Для авто-ремонта нужно ${formatNum(repairCost)} 🫓 на балансе.`,
+            '⚠️'
+          );
+          return;
+        }
+      }
+
+      setBrokenBuilding(target.id);
+      if (rk?.unlocked && (rk.charges || 0) <= 0 && rk.autoRepairEnabled !== false) {
+        addToast(
+          langRef.current === 'uk' ? '⚠️ Закінчилися ремонти в ремкомплекті!' : '⚠️ Закончились ремонты в ремкомплекте!',
+          langRef.current === 'uk'
+            ? `Будівля "${bText.name}" зламалася! Поповніть запаси ремонтів біля кота.`
+            : `Постройка "${bText.name}" сломалась! Пополните запасы ремонтов возле кота.`,
+          '🧰'
+        );
+      } else {
+        addToast(curT.toastBuildingBroken, formatTemplate(curT.toastBuildingBrokenDesc, bText.name), '⚠️');
+      }
       haptic.error();
     }, 140000);
     return () => clearInterval(iv);
@@ -2561,7 +2639,214 @@ export default function App() {
     );
   };
 
+  // ===== 🧰 REPAIR KIT CONSTANTS & LOGIC =====
+  const REPAIR_KIT_UNLOCK_DIAMONDS = 75;
+  const REPAIR_KIT_UNLOCK_FOCACCIA = 25000000;
+
+  interface RepairPackage {
+    charges: number;
+    costFocaccia: number;
+    costDiamonds: number;
+    discountBadge?: string;
+  }
+
+  const REPAIR_PACKAGES: RepairPackage[] = [
+    { charges: 1, costFocaccia: 1000000, costDiamonds: 2 },
+    { charges: 5, costFocaccia: 4500000, costDiamonds: 8, discountBadge: '-10%' },
+    { charges: 20, costFocaccia: 16000000, costDiamonds: 25, discountBadge: '-20%' },
+    { charges: 50, costFocaccia: 35000000, costDiamonds: 55, discountBadge: '-30%' },
+  ];
+
+  const checkAndFixCurrentBroken = (customState?: SaveState) => {
+    const cur = customState || stateRef.current;
+    if (!brokenBuilding) return;
+    const rk = cur.repairKit;
+    if (!rk?.unlocked || (rk.charges || 0) <= 0 || rk.autoRepairEnabled === false) return;
+
+    const b = BUILDINGS.find((x) => x.id === brokenBuilding);
+    if (!b) return;
+    const cost = Math.max(50, Math.floor(b.baseCost * 0.3));
+    if (cur.focaccia < cost) return;
+
+    const nextCharges = (rk.charges || 0) - 1;
+    const nextDone = (rk.totalRepairsDone || 0) + 1;
+    const next: SaveState = {
+      ...cur,
+      focaccia: cur.focaccia - cost,
+      repairKit: {
+        ...rk,
+        charges: nextCharges,
+        totalRepairsDone: nextDone,
+      },
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+    setBrokenBuilding(null);
+    haptic.success();
+    const bText = getBuildingText(b.id, langRef.current);
+    addToast(
+      langRef.current === 'uk' ? '🧰 Авто-ремонт!' : '🧰 Авто-ремонт!',
+      langRef.current === 'uk'
+        ? `Ремкомплект миттєво полагодив "${bText.name}" (-1 ремонт, -${formatNum(cost)} 🫓). Залишилось: ${nextCharges}`
+        : `Ремкомплект мгновенно починил "${bText.name}" (-1 ремонт, -${formatNum(cost)} 🫓). Осталось: ${nextCharges}`,
+      '🔧'
+    );
+  };
+
+  const buyRepairKit = (currency: 'diamonds' | 'focaccia') => {
+    if (state.repairKit?.unlocked) return;
+    if (currency === 'diamonds') {
+      if (state.diamonds < REPAIR_KIT_UNLOCK_DIAMONDS) {
+        addToast(
+          lang === 'uk' ? 'Недостатньо діамантів' : 'Недостаточно алмазов',
+          lang === 'uk' ? `Потрібно ${REPAIR_KIT_UNLOCK_DIAMONDS} 💎` : `Нужно ${REPAIR_KIT_UNLOCK_DIAMONDS} 💎`,
+          '💎'
+        );
+        haptic.error();
+        return;
+      }
+    } else {
+      if (state.focaccia < REPAIR_KIT_UNLOCK_FOCACCIA) {
+        addToast(
+          lang === 'uk' ? 'Недостатньо фокач' : 'Недостаточно фокачч',
+          lang === 'uk' ? `Потрібно ${formatNum(REPAIR_KIT_UNLOCK_FOCACCIA)} 🫓` : `Нужно ${formatNum(REPAIR_KIT_UNLOCK_FOCACCIA)} 🫓`,
+          '🫓'
+        );
+        haptic.error();
+        return;
+      }
+    }
+
+    const next: SaveState = {
+      ...state,
+      diamonds: currency === 'diamonds' ? state.diamonds - REPAIR_KIT_UNLOCK_DIAMONDS : state.diamonds,
+      focaccia: currency === 'focaccia' ? state.focaccia - REPAIR_KIT_UNLOCK_FOCACCIA : state.focaccia,
+      repairKit: {
+        unlocked: true,
+        charges: 3, // бонусні 3 ремонти при покупці
+        autoRepairEnabled: true,
+        totalRepairsDone: 0,
+      },
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+    haptic.success();
+    burstConfetti(['🧰', '🔧', '✨', '⚙️']);
+    addToast(
+      lang === 'uk' ? '🧰 Ремкомплект розблоковано!' : '🧰 Ремкомплект разблокирован!',
+      lang === 'uk' ? 'Отримано +3 бонусні ремонти! Тепер поламки лагодяться автоматично.' : 'Получено +3 бонусных ремонта! Теперь поломки чинятся автоматически.',
+      '🎉'
+    );
+    checkAndFixCurrentBroken(next);
+  };
+
+  const buyRepairCharges = (pkg: RepairPackage, currency: 'diamonds' | 'focaccia') => {
+    if (!state.repairKit?.unlocked) return;
+    const cost = currency === 'diamonds' ? pkg.costDiamonds : pkg.costFocaccia;
+
+    if (currency === 'diamonds') {
+      if (state.diamonds < cost) {
+        addToast(
+          lang === 'uk' ? 'Недостатньо діамантів' : 'Недостаточно алмазов',
+          lang === 'uk' ? `Потрібно ${cost} 💎` : `Нужно ${cost} 💎`,
+          '💎'
+        );
+        haptic.error();
+        return;
+      }
+    } else {
+      if (state.focaccia < cost) {
+        addToast(
+          lang === 'uk' ? 'Недостатньо фокач' : 'Недостаточно фокачч',
+          lang === 'uk' ? `Потрібно ${formatNum(cost)} 🫓` : `Нужно ${formatNum(cost)} 🫓`,
+          '🫓'
+        );
+        haptic.error();
+        return;
+      }
+    }
+
+    const curCharges = state.repairKit.charges || 0;
+    const newCharges = curCharges + pkg.charges;
+    const next: SaveState = {
+      ...state,
+      diamonds: currency === 'diamonds' ? state.diamonds - cost : state.diamonds,
+      focaccia: currency === 'focaccia' ? state.focaccia - cost : state.focaccia,
+      repairKit: {
+        ...state.repairKit,
+        charges: newCharges,
+      },
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+    haptic.success();
+    addToast(
+      lang === 'uk' ? '🔧 Куплено ремонти!' : '🔧 Куплены ремонты!',
+      lang === 'uk'
+        ? `+${pkg.charges} ${pkg.charges === 1 ? 'ремонт' : 'ремонтів'} додано до ремкомплекту! Разом: ${newCharges}`
+        : `+${pkg.charges} ${pkg.charges === 1 ? 'ремонт' : 'ремонтов'} добавлено в ремкомплект! Всего: ${newCharges}`,
+      '🧰'
+    );
+    checkAndFixCurrentBroken(next);
+  };
+
+  const toggleAutoRepair = () => {
+    if (!state.repairKit?.unlocked) return;
+    const newStatus = !(state.repairKit.autoRepairEnabled !== false);
+    const next: SaveState = {
+      ...state,
+      repairKit: {
+        ...state.repairKit,
+        autoRepairEnabled: newStatus,
+      },
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+    haptic.light();
+    addToast(
+      lang === 'uk' ? 'Авто-ремонт змінено' : 'Авто-ремонт изменен',
+      newStatus
+        ? (lang === 'uk' ? 'Автоматичний ремонт активовано 🟢' : 'Автоматический ремонт активирован 🟢')
+        : (lang === 'uk' ? 'Автоматичний ремонт вимкнено ⚪' : 'Автоматический ремонт выключен ⚪'),
+      '⚙️'
+    );
+    if (newStatus) {
+      checkAndFixCurrentBroken(next);
+    }
+  };
+
+  const skipCaseAnimation = () => {
+    if (!isOpeningCase || !activeCase || !winningSkinRef.current) return;
+    if (caseTimeoutRef.current) {
+      clearTimeout(caseTimeoutRef.current);
+      caseTimeoutRef.current = null;
+    }
+    const winningSkin = winningSkinRef.current;
+    const isNew = winningIsNewRef.current;
+    const nextLvl = winningNextLvlRef.current;
+
+    const winningIdx = 32;
+    const cardStep = 126;
+    const targetOffset = -(winningIdx * cardStep + 58);
+    setCaseReelOffset(targetOffset);
+
+    caseOpeningLock.current = false;
+    setIsOpeningCase(false);
+    setCaseWonResult({
+      skin: winningSkin,
+      isNew,
+      newLevel: nextLvl,
+    });
+    haptic.success();
+    burstConfetti(['🎉', '✨', '👑', '💎', '🫓', winningSkin.badge]);
+  };
+
   // ===== 🔮 SKINS & UPGRADER LOGIC =====
+
   const startHoldFocaccia = (e: React.PointerEvent<HTMLButtonElement>) => {
     markRawTap(e);
     if (e.button && e.button !== 0) return;
@@ -2872,18 +3157,23 @@ export default function App() {
 
     haptic.heavy();
 
-    // 110px card width + 10px gap = 120px step
-    // Reel starts at left: 50% (center of pointer). Card 0 center is at +55px.
-    // To place winning card index center dead under pointer:
-    const cardStep = 120;
-    const targetOffset = -(winningIdx * cardStep + 55);
+    winningSkinRef.current = winningSkin;
+    winningIsNewRef.current = isNew;
+    winningNextLvlRef.current = nextLvl;
+
+    // 116px card width + 10px gap = 126px step
+    // Reel starts at left: 50% (center of pointer). Card 0 center is at +58px.
+    const cardStep = 126;
+    const targetOffset = -(winningIdx * cardStep + 58);
+
+    if (caseTimeoutRef.current) clearTimeout(caseTimeoutRef.current);
 
     setTimeout(() => {
       setIsOpeningCase(true);
       setCaseReelOffset(targetOffset);
     }, 60);
 
-    setTimeout(() => {
+    caseTimeoutRef.current = setTimeout(() => {
       caseOpeningLock.current = false;
       setIsOpeningCase(false);
       setCaseWonResult({
@@ -3968,6 +4258,12 @@ export default function App() {
           pestsSquashed: cur.pestsSquashed,
           lang: cur.lang,
           lastReset: cur.lastReset,
+          skins: cur.skins,
+          skinsResetVersion: cur.skinsResetVersion,
+          lastSkinsReset: cur.lastSkinsReset,
+          cosmetics: cur.cosmetics,
+          cat: cur.cat,
+          repairKit: cur.repairKit,
         };
         stateRef.current = next;
         setState(next);
@@ -4231,6 +4527,70 @@ export default function App() {
               </div>
             </button>
           )}
+
+          {/* 🧰 REPAIR KIT FLOATING WIDGET (stacked directly above the cat) */}
+          <button
+            type="button"
+            onClick={() => { setShowRepairKitModal(true); haptic.selection(); }}
+            className={cn(
+              'fixed right-3 bottom-[154px] z-35 p-2 rounded-2xl bg-zinc-950/85 hover:bg-zinc-900 border shadow-xl flex items-center gap-2 cursor-pointer transition active:scale-95 group backdrop-blur-sm',
+              brokenBuilding
+                ? 'border-amber-400 shadow-amber-500/30 animate-pulse'
+                : state.repairKit?.unlocked
+                ? 'border-orange-500/40 text-orange-300 shadow-orange-500/10'
+                : 'border-zinc-700/60 text-zinc-400'
+            )}
+            title={lang === 'uk' ? 'Автоматичний ремкомплект' : 'Автоматический ремкомплект'}
+          >
+            <div
+              className={cn(
+                'w-9 h-9 rounded-xl border flex items-center justify-center text-lg shrink-0 shadow-inner relative',
+                state.repairKit?.unlocked
+                  ? 'border-orange-500/60 bg-gradient-to-br from-orange-500/20 to-amber-500/10 text-orange-200'
+                  : 'border-zinc-700 bg-zinc-800/40 text-zinc-400'
+              )}
+            >
+              <span>🧰</span>
+              {brokenBuilding && (
+                <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                </span>
+              )}
+            </div>
+            <div className="text-left">
+              <div className="text-[11px] font-black text-white flex items-center gap-1">
+                <span>{lang === 'uk' ? 'Ремкомплект' : 'Ремкомплект'}</span>
+                {state.repairKit?.unlocked ? (
+                  <span
+                    className={cn(
+                      'text-[9px] font-black px-1.5 py-0.2 rounded border',
+                      (state.repairKit?.charges || 0) > 0
+                        ? 'text-emerald-300 bg-emerald-950/80 border-emerald-500/40'
+                        : 'text-red-300 bg-red-950/80 border-red-500/40'
+                    )}
+                  >
+                    {state.repairKit?.charges || 0}
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-bold text-amber-300 bg-amber-950/60 border border-amber-500/30 px-1 rounded">
+                    🔒
+                  </span>
+                )}
+              </div>
+              <div className="text-[9px] font-medium leading-none mt-0.5">
+                {state.repairKit?.unlocked ? (
+                  state.repairKit.autoRepairEnabled !== false ? (
+                    <span className="text-emerald-400 font-bold">● {lang === 'uk' ? 'Авто' : 'Авто'}</span>
+                  ) : (
+                    <span className="text-zinc-400">○ {lang === 'uk' ? 'Вимк.' : 'Выкл.'}</span>
+                  )
+                ) : (
+                  <span className="text-amber-300/80 font-bold">75 💎 / 25M</span>
+                )}
+              </div>
+            </div>
+          </button>
         </>
       )}
 
@@ -5707,6 +6067,261 @@ export default function App() {
         </div>
       )}
 
+      {/* ===== 🧰 AUTOMATED REPAIR KIT MODAL ===== */}
+      {showRepairKitModal && (
+        <div className="fixed inset-0 z-[82] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
+          <div className="relative w-full max-w-sm bg-[#120e0b] border-t sm:border border-orange-500/40 rounded-t-3xl sm:rounded-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="px-4 py-3 border-b border-white/10 bg-zinc-950/90 flex items-center justify-between z-10">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-orange-500/20 border border-orange-400/50 flex items-center justify-center text-xl shadow">
+                  🧰
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white flex items-center gap-1.5">
+                    <span>{lang === 'uk' ? 'Автоматичний Ремкомплект' : 'Автоматический Ремкомплект'}</span>
+                    {state.repairKit?.unlocked && (
+                      <span className="px-1.5 py-0.2 rounded-md bg-emerald-500/20 border border-emerald-400/40 text-[10px] text-emerald-300 font-bold">
+                        {state.repairKit?.charges || 0} {lang === 'uk' ? 'рем.' : 'рем.'}
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-[11px] text-orange-400/80 font-medium">
+                    {lang === 'uk' ? 'Служба аварійного лагодження пекарні' : 'Служба аварийной починки пекарни'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRepairKitModal(false)}
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-sm font-bold border border-white/10 transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
+              {!state.repairKit?.unlocked ? (
+                /* LOCKED VIEW */
+                <div className="space-y-3.5">
+                  <div className="p-4 rounded-2xl bg-gradient-to-b from-orange-950/40 to-stone-900 border border-orange-500/30 flex flex-col items-center text-center space-y-2.5">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-orange-500/20 to-amber-500/10 border-2 border-orange-400/50 flex items-center justify-center text-3xl shadow-lg">
+                      🧰
+                    </div>
+                    <div>
+                      <h4 className="text-base font-black text-white">
+                        {lang === 'uk' ? 'Забудьте про поламані будівлі!' : 'Забудьте о сломанных постройках!'}
+                      </h4>
+                      <p className="text-xs text-orange-200/80 mt-1 leading-relaxed">
+                        {lang === 'uk'
+                          ? 'Авто-ремкомплект миттєво лагодить будь-які аварії будівель, списуючи 1 заряд ремонту та звичайну вартість лагодження з балансу фокач.'
+                          : 'Авто-ремкомплект мгновенно чинит любые аварии построек, списывая 1 заряд ремонта и обычную стоимость починки с баланса фокачч.'}
+                      </p>
+                    </div>
+
+                    <div className="w-full text-left space-y-1.5 pt-1 text-[11px] text-stone-300">
+                      <div className="flex items-center gap-2">
+                        <span>⚡</span>
+                        <span>{lang === 'uk' ? '100% автоматично — жодного простою виробництва' : '100% автоматически — никакого простоя производства'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span>💰</span>
+                        <span>{lang === 'uk' ? 'Оплата з балансу — кошти списуються лише при ремонті' : 'Оплата с баланса — средства списываются только при ремонте'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span>🎁</span>
+                        <span className="text-amber-300 font-bold">{lang === 'uk' ? '+3 бонусні ремонти одразу після розблокування!' : '+3 бонусных ремонта сразу после разблокировки!'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Balance info */}
+                  <div className="flex items-center justify-between px-3 py-2 rounded-xl bg-black/40 border border-white/10 text-xs font-mono">
+                    <span className="text-white/60">{lang === 'uk' ? 'Ваш баланс:' : 'Ваш баланс:'}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-amber-300 font-bold">🫓 {formatNum(state.focaccia)}</span>
+                      <span className="text-cyan-300 font-bold">💎 {state.diamonds}</span>
+                    </div>
+                  </div>
+
+                  {/* Buy Buttons */}
+                  <div className="space-y-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => buyRepairKit('diamonds')}
+                      disabled={state.diamonds < REPAIR_KIT_UNLOCK_DIAMONDS}
+                      className="w-full py-3 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-500 to-cyan-600 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2"
+                    >
+                      <span>💎</span>
+                      <span>{lang === 'uk' ? `Розблокувати за ${REPAIR_KIT_UNLOCK_DIAMONDS} 💎` : `Разблокировать за ${REPAIR_KIT_UNLOCK_DIAMONDS} 💎`}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => buyRepairKit('focaccia')}
+                      disabled={state.focaccia < REPAIR_KIT_UNLOCK_FOCACCIA}
+                      className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed text-stone-950 font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-orange-500/20 flex items-center justify-center gap-2"
+                    >
+                      <span>🫓</span>
+                      <span>{lang === 'uk' ? `Розблокувати за ${formatNum(REPAIR_KIT_UNLOCK_FOCACCIA)} 🫓` : `Разблокировать за ${formatNum(REPAIR_KIT_UNLOCK_FOCACCIA)} 🫓`}</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* UNLOCKED VIEW */
+                <div className="space-y-3.5">
+                  {/* Status & Toggle Card */}
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-b from-orange-950/30 to-stone-900/90 border border-orange-500/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-11 h-11 rounded-xl bg-orange-500/20 border border-orange-400/40 flex items-center justify-center text-2xl shadow">
+                          🧰
+                        </div>
+                        <div>
+                          <div className="text-[10px] text-orange-300 font-bold uppercase tracking-wider">
+                            {lang === 'uk' ? 'Запас ремонтів' : 'Запас ремонтов'}
+                          </div>
+                          <div className="text-xl font-black text-white flex items-center gap-1.5">
+                            <span className={cn((state.repairKit.charges || 0) > 0 ? 'text-emerald-400' : 'text-red-400')}>
+                              {state.repairKit.charges || 0}
+                            </span>
+                            <span className="text-xs text-stone-400 font-medium">
+                              {lang === 'uk' ? 'ремонтів' : 'ремонтов'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Auto Repair Toggle */}
+                      <button
+                        type="button"
+                        onClick={toggleAutoRepair}
+                        className={cn(
+                          'px-3 py-1.5 rounded-xl border font-black text-[11px] transition active:scale-95 cursor-pointer flex items-center gap-1.5 shadow',
+                          state.repairKit.autoRepairEnabled !== false
+                            ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-300'
+                            : 'bg-zinc-800/60 border-zinc-700 text-zinc-400'
+                        )}
+                      >
+                        <span>{state.repairKit.autoRepairEnabled !== false ? '🟢' : '⚪'}</span>
+                        <span>{state.repairKit.autoRepairEnabled !== false ? (lang === 'uk' ? 'Авто: ВКЛ' : 'Авто: ВКЛ') : (lang === 'uk' ? 'Авто: ВИКЛ' : 'Авто: ВЫКЛ')}</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 border-t border-white/10 text-[10px] text-stone-400 font-medium">
+                      <span>{lang === 'uk' ? `Всього полагоджено: ${state.repairKit.totalRepairsDone || 0}` : `Всего починено: ${state.repairKit.totalRepairsDone || 0}`}</span>
+                      <span>1 {lang === 'uk' ? 'ремонт' : 'ремонт'} = 1 {lang === 'uk' ? 'будівля' : 'постройка'}</span>
+                    </div>
+                  </div>
+
+                  {/* Broken building alert if one is broken now */}
+                  {brokenBuilding && (() => {
+                    const b = BUILDINGS.find((x) => x.id === brokenBuilding);
+                    if (!b) return null;
+                    const cost = Math.max(50, Math.floor(b.baseCost * 0.3));
+                    const canAfford = state.focaccia >= cost;
+                    const hasCharge = (state.repairKit?.charges || 0) > 0;
+                    return (
+                      <div className="p-3 rounded-2xl bg-red-950/60 border border-red-500/50 space-y-2 animate-pulse">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs font-black text-red-300">
+                            <span>⚠️</span>
+                            <span>{lang === 'uk' ? `Зламано: ${getBuildingText(b.id, lang).name}` : `Сломано: ${getBuildingText(b.id, lang).name}`}</span>
+                          </div>
+                          <span className="text-xs font-mono font-bold text-red-200">
+                            {formatNum(cost)} 🫓
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => checkAndFixCurrentBroken()}
+                          disabled={!canAfford || !hasCharge}
+                          className="w-full py-2 rounded-xl bg-red-500 hover:bg-red-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs transition active:scale-95 cursor-pointer shadow flex items-center justify-center gap-1.5"
+                        >
+                          <span>⚡</span>
+                          <span>
+                            {!hasCharge
+                              ? (lang === 'uk' ? 'Потрібні ремонти!' : 'Нужны ремонты!')
+                              : !canAfford
+                              ? (lang === 'uk' ? 'Бракує фокач на ремонт' : 'Не хватает фокачч на ремонт')
+                              : (lang === 'uk' ? 'Полагодити негайно (-1 рем.)' : 'Починить немедленно (-1 рем.)')}
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Buy charges store */}
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between text-xs font-black text-white px-1">
+                      <span className="flex items-center gap-1">
+                        <span>🛒</span>
+                        <span>{lang === 'uk' ? 'Купити ремонти' : 'Купить ремонты'}</span>
+                      </span>
+                      <span className="text-[10px] text-orange-300/80 font-medium">
+                        1 {lang === 'uk' ? 'рем' : 'рем'} = 1 {lang === 'uk' ? 'будівля' : 'здание'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {REPAIR_PACKAGES.map((pkg, idx) => (
+                        <div
+                          key={idx}
+                          className="p-2.5 rounded-2xl bg-zinc-900/80 border border-white/10 flex items-center justify-between gap-2 shadow-sm"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg">🔧</span>
+                            <div>
+                              <div className="text-xs font-black text-white flex items-center gap-1.5">
+                                <span>+{pkg.charges} {pkg.charges === 1 ? (lang === 'uk' ? 'ремонт' : 'ремонт') : (lang === 'uk' ? 'ремонтів' : 'ремонтов')}</span>
+                                {pkg.discountBadge && (
+                                  <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold text-[9px] border border-amber-400/30">
+                                    {pkg.discountBadge}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => buyRepairCharges(pkg, 'focaccia')}
+                              disabled={state.focaccia < pkg.costFocaccia}
+                              className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 disabled:opacity-30 disabled:cursor-not-allowed text-amber-200 font-mono font-bold text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
+                            >
+                              🫓 {formatNum(pkg.costFocaccia)}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => buyRepairCharges(pkg, 'diamonds')}
+                              disabled={state.diamonds < pkg.costDiamonds}
+                              className="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 disabled:opacity-30 disabled:cursor-not-allowed text-cyan-200 font-mono font-bold text-[10px] transition active:scale-95 cursor-pointer shadow-sm"
+                            >
+                              💎 {pkg.costDiamonds}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Info notice */}
+                  <div className="p-2.5 rounded-xl bg-black/40 border border-white/5 text-[10px] text-stone-400 leading-relaxed">
+                    💡 {lang === 'uk'
+                      ? 'Під час поломки будівлі ремкомплект автоматично списує 1 ремонт і відповідну вартість лагодження з вашого балансу фокач. Будівля не зупиняє роботу!'
+                      : 'Во время поломки постройки ремкомплект автоматически списывает 1 ремонт и соответствующую стоимость починки с вашего баланса фокачч. Постройка не останавливает работу!'}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+
+
       {/* ===== 👑 ADMIN & DISTRIBUTION MODAL ===== */}
       {showAdminModal && isDevUser(tgUser?.id) && (
         <div className="fixed inset-0 z-[95] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
@@ -6740,59 +7355,121 @@ export default function App() {
         </div>
       )}
 
-      {/* ===== 🎁 CASE UNBOXING ROULETTE OVERLAY ===== */}
+      {/* ===== 🎁 CASE UNBOXING ROULETTE OVERLAY (UPGRADED LUXURY UI) ===== */}
       {activeCase && (
-        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl flex flex-col items-center overflow-y-auto p-4 select-none safe-bottom animate-fade-in custom-scrollbar">
-          {/* Top Close button so player is never trapped */}
-          <button
-            type="button"
-            onClick={() => {
-              if (isOpeningCase) return;
-              setActiveCase(null);
-              setCaseWonResult(null);
-            }}
-            disabled={isOpeningCase}
-            className="absolute top-3 right-3 z-40 w-9 h-9 rounded-full bg-stone-900/90 hover:bg-stone-800 text-white/70 hover:text-white flex items-center justify-center text-base font-bold border border-white/10 transition cursor-pointer disabled:opacity-20 disabled:cursor-not-allowed"
-          >
-            ✕
-          </button>
+        <div className="fixed inset-0 z-[100] bg-gradient-to-b from-[#0c0906] via-[#140e0b] to-[#080706] backdrop-blur-2xl flex flex-col items-center overflow-y-auto p-3 sm:p-4 select-none safe-bottom animate-fade-in custom-scrollbar">
+          {/* Ambient Lighting based on active case tier */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            <div
+              className="absolute -top-32 left-1/2 -translate-x-1/2 w-[550px] h-[420px] rounded-full blur-[110px] opacity-45 pointer-events-none animate-pulse"
+              style={{
+                background:
+                  activeCase.id === 'case_celestial'
+                    ? 'radial-gradient(circle, rgba(168,85,247,0.7) 0%, rgba(59,130,246,0.3) 50%, transparent 70%)'
+                    : activeCase.id === 'case_diamond'
+                    ? 'radial-gradient(circle, rgba(6,182,212,0.7) 0%, rgba(37,99,235,0.3) 50%, transparent 70%)'
+                    : activeCase.id === 'case_empire'
+                    ? 'radial-gradient(circle, rgba(234,179,8,0.7) 0%, rgba(249,115,22,0.3) 50%, transparent 70%)'
+                    : 'radial-gradient(circle, rgba(245,158,11,0.6) 0%, rgba(180,83,9,0.3) 50%, transparent 70%)',
+              }}
+            />
+          </div>
 
-          <div className="w-full max-w-sm sm:max-w-md flex flex-col items-center space-y-3.5 my-auto py-4">
-            {/* Header */}
-            <div className="text-center space-y-1">
-              <div className="flex items-center justify-center gap-2">
-                <span className="text-3xl">{activeCase.icon}</span>
-                <h3 className="text-lg font-black text-white">
+          {/* Top Bar with Case info and Close Button */}
+          <div className="w-full max-w-sm sm:max-w-md flex items-center justify-between z-30 pt-1 pb-1">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-1 rounded-xl bg-white/10 border border-white/15 text-[11px] font-black text-amber-300 backdrop-blur-md shadow">
+                {activeCase.badge}
+              </span>
+              <span className="px-2.5 py-1 rounded-xl bg-black/40 border border-white/10 text-[11px] font-bold text-white/80 font-mono">
+                {activeCase.priceType === 'diamonds' ? `${activeCase.price} 💎` : `${formatNum(activeCase.price)} 🫓`}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (isOpeningCase) return;
+                setActiveCase(null);
+                setCaseWonResult(null);
+              }}
+              disabled={isOpeningCase}
+              className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 active:scale-95 text-white/70 hover:text-white flex items-center justify-center text-base font-bold border border-white/15 transition cursor-pointer disabled:opacity-20 disabled:cursor-not-allowed shadow-lg"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="w-full max-w-sm sm:max-w-md flex flex-col items-center space-y-3 my-auto py-2 z-20">
+            {/* Case Showcase Header */}
+            <div className="text-center flex flex-col items-center space-y-2">
+              {/* Floating Pedestal Icon */}
+              <div className="relative group">
+                <div
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl border-2 flex items-center justify-center text-3xl sm:text-4xl shadow-2xl relative overflow-hidden transition-transform duration-300 group-hover:scale-105"
+                  style={{
+                    borderColor: '#f59e0b',
+                    boxShadow: `0 0 35px ${activeCase.glow}`,
+                    background: 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(0,0,0,0.6) 100%)',
+                  }}
+                >
+                  <span className="animate-bounce" style={{ animationDuration: '2.5s' }}>
+                    {activeCase.icon}
+                  </span>
+                  <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl">
+                    <span className="vip-sheen-gold" />
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xl sm:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-300 drop-shadow-[0_2px_12px_rgba(245,158,11,0.4)]">
                   {lang === 'uk' ? activeCase.name : activeCase.nameRu}
                 </h3>
+                <p className="text-xs text-amber-200/70 font-medium max-w-xs mx-auto line-clamp-1 mt-0.5">
+                  {lang === 'uk' ? activeCase.desc : activeCase.descRu}
+                </p>
               </div>
-              <p className="text-xs text-amber-300/80 font-medium">
-                {isOpeningCase
-                  ? (lang === 'uk' ? '🎰 Крутимо рулетку…' : '🎰 Крутим рулетку…')
-                  : caseWonResult
-                  ? (lang === 'uk' ? '✨ Вітаємо з отриманням! ✨' : '✨ Поздравляем с получением! ✨')
-                  : (lang === 'uk' ? 'Приготуйтеся до відкриття' : 'Приготовьтесь к открытию')}
-              </p>
+
+              {/* Status indicator */}
+              <div className="flex items-center gap-2">
+                {isOpeningCase ? (
+                  <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 text-xs font-black animate-pulse shadow">
+                    <span className="animate-spin">🎰</span>
+                    <span>{lang === 'uk' ? 'Крутимо рулетку…' : 'Крутим рулетку…'}</span>
+                  </div>
+                ) : caseWonResult ? (
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 text-xs font-black shadow">
+                    <span>✨</span>
+                    <span>{lang === 'uk' ? 'Вітаємо з отриманням!' : 'Поздравляем с получением!'}</span>
+                    <span>✨</span>
+                  </div>
+                ) : (
+                  <div className="text-xs text-amber-300/70 font-medium">
+                    {lang === 'uk' ? 'Запуск обертання…' : 'Запуск вращения…'}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Roulette Track Viewport */}
-            <div className="relative w-full h-36 sm:h-40 bg-stone-950 border-2 border-amber-500/60 rounded-3xl shadow-[0_0_40px_rgba(245,158,11,0.25),inset_0_0_30px_rgba(0,0,0,0.9)] overflow-hidden flex items-center">
+            <div className="relative w-full h-40 sm:h-44 bg-[#080706] border-2 border-amber-400/80 rounded-3xl shadow-[0_0_50px_rgba(245,158,11,0.25),inset_0_0_35px_rgba(0,0,0,0.95)] overflow-hidden flex items-center">
               {/* Top pointer */}
               <div className="absolute top-0 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none">
-                <div className="w-0 h-0 border-l-[9px] border-l-transparent border-r-[9px] border-r-transparent border-t-[16px] border-t-amber-400 filter drop-shadow-[0_0_8px_#f59e0b]" />
+                <div className="w-0 h-0 border-l-[11px] border-l-transparent border-r-[11px] border-r-transparent border-t-[18px] border-t-amber-400 filter drop-shadow-[0_0_10px_#fbbf24]" />
               </div>
               {/* Bottom pointer */}
               <div className="absolute bottom-0 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center pointer-events-none">
-                <div className="w-0 h-0 border-l-[9px] border-l-transparent border-r-[9px] border-r-transparent border-b-[16px] border-b-amber-400 filter drop-shadow-[0_0_8px_#f59e0b]" />
+                <div className="w-0 h-0 border-l-[11px] border-l-transparent border-r-[11px] border-r-transparent border-b-[18px] border-b-amber-400 filter drop-shadow-[0_0_10px_#fbbf24]" />
               </div>
-              {/* Center vertical beam line */}
-              <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-gradient-to-b from-amber-400 via-yellow-300 to-amber-400 shadow-[0_0_12px_#f59e0b] z-20 pointer-events-none" />
+              {/* Center vertical neon laser beam line */}
+              <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-gradient-to-b from-amber-300 via-yellow-200 to-amber-300 shadow-[0_0_16px_#f59e0b] z-20 pointer-events-none opacity-90" />
 
-              {/* Edge gradients */}
-              <div className="absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-stone-950 via-stone-950/80 to-transparent z-20 pointer-events-none" />
-              <div className="absolute inset-y-0 right-0 w-16 bg-gradient-to-l from-stone-950 via-stone-950/80 to-transparent z-20 pointer-events-none" />
+              {/* Edge Vignette Gradients */}
+              <div className="absolute inset-y-0 left-0 w-20 sm:w-24 bg-gradient-to-r from-[#080706] via-[#080706]/90 to-transparent z-20 pointer-events-none" />
+              <div className="absolute inset-y-0 right-0 w-20 sm:w-24 bg-gradient-to-l from-[#080706] via-[#080706]/90 to-transparent z-20 pointer-events-none" />
 
-              {/* Scrolling Cards Reel (Starts at left-1/2, center aligned on card 32) */}
+              {/* Scrolling Cards Reel */}
               <div
                 className="absolute top-0 bottom-0 left-1/2 flex items-center gap-[10px] will-change-transform"
                 style={{
@@ -6807,19 +7484,21 @@ export default function App() {
                     <div
                       key={idx}
                       className={cn(
-                        'w-[110px] h-[126px] sm:h-[132px] shrink-0 rounded-2xl border-2 flex flex-col items-center justify-between p-2 bg-gradient-to-b shadow-md relative overflow-hidden transition-all duration-300',
+                        'w-[116px] h-[134px] sm:h-[142px] shrink-0 rounded-2xl border-2 flex flex-col items-center justify-between p-2 shadow-lg relative overflow-hidden transition-all duration-300 bg-gradient-to-b',
                         r.border, sk.colorGrad,
-                        isWinningTarget && 'ring-4 ring-amber-400 scale-105 shadow-[0_0_25px_#f59e0b] z-10'
+                        isWinningTarget
+                          ? 'ring-4 ring-yellow-400 scale-105 shadow-[0_0_35px_rgba(250,204,21,0.9)] z-10'
+                          : 'opacity-95'
                       )}
-                      style={{ boxShadow: `0 0 15px ${sk.glowColor}` }}
+                      style={{ boxShadow: isWinningTarget ? undefined : `0 0 16px ${sk.glowColor}` }}
                     >
-                      <span className={cn('px-1.5 py-0.2 rounded text-[8px] font-black border', r.color, r.border)}>
+                      <span className={cn('px-2 py-0.2 rounded-full text-[8px] font-black tracking-wide uppercase border shadow-sm', r.color, r.border)}>
                         {sk.badge}
                       </span>
-                      <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-xl overflow-hidden border border-white/20 shadow my-0.5 bg-black/40">
-                        <img src={sk.img} alt="" className="w-full h-full object-cover" />
+                      <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl overflow-hidden border border-white/20 shadow-md my-0.5 bg-black/60 flex items-center justify-center p-1">
+                        <img src={sk.img} alt="" className="w-full h-full object-contain filter drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)]" />
                       </div>
-                      <div className="text-[10px] font-black text-white text-center truncate w-full">
+                      <div className="text-[10px] font-black text-white text-center truncate w-full tracking-tight">
                         {lang === 'uk' ? sk.name : sk.nameRu}
                       </div>
                     </div>
@@ -6828,49 +7507,76 @@ export default function App() {
               </div>
             </div>
 
+            {/* Skip animation button */}
+            {isOpeningCase && (
+              <button
+                type="button"
+                onClick={skipCaseAnimation}
+                className="px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/50 text-amber-200 font-black text-xs transition active:scale-95 cursor-pointer shadow-lg shadow-amber-500/10 flex items-center gap-1.5 animate-pulse"
+              >
+                <span>⚡</span>
+                <span>{lang === 'uk' ? 'Пропустити анімацію' : 'Пропустить анимацию'}</span>
+              </button>
+            )}
+
             {/* Victory Result Card */}
             {caseWonResult && !isOpeningCase && (
-              <div className="w-full flex flex-col items-center space-y-3 animate-bounce-short">
+              <div className="w-full flex flex-col items-center space-y-3 animate-fade-in">
                 <div
                   className={cn(
-                    'p-3.5 rounded-3xl border-2 flex flex-col items-center relative overflow-hidden w-full bg-gradient-to-b text-center',
+                    'p-4 rounded-3xl border-2 flex flex-col items-center relative overflow-hidden w-full bg-gradient-to-b text-center shadow-2xl',
                     caseWonResult.skin.colorGrad, caseWonResult.skin.borderColor
                   )}
-                  style={{ boxShadow: `0 0 45px ${caseWonResult.skin.glowColor}` }}
+                  style={{ boxShadow: `0 0 50px ${caseWonResult.skin.glowColor}` }}
                 >
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <span className={cn('px-2.5 py-0.5 rounded-full text-[10px] font-black border', RARITY_LABELS[caseWonResult.skin.rarity].color, RARITY_LABELS[caseWonResult.skin.rarity].border)}>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className={cn('px-3 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider', RARITY_LABELS[caseWonResult.skin.rarity].color, RARITY_LABELS[caseWonResult.skin.rarity].border)}>
                       {caseWonResult.skin.badge}
                     </span>
                     {caseWonResult.isNew ? (
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-black text-[10px] border border-emerald-400/40">
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-black text-[10px] border border-emerald-400/40">
                         🎉 {lang === 'uk' ? 'НОВИЙ!' : 'НОВЫЙ!'}
                       </span>
                     ) : (
-                      <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-black text-[10px] border border-amber-400/40">
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-black text-[10px] border border-amber-400/40">
                         ⭐ Lv.{caseWonResult.newLevel}
                       </span>
                     )}
                   </div>
 
-                  <div className="w-20 h-20 rounded-2xl overflow-hidden border-2 border-white/40 shadow-2xl my-1 bg-black/50">
-                    <img src={caseWonResult.skin.img} alt="" className="w-full h-full object-cover" />
+                  <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-white/30 shadow-2xl my-1 bg-black/60 flex items-center justify-center p-2">
+                    <img src={caseWonResult.skin.img} alt="" className="w-full h-full object-contain filter drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)]" />
                   </div>
 
-                  <div className="text-base font-black text-white mt-0.5">
+                  <div className="text-lg font-black text-white mt-1">
                     {lang === 'uk' ? caseWonResult.skin.name : caseWonResult.skin.nameRu}
                   </div>
 
-                  <div className="text-xs text-amber-200/90 font-medium px-2">
+                  <div className="text-xs text-amber-200/90 font-medium px-2 mt-0.5">
                     {lang === 'uk' ? caseWonResult.skin.bonusDesc : caseWonResult.skin.bonusDescRu}
                   </div>
 
+                  {/* Stat boost summary */}
+                  <div className="flex items-center justify-center gap-3 pt-2 text-[10px] font-bold text-white/90">
+                    <span className="px-2 py-0.5 rounded-lg bg-black/40 border border-white/10 text-amber-300">
+                      ⚡ x{caseWonResult.skin.clickMult} {lang === 'uk' ? 'Клік' : 'Клик'}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-lg bg-black/40 border border-white/10 text-emerald-300">
+                      📈 x{caseWonResult.skin.cpsMult} CPS
+                    </span>
+                    {caseWonResult.skin.critChance > 0 && (
+                      <span className="px-2 py-0.5 rounded-lg bg-black/40 border border-white/10 text-red-300">
+                        💥 +{Math.round(caseWonResult.skin.critChance * 100)}% {lang === 'uk' ? 'Крит' : 'Крит'}
+                      </span>
+                    )}
+                  </div>
+
                   {caseWonResult.isNew ? (
-                    <div className="text-[10px] text-emerald-300 font-bold bg-emerald-950/60 px-2.5 py-1 rounded-xl border border-emerald-500/30 mt-1.5">
+                    <div className="text-[10px] text-emerald-300 font-bold bg-emerald-950/60 px-3 py-1 rounded-xl border border-emerald-500/30 mt-2">
                       {lang === 'uk' ? '✓ Скін додано до вашої колекції!' : '✓ Скин добавлен в вашу коллекцию!'}
                     </div>
                   ) : (
-                    <div className="text-[10px] text-amber-300 font-bold bg-amber-950/60 px-2.5 py-1 rounded-xl border border-amber-500/30 mt-1.5">
+                    <div className="text-[10px] text-amber-300 font-bold bg-amber-950/60 px-3 py-1 rounded-xl border border-amber-500/30 mt-2">
                       {lang === 'uk' ? `⭐ Дублікат! Рівень підвищено до ★ Lv.${caseWonResult.newLevel} (+15% до всіх характеристик)` : `⭐ Дубликат! Уровень повышен до ★ Lv.${caseWonResult.newLevel} (+15% ко всем характеристикам)`}
                     </div>
                   )}
@@ -6885,9 +7591,10 @@ export default function App() {
                       setActiveCase(null);
                       setCaseWonResult(null);
                     }}
-                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:brightness-110 text-stone-950 font-black text-sm shadow-xl shadow-amber-500/30 transition active:scale-95 cursor-pointer"
+                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 hover:brightness-110 text-stone-950 font-black text-sm shadow-xl shadow-amber-500/30 transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    {lang === 'uk' ? 'Вдягти зараз ✨' : 'Надеть сейчас ✨'}
+                    <span>✨</span>
+                    <span>{lang === 'uk' ? 'Вдягти зараз' : 'Надеть сейчас'}</span>
                   </button>
                   <div className="grid grid-cols-2 gap-2">
                     {caseWonResult.skin.id !== 'skin_classic' ? (
@@ -6913,9 +7620,10 @@ export default function App() {
                       onClick={() => {
                         if (activeCase) handleOpenCase(activeCase);
                       }}
-                      className="py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 hover:brightness-110 text-white font-black text-xs border border-amber-400/40 transition active:scale-95 cursor-pointer"
+                      className="py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 hover:brightness-110 text-white font-black text-xs border border-amber-400/40 transition active:scale-95 cursor-pointer flex items-center justify-center gap-1"
                     >
-                      {lang === 'uk' ? '🎁 Відкрити ще' : '🎁 Открыть ещё'}
+                      <span>🎁</span>
+                      <span>{lang === 'uk' ? 'Відкрити ще' : 'Открыть ещё'}</span>
                     </button>
                   </div>
                   <button
@@ -6928,6 +7636,54 @@ export default function App() {
                   >
                     {lang === 'uk' ? 'Закрити' : 'Закрыть'}
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* Possible Loot Preview (visible before/during spin, or when not viewing victory card) */}
+            {(!caseWonResult || isOpeningCase) && (
+              <div className="w-full bg-[#120e0b]/90 border border-white/10 rounded-2xl p-3 shadow-xl flex flex-col space-y-2 backdrop-blur-md">
+                <div className="flex items-center justify-between text-[11px] font-black text-white/90">
+                  <span className="flex items-center gap-1.5">
+                    <span>📦</span>
+                    <span>{lang === 'uk' ? 'Можливий лут цієї скрині:' : 'Возможный лут этого сундука:'}</span>
+                  </span>
+                  <span className="text-[10px] text-amber-400/70 font-mono">
+                    {activeCase.drops.length} {lang === 'uk' ? 'варіантів' : 'вариантов'}
+                  </span>
+                </div>
+
+                {/* Drops mini cards */}
+                <div className="grid grid-cols-5 gap-1.5">
+                  {(() => {
+                    const totalW = activeCase.drops.reduce((sum, d) => sum + d.weight, 0);
+                    return activeCase.drops.map((d, i) => {
+                      const sk = SKINS[d.skinId];
+                      if (!sk) return null;
+                      const r = RARITY_LABELS[sk.rarity];
+                      const pct = Math.round((d.weight / totalW) * 100);
+                      return (
+                        <div
+                          key={i}
+                          className={cn(
+                            'p-1.5 rounded-xl border flex flex-col items-center text-center bg-black/50 relative group overflow-hidden transition hover:scale-105',
+                            r.border
+                          )}
+                          title={`${lang === 'uk' ? sk.name : sk.nameRu} (${pct}%)`}
+                        >
+                          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg overflow-hidden bg-black/60 border border-white/10 p-0.5 mb-1 flex items-center justify-center">
+                            <img src={sk.img} alt="" className="w-full h-full object-contain" />
+                          </div>
+                          <span className="text-[8px] font-black text-white truncate w-full leading-none">
+                            {lang === 'uk' ? sk.name : sk.nameRu}
+                          </span>
+                          <span className="text-[8px] font-mono text-amber-300/80 font-bold mt-0.5">
+                            {pct}%
+                          </span>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             )}
