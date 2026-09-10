@@ -251,6 +251,31 @@ const haptic = {
   selection: () => tg?.HapticFeedback?.selectionChanged(),
 };
 
+/* ---- Офлайн черга подій античиту ---- */
+interface OfflineAcEvent {
+  event: 'flag' | 'fail' | 'clear';
+  reason?: string;
+  ts: number;
+  debug?: unknown;
+}
+function getOfflineAcEvents(): OfflineAcEvent[] {
+  try {
+    const raw = window.localStorage.getItem('focaccia_ac_offline_events');
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+function queueOfflineAcEvent(ev: OfflineAcEvent) {
+  try {
+    const list = getOfflineAcEvents();
+    list.push(ev);
+    if (list.length > 50) list.splice(0, list.length - 50);
+    window.localStorage.setItem('focaccia_ac_offline_events', JSON.stringify(list));
+  } catch { /* ignore */ }
+}
+function clearOfflineAcEvents() {
+  try { window.localStorage.removeItem('focaccia_ac_offline_events'); } catch { /* ignore */ }
+}
+
 /* ---- Types ---- */
 interface SaveState {
   focaccia: number;
@@ -713,6 +738,9 @@ export default function App() {
   const extremeSpeedBoost = useRef(0); // імпульс за 22+/с, забувається ×0.75
   const suspicionCooldownUntil = useRef(0); // після пройденого challenge
   const syntheticTaps = useRef<number[]>([]); // ts скриптових подій (isTrusted=false)
+  const lastClickTimeRef = useRef(0); // час останнього кліку для фізичного CPS-лімітера
+  const rapidViolationsRef = useRef(0); // лічильник надшвидких кліків (<50мс)
+  const offlineClicksCountRef = useRef(0); // лічильник кліків без інтернету
   const [karmaInfo, setKarmaInfo] = useState(false); // меню «що це?» біля спідометра
   const [lang, setLang] = useState<Lang>('uk'); // мова інтерфейсу
   const langRef = useRef<Lang>('uk');
@@ -755,6 +783,7 @@ export default function App() {
     if (!tgUser?.id) return Promise.resolve(null);
     const cur = stateRef.current;
     const fullName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ') || (langRef.current === 'uk' ? 'Гравець' : 'Игрок');
+    const offEvents = getOfflineAcEvents();
     return fetch(`${API_BASE}/api/leaderboard`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -773,12 +802,18 @@ export default function App() {
         frame: cur.cosmetics?.equippedFrame || 'frame_default',
         color: cur.cosmetics?.equippedNameColor || 'name_default',
         avatar: tgUser.photo_url || (tgUser.username ? `https://t.me/i/userpic/320/${tgUser.username}.jpg` : ''),
+        clientKarma: cur.karma ?? karma,
+        offlineEvents: offEvents.length > 0 ? offEvents : undefined,
       }),
     })
       .then((r) => r.json())
       .then((data) => {
-        if (typeof data?.karma === 'number') setKarma(data.karma);
+        if (typeof data?.karma === 'number') {
+          setKarma(data.karma);
+          setState((p) => ({ ...p, karma: data.karma }));
+        }
         if (data?.rank) setMyRank(data.rank);
+        clearOfflineAcEvents();
         return data;
       })
       .catch(() => null);
@@ -1470,6 +1505,15 @@ export default function App() {
     const curT = TRANSLATIONS[langRef.current];
     addToast(curT.toastBotDetect, curT.toastBotDetectDesc, '👵');
     haptic.error();
+
+    // Локальне миттєве зниження карми на 15 — захист від офлайн-накрутки!
+    const curK = stateRef.current.karma ?? karma;
+    const nextK = Math.max(0, curK - 15);
+    setKarma(nextK);
+    setState((p) => ({ ...p, karma: nextK }));
+    saveNow({ ...stateRef.current, karma: nextK });
+    queueOfflineAcEvent({ event: 'flag', ts: Date.now(), debug: debugSnap });
+
     const uid = tgUser?.id || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id);
     if (uid) {
       fetch(`${API_BASE}/api/leaderboard`, {
@@ -1479,7 +1523,11 @@ export default function App() {
       })
         .then((r) => r.json())
         .then((data) => {
-          if (typeof data?.karma === 'number') setKarma(data.karma);
+          if (typeof data?.karma === 'number') {
+            setKarma(data.karma);
+            setState((p) => ({ ...p, karma: data.karma }));
+            saveNow({ ...stateRef.current, karma: data.karma });
+          }
           challengeOpening.current = false;
         })
         .catch(() => { challengeOpening.current = false; });
@@ -1968,12 +2016,23 @@ export default function App() {
     return () => clearInterval(iv);
   }, [challengeActive]);
 
-  // Challenge провалено → карма −5 на сервері + cooldown 45с (не можна спамити спробами)
+  // Challenge провалено → карма −25 локально і на сервері
   useEffect(() => {
     if (challenge?.result !== 'fail') return;
     suspicion.current = Math.max(0, suspicion.current * 0.50);
     recentEvidence.current = [];
-    suspicionCooldownUntil.current = Date.now() + 45 * 1000;
+
+    // Миттєве локальне зниження карми на 25
+    const curK = stateRef.current.karma ?? karma;
+    const nextK = Math.max(0, curK - 25);
+    setKarma(nextK);
+    setState((p) => ({ ...p, karma: nextK }));
+    saveNow({ ...stateRef.current, karma: nextK });
+    queueOfflineAcEvent({ event: 'fail', ts: Date.now() });
+
+    // Якщо карма погана (<50), даємо лише 5 секунд до наступної перевірки, щоб не можна було клікати далі
+    suspicionCooldownUntil.current = Date.now() + (nextK < 50 ? 5000 : 30000);
+
     const uid = tgUser?.id || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id);
     if (uid) {
       fetch(`${API_BASE}/api/leaderboard`, {
@@ -1982,7 +2041,13 @@ export default function App() {
         body: JSON.stringify({ userId: uid, event: 'fail' }),
       })
         .then((r) => r.json())
-        .then((data) => { if (typeof data?.karma === 'number') setKarma(data.karma); })
+        .then((data) => {
+          if (typeof data?.karma === 'number') {
+            setKarma(data.karma);
+            setState((p) => ({ ...p, karma: data.karma }));
+            saveNow({ ...stateRef.current, karma: data.karma });
+          }
+        })
         .catch(() => {});
     }
     const curT = TRANSLATIONS[langRef.current];
@@ -2011,6 +2076,14 @@ export default function App() {
         suspicion.current *= 0.25;
         recentEvidence.current = [];
         suspicionCooldownUntil.current = Date.now() + 60 * 1000;
+        // Відновлюємо трохи карми (+10) за чесне проходження випробування
+        const curK = stateRef.current.karma ?? karma;
+        const restoredK = Math.min(100, curK + 10);
+        setKarma(restoredK);
+        setState((p) => ({ ...p, karma: restoredK }));
+        saveNow({ ...stateRef.current, karma: restoredK });
+        queueOfflineAcEvent({ event: 'clear', ts: Date.now() });
+
         setChallenge((c) => (c ? { ...c, result: 'win' } : c));
         const curT = TRANSLATIONS[langRef.current];
         addToast(curT.toastChallengeSuccess, curT.toastChallengeSuccessDesc, '🫓');
@@ -2261,17 +2334,58 @@ export default function App() {
 
   /* ---- Actions ---- */
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // 1. Блокування кліків під час активного випробування «Бабуся не вірить»
+    if (challenge !== null) {
+      return;
+    }
+
+    // 2. Блокування скриптових штучних подій
     if (!e.nativeEvent.isTrusted) {
-      // Скриптовые клики не вознаграждаются и копят сигнал B (через поведение)
       syntheticTaps.current.push(Date.now());
       if (syntheticTaps.current.length > 40) syntheticTaps.current.shift();
       return;
     }
+
+    // 3. Фізичний CPS-лімітер та виявлення автоклікера:
+    // Жодна людина не може робити стабільні кліки швидше 50мс (>20 CPS).
+    const now = Date.now();
+    const clickInterval = now - lastClickTimeRef.current;
+    lastClickTimeRef.current = now;
+
+    if (clickInterval < 50) {
+      rapidViolationsRef.current += 1;
+      // При 5 надшвидких кліках підряд — негайно призначаємо страйк і відкриваємо челендж!
+      if (rapidViolationsRef.current >= 5) {
+        rapidViolationsRef.current = 0;
+        const curK = stateRef.current.karma ?? karma;
+        const nextK = Math.max(0, Math.min(curK - 25, 20)); // відразу зона «Тінь бабусі»
+        setKarma(nextK);
+        setState((p) => ({ ...p, karma: nextK }));
+        saveNow({ ...stateRef.current, karma: nextK });
+        queueOfflineAcEvent({ event: 'flag', reason: 'cps_spike_auto_clicker', ts: now });
+        triggerChallenge({ reason: 'rapid_cps_spike', interval: clickInterval });
+      }
+      return; // Клік відкидається і не додає фокач!
+    } else {
+      if (rapidViolationsRef.current > 0) rapidViolationsRef.current = Math.max(0, rapidViolationsRef.current - 1);
+    }
+
+    // 4. Захист від офлайн-фарму великої кількості кліків:
+    // Якщо інтернет вимкнено, після кожних 800 кліків гравець зобов'язаний підтвердити, що він людина
+    if (!navigator.onLine) {
+      offlineClicksCountRef.current += 1;
+      if (offlineClicksCountRef.current >= 800) {
+        offlineClicksCountRef.current = 0;
+        triggerChallenge({ reason: 'offline_volume_check' });
+      }
+    } else {
+      offlineClicksCountRef.current = 0;
+    }
+
     if (state.energy <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
-    const now = Date.now();
     const burning = karma < 25; // «фокачі пригорають» — Тінь бабусі
     const hasComboUp = stateRef.current.vipUpgrades?.includes('vip_combo');
     const comboDelay = hasComboUp ? 2200 : 1200;
