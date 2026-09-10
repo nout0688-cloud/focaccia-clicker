@@ -244,7 +244,10 @@ const storage = {
 const haptic = {
   light: () => tg?.HapticFeedback?.impactOccurred('light'),
   medium: () => tg?.HapticFeedback?.impactOccurred('medium'),
-  heavy: () => tg?.HapticFeedback?.impactOccurred('heavy'),
+  heavy: () => {
+    try { tg?.HapticFeedback?.impactOccurred('heavy'); } catch {}
+    try { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(85); } catch {}
+  },
   success: () => tg?.HapticFeedback?.notificationOccurred('success'),
   warning: () => tg?.HapticFeedback?.notificationOccurred('warning'),
   error: () => tg?.HapticFeedback?.notificationOccurred('error'),
@@ -702,6 +705,9 @@ export default function App() {
   const [isAdminDistributing, setIsAdminDistributing] = useState(false);
   const [isMaintenance, setIsMaintenance] = useState(false);
   const [isTogglingMaintenance, setIsTogglingMaintenance] = useState(false);
+  const [maintenanceCountdown, setMaintenanceCountdown] = useState<number | null>(null);
+  const [hasMaintenanceKicked, setHasMaintenanceKicked] = useState(false);
+  const isInitialCheckDone = useRef(false);
   const [adminResetSkinTarget, setAdminResetSkinTarget] = useState('');
 
   // ===== 🐱 BAKERY CAT STATE =====
@@ -831,9 +837,16 @@ export default function App() {
       .then((data) => {
         if (typeof data?.maintenance === 'boolean') {
           setIsMaintenance(data.maintenance);
+          if (data.maintenance && !isDevUser(tgUser?.id)) {
+            // Гравець відкрив гру вже під час діючої техперерви — відразу показуємо екран перерви
+            setHasMaintenanceKicked(true);
+          }
         }
+        isInitialCheckDone.current = true;
       })
-      .catch(() => {});
+      .catch(() => {
+        isInitialCheckDone.current = true;
+      });
 
     loadState().then((s) => {
       const maxHours = s.vipUpgrades?.includes('vip_offline') ? 12 : 8;
@@ -873,7 +886,13 @@ export default function App() {
           .then((r) => r.json())
           .then((data) => {
             if (typeof data?.maintenance === 'boolean') {
-              setIsMaintenance(data.maintenance);
+              const isM = data.maintenance;
+              setIsMaintenance(isM);
+              if (isM && !hasMaintenanceKicked && maintenanceCountdown === null) {
+                saveNow();
+                reportSync();
+                setMaintenanceCountdown(10);
+              }
             }
             if (!uid) return;
             if (typeof data?.karma === 'number') setKarma(data.karma);
@@ -1205,6 +1224,80 @@ export default function App() {
     setMilestone({ text, id });
     setTimeout(() => setMilestone((m) => (m && m.id === id ? null : m)), 950);
   }, []);
+
+/* ---- Відлік до викидання з гри при раптовій техперерві (з сильною вібрацією кожну секунду) ---- */
+  useEffect(() => {
+    if (maintenanceCountdown === null) return;
+
+    // Сильна вібрація на кожній секунді відліку!
+    haptic.heavy();
+
+    if (maintenanceCountdown <= 0) {
+      setMaintenanceCountdown(null);
+      saveNow();
+      reportSync();
+      if (isDevUser(tgUser?.id)) {
+        addToast(
+          langRef.current === 'uk' ? '✅ Тест завершено!' : '✅ Тест завершён!',
+          langRef.current === 'uk'
+            ? 'Таймер 10с та вібрація відпрацювали. Ви розробник, тому доступ відкритий.'
+            : 'Таймер 10с и вибрация отработали. Вы разработчик, поэтому доступ открыт.',
+          '🛠️'
+        );
+      } else {
+        setHasMaintenanceKicked(true);
+      }
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setMaintenanceCountdown((prev) => (prev !== null ? prev - 1 : null));
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [maintenanceCountdown, tgUser?.id, saveNow, reportSync, addToast]);
+
+  /* ---- Моніторинг техперерви кожні 5 секунд під час активної гри ---- */
+  useEffect(() => {
+    if (loading) return;
+
+    const checkMaint = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/reward?action=get_maintenance`);
+        const data = await res.json();
+        if (typeof data?.maintenance === 'boolean') {
+          const isM = data.maintenance;
+          if (isM) {
+            setIsMaintenance(true);
+            // Якщо людина грала під час увімкнення техперерви — вмикаємо таймер у кутку екрана
+            if (!hasMaintenanceKicked && maintenanceCountdown === null) {
+              saveNow();
+              reportSync();
+              setMaintenanceCountdown(10);
+            }
+          } else {
+            setIsMaintenance(false);
+            if (maintenanceCountdown !== null) {
+              setMaintenanceCountdown(null);
+              addToast(
+                langRef.current === 'uk' ? '🟢 Технічну перерву завершено!' : '🟢 Техперерыв завершён!',
+                langRef.current === 'uk' ? 'Гру відновлено, приємної гри!' : 'Игра восстановлена, приятной игры!',
+                '🟢'
+              );
+            }
+            if (hasMaintenanceKicked) {
+              setHasMaintenanceKicked(false);
+            }
+          }
+        }
+      } catch {
+        /* ігноруємо помилки зв'язку */
+      }
+    };
+
+    const iv = setInterval(checkMaint, 5000);
+    return () => clearInterval(iv);
+  }, [loading, hasMaintenanceKicked, maintenanceCountdown, saveNow, reportSync, addToast]);
 
   /* ---- TapSentinel v5.1 — Behavioral Anti-Cheat: R/C/B evidence ---- */
   // Кольцевой буфер сырых тапов — без shift на каждый тап
@@ -4514,8 +4607,8 @@ export default function App() {
     );
   }
 
-  /* ---- Maintenance Mode (Blocked for non-dev users) ---- */
-  if (isMaintenance && !isDevUser(tgUser?.id)) {
+  /* ---- Maintenance Mode (Blocked for non-dev users коли викинуто або зайшов під час техперерви) ---- */
+  if (isMaintenance && !isDevUser(tgUser?.id) && (hasMaintenanceKicked || (loading && isInitialCheckDone.current))) {
     return (
       <div className="h-screen bg-[#0d0a04] text-amber-50 font-sans select-none overflow-hidden relative flex flex-col items-center justify-center p-6 text-center">
         {/* Ambient Glowing background circles */}
@@ -4782,6 +4875,65 @@ export default function App() {
           {c.emoji}
         </span>
       ))}
+
+      {/* Попередження про технічну перерву: таймер у кутку екрана та віньєтка */}
+      {maintenanceCountdown !== null && (
+        <>
+          {/* Пульсуюча червона віньєтка по краях екрана для привернення уваги */}
+          <div className="pointer-events-none fixed inset-0 z-[9990] shadow-[inset_0_0_90px_rgba(239,68,68,0.55)] ring-4 ring-inset ring-red-500/60 animate-pulse" />
+
+          {/* Гарний віджет у кутку екрана з таймером та вібрацією */}
+          <div
+            className="fixed top-3 right-3 z-[9999] w-72 max-w-[calc(100vw-24px)] rounded-2xl bg-gradient-to-br from-red-950/95 via-[#1c0808]/95 to-black/95 border-2 border-red-500/80 shadow-[0_0_40px_rgba(239,68,68,0.6)] p-3.5 backdrop-blur-xl text-white pointer-events-auto select-none"
+            style={{ animation: 'modal-enter 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
+          >
+            {/* Верхній рядок: статус та сирена */}
+            <div className="flex items-center justify-between gap-2 border-b border-red-500/30 pb-2 mb-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xl animate-bounce drop-shadow-[0_0_10px_rgba(239,68,68,0.9)]">🚨</span>
+                <span className="text-[11px] font-black tracking-wider uppercase text-red-300 truncate">
+                  {lang === 'uk' ? 'Технічна перерва' : 'Техперерыв'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/20 border border-red-500/50 shrink-0">
+                <span className="w-2 h-2 rounded-full bg-red-400 animate-ping" />
+                <span className="text-[9px] font-black text-red-200">LIVE</span>
+              </div>
+            </div>
+
+            {/* Основний блок: текст + секундний лічильник */}
+            <div className="flex items-center justify-between gap-3 my-1">
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-amber-100 leading-snug">
+                  {lang === 'uk' ? 'Вас викине з гри через:' : 'Вас выкинет из игры через:'}
+                </p>
+                <p className="text-[10px] text-emerald-400 font-semibold mt-1 flex items-center gap-1">
+                  <span>💾</span>
+                  <span>{lang === 'uk' ? 'Прогрес збережено' : 'Прогресс сохранён'}</span>
+                </p>
+              </div>
+
+              {/* Цифровий лічильник */}
+              <div className="relative shrink-0 flex flex-col items-center justify-center w-14 h-14 rounded-2xl bg-black/75 border-2 border-red-500/70 shadow-[inset_0_0_15px_rgba(239,68,68,0.5)]">
+                <span className="text-2xl font-black text-white tabular-nums leading-none animate-pulse drop-shadow-[0_0_12px_rgba(239,68,68,1)]">
+                  {maintenanceCountdown}
+                </span>
+                <span className="text-[8px] font-bold text-red-300/80 uppercase mt-0.5">
+                  {lang === 'uk' ? 'сек' : 'сек'}
+                </span>
+              </div>
+            </div>
+
+            {/* Анімована смужка відліку */}
+            <div className="w-full bg-black/60 h-1.5 rounded-full overflow-hidden mt-2 border border-red-500/30">
+              <div
+                className="h-full bg-gradient-to-r from-amber-400 via-rose-500 to-red-600 transition-all duration-1000 ease-linear rounded-full"
+                style={{ width: `${Math.max(0, (maintenanceCountdown / 10) * 100)}%` }}
+              />
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Boss slain explosion */}
       {bossSlain && (
@@ -6566,6 +6718,24 @@ export default function App() {
                         ? (lang === 'uk' ? 'Відкрити гру для всіх' : 'Открыть игру для всех')
                         : (lang === 'uk' ? 'Закрити доступ до гри (Техперерва)' : 'Закрыть доступ к игре (Техперерыв)')}
                   </span>
+                </button>
+
+                {/* Кнопка тестування таймера викидання для адміна */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMaintenanceCountdown(10);
+                    haptic.heavy();
+                    addToast(
+                      lang === 'uk' ? '🚨 Тестовий відлік запущено!' : '🚨 Тестовый отсчет запущен!',
+                      lang === 'uk' ? 'Таймер 10с та сильна вібрація активовані' : 'Таймер 10с и сильная вибрация активированы',
+                      '🚨'
+                    );
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-white/10 hover:bg-white/15 active:scale-98 text-white/90 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer border border-white/10"
+                >
+                  <span>🧪</span>
+                  <span>{lang === 'uk' ? 'Тестувати таймер викидання (10с)' : 'Тестировать таймер выброса (10с)'}</span>
                 </button>
               </div>
 
