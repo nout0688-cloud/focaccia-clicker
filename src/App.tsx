@@ -45,7 +45,6 @@ import {
   type CartItem,
   type JarOrderRecord,
 } from './game/donate';
-import focacciaImg from './assets/focaccia.png';
 import goldenImg from './assets/golden.png';
 import monoGuideImg from './assets/mono-guide.jpg';
 import catImg from './assets/cat.png';
@@ -5034,10 +5033,10 @@ export default function App() {
           {challenge.result === null && (
             <button
               onClick={catchChallengeTarget}
-              className="absolute w-20 h-20 rounded-full overflow-hidden border-4 border-amber-400 shadow-[0_0_40px_rgba(251,191,36,0.6)] animate-bob active:scale-90 transition-transform cursor-pointer"
+              className="absolute w-20 h-20 rounded-full overflow-hidden border-4 border-amber-400 shadow-[0_0_40px_rgba(251,191,36,0.6)] animate-bob active:scale-90 transition-transform cursor-pointer bg-stone-950/80"
               style={{ left: `calc(${challenge.x}% - 40px)`, top: `calc(${challenge.y}% - 40px)` }}
             >
-              <img src={focacciaImg} alt="" className="w-full h-full object-cover pointer-events-none" draggable={false} />
+              <img src={activeSkin.img} alt="" className="w-full h-full object-cover pointer-events-none" draggable={false} />
             </button>
           )}
           {challenge.result === 'pending' && (
@@ -9447,7 +9446,7 @@ export default function App() {
                 onClick={handleClick}
                 className={cn(
                   'relative w-48 h-48 sm:w-56 sm:h-56 rounded-full overflow-hidden cursor-pointer transition-all duration-100 active:scale-95',
-                  'border-[5px] shadow-[0_0_40px_rgba(251,191,36,0.3),inset_0_-4px_12px_rgba(0,0,0,0.2)]',
+                  'border-[5px] shadow-[0_0_40px_rgba(251,191,36,0.3),inset_0_-4px_12px_rgba(0,0,0,0.2)] bg-stone-950/80',
                   squish && 'scale-90',
                   portalWarping && 'animate-portal-warp',
                   frenzy > 0 ? 'border-orange-400 animate-spin-slow shadow-[0_0_60px_rgba(249,115,22,0.5)]' : 'border-amber-400/80',
