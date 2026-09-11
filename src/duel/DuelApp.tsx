@@ -8,6 +8,7 @@ type Snap = {
   ok?: boolean;
   error?: string;
   stage: 'challenge' | 'accepted' | 'countdown' | 'live' | 'paused' | 'finished' | 'cancelled';
+  isOpen?: boolean;
   me?: { id: string; name: string; score: number };
   opp?: { id: string; name: string; score: number; missing?: boolean; u?: string };
   goal?: number;
@@ -22,6 +23,13 @@ type Snap = {
   winner?: string | null;
   reason?: string | null;
   pausedLeft?: number;
+};
+
+type ActivePlayer = {
+  id: string;
+  name: string;
+  username?: string;
+  score?: number;
 };
 
 const fmt = (ms: number) => {
@@ -105,11 +113,46 @@ const storage = {
   },
 };
 
-export default function DuelApp({ duelId }: { duelId: string }) {
+export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   const tg = (window as unknown as { Telegram?: { WebApp?: any } }).Telegram?.WebApp;
   const meId = String(tg?.initDataUnsafe?.user?.id || '');
   const myName = String(tg?.initDataUnsafe?.user?.first_name || 'Гравець');
   const myU = String(tg?.initDataUnsafe?.user?.username || '');
+  const myPhoto = (tg?.initDataUnsafe?.user as { photo_url?: string } | undefined)?.photo_url;
+
+  const haptic = {
+    light: () => tg?.HapticFeedback?.impactOccurred?.('light'),
+    medium: () => tg?.HapticFeedback?.impactOccurred?.('medium'),
+    heavy: () => tg?.HapticFeedback?.impactOccurred?.('heavy'),
+    success: () => tg?.HapticFeedback?.notificationOccurred?.('success'),
+    error: () => tg?.HapticFeedback?.notificationOccurred?.('error'),
+    selection: () => tg?.HapticFeedback?.selectionChanged?.(),
+  };
+
+  const isLobbyProp = !initialDuelId || initialDuelId === 'lobby' || initialDuelId === 'new';
+  const [duelId, setDuelId] = useState<string>(isLobbyProp ? '' : initialDuelId);
+
+  // ===== ЛОБІ: Стейт вибору налаштувань =====
+  const [oppMode, setOppMode] = useState<'active' | 'search' | 'open'>('active');
+  const [activePlayers, setActivePlayers] = useState<ActivePlayer[]>([]);
+  const [loadingPlayers, setLoadingPlayers] = useState(false);
+  const [selectedOpp, setSelectedOpp] = useState<ActivePlayer | null>(null);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
+
+  const [lobbyStakeCur, setLobbyStakeCur] = useState<'foc' | 'gem'>('foc');
+  const [lobbyStake, setLobbyStake] = useState(1000);
+  const [lobbyGoal, setLobbyGoal] = useState(100);
+  const [lobbyTimeMs, setLobbyTimeMs] = useState(180000);
+  const [creatingDuel, setCreatingDuel] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  // Стейт для приєднання до відкритої дуелі як Гравець 2
+  const [openPreview, setOpenPreview] = useState<any>(null);
+  const [joiningOpen, setJoiningOpen] = useState(false);
+  const [isOpenRoom, setIsOpenRoom] = useState(false);
 
   const [stage, setStage] = useState('…');
   const [base, setBase] = useState(0);
@@ -147,12 +190,250 @@ export default function DuelApp({ duelId }: { duelId: string }) {
     tg?.expand();
   }, []);
 
+  // Баланс гравця
+  const myFocaccia = Math.floor(Number(userSave?.focaccia) || 0);
+  const myDiamonds = Math.floor(Number(userSave?.diamonds) || 0);
+  const currentBalance = lobbyStakeCur === 'gem' ? myDiamonds : myFocaccia;
+
+  // Завантаження списку активних гравців для лобі
+  useEffect(() => {
+    if (duelId) return;
+    let active = true;
+    setLoadingPlayers(true);
+    fetch(`${API}?action=get_active_players&userId=${meId}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (active && data?.ok && Array.isArray(data.players)) {
+          setActivePlayers(data.players);
+          if (data.players.length > 0 && !selectedOpp) {
+            setSelectedOpp(data.players[0]);
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoadingPlayers(false);
+      });
+    return () => { active = false; };
+  }, [duelId, meId]);
+
+  // Перевірка попереднього перегляду, якщо відкрито посилання на відкриту дуель
+  useEffect(() => {
+    if (!duelId || duelId === 'lobby') return;
+    let active = true;
+    fetch(`${API}?action=preview&duelId=${duelId}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!active) return;
+        if (data?.ok && data.duel) {
+          const d = data.duel;
+          if (d.stage === 'challenge' && d.isOpen && d.creator?.id !== meId) {
+            setOpenPreview(d);
+          }
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [duelId, meId]);
+
+  // Пошук гравця за юзернеймом або ID
+  const handleSearchPlayer = async () => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    setSearching(true);
+    setSearchError('');
+    haptic.light();
+    try {
+      const res = await fetch(`${API}?action=find_player&q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (data?.ok && data.player) {
+        if (String(data.player.id) === String(meId)) {
+          setSearchError('Не можна викликати самого себе');
+          haptic.error();
+        } else {
+          setSelectedOpp(data.player);
+          haptic.success();
+        }
+      } else {
+        setSearchError('Гравця не знайдено');
+        haptic.error();
+      }
+    } catch {
+      setSearchError('Помилка пошуку');
+      haptic.error();
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // Створення дуелі
+  const handleCreateDuel = async () => {
+    if (!meId) return;
+    if (oppMode !== 'open' && !selectedOpp) {
+      haptic.error();
+      return;
+    }
+    if (lobbyStake > currentBalance) {
+      haptic.error();
+      return;
+    }
+
+    setCreatingDuel(true);
+    haptic.heavy();
+    try {
+      const targetId = oppMode === 'open' ? null : selectedOpp?.id;
+      const res = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'challenge',
+          from: meId,
+          to: targetId,
+          fromName: myName,
+          fromU: myU,
+          stakeCur: lobbyStakeCur,
+          stake: lobbyStake,
+          goal: lobbyGoal,
+          timeMs: lobbyTimeMs,
+        }),
+      });
+      const data = await res.json();
+      if (data?.ok && data.duelId) {
+        setDuelId(data.duelId);
+        setIsOpenRoom(oppMode === 'open');
+        setStake(lobbyStake);
+        setStakeCur(lobbyStakeCur);
+        setGoal(lobbyGoal);
+        setLimit(lobbyTimeMs);
+        setStage('challenge');
+        window.history.replaceState({}, '', `?v=1.4.0&duel=${data.duelId}`);
+        haptic.success();
+      } else {
+        if (data?.error === 'no_funds_creator') {
+          setError('У тебе недостатньо коштів для цієї ставки');
+        } else if (data?.error === 'no_funds_opponent') {
+          setError('У обраного суперника недостатньо коштів для цієї ставки');
+        } else if (data?.error === 'shadow') {
+          setError('Акаунт обмежено античитом');
+        } else {
+          setError(data?.error ? `Помилка: ${data.error}` : 'Не вдалося створити дуель');
+        }
+        haptic.error();
+      }
+    } catch {
+      setError('Помилка з\'єднання з сервером');
+      haptic.error();
+    } finally {
+      setCreatingDuel(false);
+    }
+  };
+
+  // Приєднання до відкритої дуелі
+  const handleJoinOpenDuel = async () => {
+    if (!duelId || !meId) return;
+    setJoiningOpen(true);
+    haptic.heavy();
+    try {
+      const res = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'join_open',
+          duelId,
+          userId: meId,
+          name: myName,
+          u: myU,
+        }),
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        setOpenPreview(null);
+        haptic.success();
+      } else {
+        if (data?.error === 'no_funds') {
+          setInsufficientFunds('У тебе недостатньо коштів для ставки в цій дуелі!');
+        } else {
+          setError(data?.error ? `Помилка: ${data.error}` : 'Не вдалося приєднатися');
+        }
+        haptic.error();
+      }
+    } catch {
+      setError('Помилка з\'єднання');
+      haptic.error();
+    } finally {
+      setJoiningOpen(false);
+    }
+  };
+
+  // Скасування дуелі
+  const handleCancelDuel = async () => {
+    if (!duelId || !meId) return;
+    haptic.medium();
+    try {
+      await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel', duelId, userId: meId }),
+      });
+    } catch { /* */ }
+    resetToLobby();
+  };
+
+  const resetToLobby = () => {
+    setDuelId('');
+    setOpenPreview(null);
+    setStage('…');
+    setWinner(null);
+    setReason(null);
+    setError('');
+    setInsufficientFunds(null);
+    escrowDone.current = false;
+    settled.current = false;
+    pendingRef.current = 0;
+    setPending(0);
+    setBase(0);
+    setOppScore(0);
+    window.history.replaceState({}, '', '?v=1.4.0&duel=lobby');
+  };
+
+  const goToGame = () => {
+    window.location.href = window.location.pathname + '?v=' + Date.now();
+  };
+
+  const shareDuelLink = () => {
+    const link = `https://nout0688-cloud.github.io/focaccia-clicker/?v=1.4.0&duel=${duelId}`;
+    const text = `⚔️ Я створив дуель у Фокача Клікері на ${formatNum(stake || lobbyStake)} ${stakeCur === 'gem' ? '💎' : '🫓'}! Приєднуйся і бийся зі мною:`;
+    const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
+    try {
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(tgShareUrl);
+      } else {
+        window.open(tgShareUrl, '_blank');
+      }
+    } catch {
+      window.open(tgShareUrl, '_blank');
+    }
+    haptic.medium();
+  };
+
+  const copyDuelLink = () => {
+    const link = `https://nout0688-cloud.github.io/focaccia-clicker/?v=1.4.0&duel=${duelId}`;
+    try {
+      navigator.clipboard?.writeText(link);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
+      haptic.success();
+    } catch {
+      /* */
+    }
+  };
+
   // счёт = серверный + неотправленные
   const displayScore = base + pending;
 
   // цикл синхронизации с сервером (1 раз в ~900мс)
   useEffect(() => {
-    if (!duelId || !meId) return;
+    if (!duelId || duelId === 'lobby' || !meId || openPreview) return;
     let iv: ReturnType<typeof setInterval> | undefined;
     const tick = async () => {
       if (inFlight.current) return;
@@ -168,6 +449,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
         });
         const data: Snap = await res.json();
         if (data.ok === false && data.error) {
+          if (data.error === 'not a player' && data.isOpen) return;
           setError(
             data.error === 'not a player'
               ? 'Ты не участник этой дуэли'
@@ -191,6 +473,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
         if (typeof data.pot === 'number') setPot(data.pot);
         if (typeof data.myPaid === 'number') setMyPaid(data.myPaid);
         if (data.stakeCur === 'gem' || data.stakeCur === 'foc') setStakeCur(data.stakeCur);
+        if (data.isOpen !== undefined) setIsOpenRoom(Boolean(data.isOpen));
         if (data.me) setBase(data.me.score);
         if (data.opp) {
           setOppScore(data.opp.score);
@@ -212,7 +495,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
     tick();
     iv = setInterval(tick, 900);
     return () => { if (iv) clearInterval(iv); };
-  }, [duelId, meId]);
+  }, [duelId, meId, openPreview]);
 
   // локальный тик: перерисовка таймера/отсчёта 10 раз в секунду
   useEffect(() => {
@@ -402,67 +685,574 @@ export default function DuelApp({ duelId }: { duelId: string }) {
     navigator.vibrate?.(8);
   };
 
-  const closeApp = () => {
-    try { tg?.close(); } catch { window.close(); }
-  };
-
-  // ===== ОШИБКА / НЕ УЧАСТНИК =====
+  // ==========================================
+  // 1. ПОМИЛКА / НЕДОСТАТНЬО КОШТІВ
+  // ==========================================
   if (error) {
     return (
-      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6">
-        <div className="text-center">
-          <div className="text-5xl mb-3">🔒</div>
-          <p className="text-amber-200 font-bold">{error}</p>
+      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6 text-center select-none">
+        <div className="max-w-xs w-full">
+          <div className="text-5xl mb-3">⚠️</div>
+          <p className="text-amber-200 font-bold mb-4">{error}</p>
+          <div className="space-y-2">
+            <button
+              onClick={resetToLobby}
+              className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 font-black rounded-2xl shadow-lg shadow-amber-500/20 active:scale-95 transition-all text-xs"
+            >
+              🔄 В лобі дуелей
+            </button>
+            <button
+              onClick={goToGame}
+              className="w-full py-2.5 bg-stone-900 border border-stone-800 text-amber-300/80 font-bold rounded-2xl active:scale-95 transition-all text-xs"
+            >
+              🫓 До головної гри
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // ===== НЕДОСТАТНЬО КОШТІВ =====
   if (insufficientFunds) {
     return (
-      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6">
+      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6 select-none">
         <div className="text-center w-full max-w-xs">
           <div className="text-6xl mb-3">💸</div>
           <h2 className="text-xl font-black text-red-400 mb-2">Недостатньо коштів!</h2>
           <p className="text-amber-200/80 text-sm whitespace-pre-wrap mb-5">{insufficientFunds}</p>
-          <button onClick={closeApp} className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25">
-            Закрити
+          <button
+            onClick={resetToLobby}
+            className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25 text-xs"
+          >
+            🔄 В лобі дуелей
           </button>
         </div>
       </div>
     );
   }
 
-  // ===== БЕЗ TG / БЕЗ ID ДУЭЛИ =====
-  if (!meId || !duelId) {
+  // ==========================================
+  // 2. ПРЕВ'Ю ВІДКРИТОЇ ДУЕЛІ (ДЛЯ ГРАВЦЯ 2)
+  // ==========================================
+  if (openPreview) {
+    const sym = openPreview.stakeCur === 'gem' ? '💎' : '🫓';
+    const canAfford = openPreview.stake <= (openPreview.stakeCur === 'gem' ? myDiamonds : myFocaccia);
     return (
-      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6">
-        <div className="text-center">
-          <div className="text-5xl mb-3">⚔️</div>
-          <p className="text-amber-200 font-bold mb-2">Дуэль</p>
-          <p className="text-amber-300/60 text-sm">Открой дуэль через кнопку в боте</p>
+      <div className="h-screen bg-[#0d0a04] text-amber-100 flex flex-col justify-between p-5 select-none overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <button onClick={resetToLobby} className="px-3 py-1.5 rounded-xl bg-stone-900 border border-stone-800 text-xs font-bold text-stone-400 flex items-center gap-1">
+            <span>✕</span> <span>Лобі</span>
+          </button>
+          <div className="flex items-center gap-3 text-xs font-mono">
+            <span className="text-amber-300">🫓 {formatNum(myFocaccia)}</span>
+            <span className="text-cyan-300">💎 {formatNum(myDiamonds)}</span>
+          </div>
+        </div>
+
+        <div className="max-w-sm w-full mx-auto text-center space-y-4 my-auto py-6">
+          <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-4xl mx-auto shadow-xl shadow-amber-600/30">
+            ⚔️
+          </div>
+          <div>
+            <h2 className="text-2xl font-black text-amber-200">Виклик на дуель!</h2>
+            <p className="text-xs text-stone-400 mt-1">
+              Гравець <span className="text-amber-300 font-bold">{openPreview.creator?.name || 'Гравець'}</span> кинув відкритий виклик:
+            </p>
+          </div>
+
+          <div className="glass-card rounded-2xl p-4 border border-amber-500/25 space-y-2.5 text-left text-xs">
+            <div className="flex justify-between items-center">
+              <span className="text-stone-400">💰 Ставка:</span>
+              <span className="font-black text-amber-300 text-sm">{formatNum(openPreview.stake)} {sym}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-stone-400">🏆 Загальний банк:</span>
+              <span className="font-black text-emerald-400 text-sm">+{formatNum(openPreview.stake * 2)} {sym}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-stone-400">🎯 Ціль тапів:</span>
+              <span className="font-bold text-stone-200">{openPreview.goal} фокач</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-stone-400">⏱ Ліміт часу:</span>
+              <span className="font-bold text-stone-200">{Math.round((openPreview.timeMs || 180000) / 60000)} хв</span>
+            </div>
+          </div>
+
+          {!canAfford && (
+            <div className="text-xs text-red-400 font-bold bg-red-950/40 border border-red-500/30 rounded-xl p-2.5">
+              ⚠️ У тебе недостатньо {openPreview.stakeCur === 'gem' ? 'алмазів 💎' : 'фокач 🫓'} для цієї ставки!
+            </div>
+          )}
+
+          <div className="space-y-2.5 pt-2">
+            <button
+              disabled={!canAfford || joiningOpen}
+              onClick={handleJoinOpenDuel}
+              className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-400 disabled:opacity-40 text-stone-950 font-black rounded-2xl text-sm shadow-lg shadow-amber-600/30 active:scale-95 transition-all flex items-center justify-center gap-2"
+            >
+              <span>⚔️</span>
+              <span>{joiningOpen ? 'Підключення...' : 'ПРИЙНЯТИ ВИКЛИК І В БІЙ'}</span>
+            </button>
+            <button
+              onClick={resetToLobby}
+              className="w-full py-2.5 bg-stone-900 hover:bg-stone-800 text-stone-400 font-bold rounded-2xl text-xs active:scale-95 transition-all"
+            >
+              Відхилити
+            </button>
+          </div>
+        </div>
+
+        <div className="text-center text-[10px] text-stone-500">
+          TapSentinel v5 захищає дуелі від автоклікерів
         </div>
       </div>
     );
   }
 
-  const liveNow = stage === 'live';
-  const msToStart = stage === 'countdown' && startTs ? Math.max(0, startTs - nowAligned()) : 0;
-  const countdownN = Math.ceil(msToStart / 1000);
-  const elapsed = startTs && (stage === 'live' || stage === 'paused') ? Math.max(0, nowAligned() - startTs) : 0;
+  // ==========================================
+  // 3. DUEL LOBBY (РЕЖИМ НАЛАШТУВАННЯ ДУЕЛІ)
+  // ==========================================
+  if (!duelId || duelId === 'lobby') {
+    return (
+      <div className="min-h-screen bg-[#0d0a04] text-amber-100 flex flex-col justify-between p-4 select-none safe-top safe-bottom">
+        {/* Top Header */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <button
+              type="button"
+              onClick={goToGame}
+              className="px-3 py-1.5 rounded-xl bg-stone-900 border border-stone-800 text-xs font-bold text-amber-400 hover:text-amber-200 flex items-center gap-1.5 active:scale-95 transition-all"
+            >
+              <span>🫓</span>
+              <span>В гру</span>
+            </button>
 
+            <div className="flex items-center gap-2">
+              <div className="px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold font-mono">
+                🫓 {formatNum(myFocaccia)}
+              </div>
+              <div className="px-2.5 py-1 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-bold font-mono">
+                💎 {formatNum(myDiamonds)}
+              </div>
+            </div>
+          </div>
 
+          <div className="text-center mb-4">
+            <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-orange-400 to-amber-200 flex items-center justify-center gap-2">
+              <span>⚔️</span> <span>Арена Дуелей</span>
+            </h1>
+            <p className="text-[11px] text-stone-400 mt-0.5">
+              Бийся 1 на 1 у реальному часі на фокачі або алмази!
+            </p>
+          </div>
 
-  // аватарка: фото Telegram если есть, иначе кружок с инициалом
-  const myPhoto = (tg?.initDataUnsafe?.user as { photo_url?: string } | undefined)?.photo_url;
+          {/* Opponent Selection Mode Tabs */}
+          <div className="glass-card rounded-2xl p-1 flex border border-stone-800 mb-3 text-xs font-bold">
+            <button
+              onClick={() => { setOppMode('active'); haptic.selection(); }}
+              className={cn(
+                'flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5',
+                oppMode === 'active' ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 font-black shadow-md' : 'text-stone-400 hover:text-stone-200'
+              )}
+            >
+              <span>👥</span> <span>Гравці</span>
+            </button>
+            <button
+              onClick={() => { setOppMode('search'); haptic.selection(); }}
+              className={cn(
+                'flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5',
+                oppMode === 'search' ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 font-black shadow-md' : 'text-stone-400 hover:text-stone-200'
+              )}
+            >
+              <span>🔍</span> <span>Пошук</span>
+            </button>
+            <button
+              onClick={() => { setOppMode('open'); haptic.selection(); }}
+              className={cn(
+                'flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5',
+                oppMode === 'open' ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 font-black shadow-md' : 'text-stone-400 hover:text-stone-200'
+              )}
+            >
+              <span>🔗</span> <span>Відкрита</span>
+            </button>
+          </div>
 
-  // ===== СКАСОВАНО (НЕ ВИСТАЧИЛО КОШТІВ / ТАЙМАУТ) =====
+          {/* Mode 1: Active Players List */}
+          {oppMode === 'active' && (
+            <div className="glass-card rounded-2xl p-3 border border-stone-800 mb-3">
+              <div className="text-[11px] font-bold text-stone-400 mb-2 flex items-center justify-between">
+                <span>Обери суперника:</span>
+                {selectedOpp && (
+                  <span className="text-amber-300 font-black">
+                    Обрано: {selectedOpp.name}
+                  </span>
+                )}
+              </div>
+
+              {loadingPlayers ? (
+                <div className="py-8 text-center text-xs text-stone-500">Завантаження гравців...</div>
+              ) : activePlayers.length === 0 ? (
+                <div className="py-6 text-center text-xs text-stone-500">Немає активних гравців поруч. Спробуй пошук або відкриту дуель!</div>
+              ) : (
+                <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                  {activePlayers.map((p) => {
+                    const isSel = selectedOpp?.id === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => { setSelectedOpp(p); haptic.selection(); }}
+                        className={cn(
+                          'w-full p-2 rounded-xl flex items-center justify-between gap-2 border transition-all text-left',
+                          isSel
+                            ? 'bg-amber-500/20 border-amber-400/80 shadow-sm shadow-amber-500/20'
+                            : 'bg-stone-900/60 border-stone-800 hover:border-stone-700 text-stone-300'
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-600 to-orange-600 flex items-center justify-center text-xs font-black text-stone-950 shrink-0">
+                            {initial(p.name)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold truncate text-amber-100">{p.name}</div>
+                            {p.username && <div className="text-[10px] text-stone-500 truncate">@{p.username}</div>}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          {isSel ? (
+                            <span className="text-xs font-black text-amber-300 px-2 py-0.5 rounded-lg bg-amber-500/20">
+                              ✓ Обрано
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold text-stone-500">Обрати</span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Mode 2: Username / ID Search */}
+          {oppMode === 'search' && (
+            <div className="glass-card rounded-2xl p-3 border border-stone-800 mb-3 space-y-3">
+              <div className="text-[11px] font-bold text-stone-400">Вкажи @username або Telegram ID:</div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearchPlayer()}
+                  placeholder="@username або ID"
+                  className="flex-1 bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-amber-200 placeholder-stone-600 focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  disabled={searching || !searchQuery.trim()}
+                  onClick={handleSearchPlayer}
+                  className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 disabled:opacity-40 text-stone-950 font-black rounded-xl text-xs shrink-0"
+                >
+                  {searching ? '...' : 'Знайти'}
+                </button>
+              </div>
+
+              {searchError && (
+                <div className="text-xs text-red-400 font-bold bg-red-950/40 border border-red-500/30 rounded-xl p-2">
+                  ❌ {searchError}
+                </div>
+              )}
+
+              {selectedOpp && (
+                <div className="p-3 bg-emerald-950/30 border border-emerald-500/40 rounded-xl flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-emerald-500 text-stone-950 flex items-center justify-center text-xs font-black shrink-0">
+                      {initial(selectedOpp.name)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-emerald-200 truncate">{selectedOpp.name}</div>
+                      {selectedOpp.username && <div className="text-[10px] text-emerald-400/60 truncate">@{selectedOpp.username}</div>}
+                    </div>
+                  </div>
+                  <span className="text-xs font-black text-emerald-300 shrink-0">✓ Обрано</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Mode 3: Open Duel */}
+          {oppMode === 'open' && (
+            <div className="glass-card rounded-2xl p-3 border border-stone-800 mb-3 text-center space-y-2">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-xl mx-auto">
+                🔗
+              </div>
+              <div className="text-xs font-bold text-amber-200">Відкрита дуель за посиланням</div>
+              <p className="text-[11px] text-stone-400">
+                Після створення ти отримаєш посилання. Надішли його у групу або другу — перший, хто відкриє, стане твоїм суперником!
+              </p>
+            </div>
+          )}
+
+          {/* Section: Currency & Stake */}
+          <div className="glass-card rounded-2xl p-3 border border-stone-800 mb-3 space-y-3">
+            {/* Currency toggle */}
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-bold text-stone-400">Валюта ставки:</span>
+              <div className="flex bg-stone-950 p-1 rounded-xl border border-stone-800 gap-1">
+                <button
+                  type="button"
+                  onClick={() => { setLobbyStakeCur('foc'); setLobbyStake(1000); haptic.selection(); }}
+                  className={cn(
+                    'px-3 py-1 rounded-lg text-xs font-black transition-all',
+                    lobbyStakeCur === 'foc' ? 'bg-amber-500 text-stone-950' : 'text-stone-400 hover:text-stone-200'
+                  )}
+                >
+                  🫓 Фокачі
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setLobbyStakeCur('gem'); setLobbyStake(5); haptic.selection(); }}
+                  className={cn(
+                    'px-3 py-1 rounded-lg text-xs font-black transition-all',
+                    lobbyStakeCur === 'gem' ? 'bg-cyan-500 text-stone-950' : 'text-stone-400 hover:text-stone-200'
+                  )}
+                >
+                  💎 Алмази
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Stake Buttons */}
+            <div className="grid grid-cols-5 gap-1.5">
+              {lobbyStakeCur === 'foc' ? (
+                <>
+                  {[1000, 10000, 100000, 1000000].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => { setLobbyStake(amt); haptic.light(); }}
+                      className={cn(
+                        'py-1.5 rounded-lg text-[10px] font-black border transition-all',
+                        lobbyStake === amt ? 'bg-amber-500/30 border-amber-400 text-amber-200' : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
+                      )}
+                    >
+                      +{formatNum(amt)}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => { setLobbyStake(myFocaccia); haptic.light(); }}
+                    className={cn(
+                      'py-1.5 rounded-lg text-[10px] font-black border transition-all',
+                      lobbyStake === myFocaccia ? 'bg-amber-500/30 border-amber-400 text-amber-200' : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
+                    )}
+                  >
+                    Всі
+                  </button>
+                </>
+              ) : (
+                <>
+                  {[5, 25, 50, 100].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => { setLobbyStake(amt); haptic.light(); }}
+                      className={cn(
+                        'py-1.5 rounded-lg text-[10px] font-black border transition-all',
+                        lobbyStake === amt ? 'bg-cyan-500/30 border-cyan-400 text-cyan-200' : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
+                      )}
+                    >
+                      +{amt}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => { setLobbyStake(myDiamonds); haptic.light(); }}
+                    className={cn(
+                      'py-1.5 rounded-lg text-[10px] font-black border transition-all',
+                      lobbyStake === myDiamonds ? 'bg-cyan-500/30 border-cyan-400 text-cyan-200' : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
+                    )}
+                  >
+                    Всі
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Stake Input */}
+            <div>
+              <div className="flex items-center justify-between text-[11px] font-bold text-stone-400 mb-1">
+                <span>Ставка:</span>
+                <span>На балансі: {formatNum(currentBalance)} {lobbyStakeCur === 'gem' ? '💎' : '🫓'}</span>
+              </div>
+              <div className="relative">
+                <input
+                  type="number"
+                  value={lobbyStake || ''}
+                  onChange={(e) => setLobbyStake(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2.5 text-sm font-mono font-black text-amber-200 focus:outline-none focus:border-amber-500"
+                />
+                <span className="absolute right-3 top-2.5 text-sm">
+                  {lobbyStakeCur === 'gem' ? '💎' : '🫓'}
+                </span>
+              </div>
+              {lobbyStake > currentBalance && (
+                <div className="text-[11px] text-red-400 font-bold mt-1">
+                  ⚠️ Ставка перевищує твій баланс!
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Section: Goal & Round Time */}
+          <div className="glass-card rounded-2xl p-3 border border-stone-800 mb-4 space-y-3">
+            <div>
+              <div className="text-[11px] font-bold text-stone-400 mb-1.5">🎯 Ціль (хто швидше наклікає):</div>
+              <div className="grid grid-cols-5 gap-1.5">
+                {[50, 100, 250, 500, 1000].map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => { setLobbyGoal(g); haptic.selection(); }}
+                    className={cn(
+                      'py-1.5 rounded-lg text-xs font-black border transition-all',
+                      lobbyGoal === g ? 'bg-amber-500 text-stone-950 border-amber-400 shadow-sm' : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
+                    )}
+                  >
+                    {g}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[11px] font-bold text-stone-400 mb-1.5">⏱ Тривалість раунду:</div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[
+                  [60000, '1 хв'],
+                  [120000, '2 хв'],
+                  [180000, '3 хв'],
+                  [300000, '5 хв'],
+                ].map(([ms, lbl]) => (
+                  <button
+                    key={ms}
+                    type="button"
+                    onClick={() => { setLobbyTimeMs(Number(ms)); haptic.selection(); }}
+                    className={cn(
+                      'py-1.5 rounded-lg text-xs font-black border transition-all',
+                      lobbyTimeMs === ms ? 'bg-amber-500 text-stone-950 border-amber-400 shadow-sm' : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
+                    )}
+                  >
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* CTA Create Button */}
+        <div className="pt-2">
+          <button
+            type="button"
+            disabled={creatingDuel || (oppMode !== 'open' && !selectedOpp) || lobbyStake > currentBalance}
+            onClick={handleCreateDuel}
+            className="w-full py-4 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-orange-400 disabled:opacity-40 text-stone-950 font-black rounded-2xl text-sm shadow-xl shadow-amber-600/25 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <span>⚔️</span>
+            <span>
+              {creatingDuel
+                ? 'Створення...'
+                : oppMode === 'open'
+                ? 'СТВОРИТИ ВІДКРИТУ ДУЕЛЬ'
+                : `ВИКЛИКАТИ ${selectedOpp?.name ? selectedOpp.name.toUpperCase() : 'СУПЕРНИКА'}`}
+            </span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // 4. ОЧІКУВАННЯ ПРИЙНЯТТЯ / ПІДКЛЮЧЕННЯ (CHALLENGE / ACCEPTED)
+  // ==========================================
+  if (stage === 'challenge' || stage === 'accepted') {
+    return (
+      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6 text-center select-none">
+        <div className="max-w-xs w-full space-y-4">
+          <div className="text-6xl animate-bob">⏳</div>
+
+          <div>
+            <h2 className="text-xl font-black text-amber-200 mb-1">
+              {isOpenRoom ? 'Відкрита дуель створена!' : 'Виклик надіслано!'}
+            </h2>
+            <p className="text-xs text-stone-400">
+              {isOpenRoom
+                ? 'Поділися посиланням нижче. Перший гравець, який увійде, розпочне бій!'
+                : `Очікуємо підключення ${oppName || 'суперника'}...`}
+            </p>
+          </div>
+
+          <div className="glass-card rounded-2xl p-3 border border-amber-500/20 text-xs text-left space-y-1.5 font-bold">
+            <div className="flex justify-between">
+              <span className="text-stone-400">Ставка:</span>
+              <span className="text-amber-300 font-mono">{formatNum(stake || lobbyStake)} {stakeCur === 'gem' ? '💎' : '🫓'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-stone-400">Ціль:</span>
+              <span className="text-stone-200">{goal || lobbyGoal} тапів</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-stone-400">Раунд:</span>
+              <span className="text-stone-200">{Math.round((limit || lobbyTimeMs) / 60000)} хв</span>
+            </div>
+          </div>
+
+          {isOpenRoom && (
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                onClick={shareDuelLink}
+                className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-stone-950 font-black rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-600/25 active:scale-95 transition-all"
+              >
+                <span>📤</span>
+                <span>Поділитися посиланням</span>
+              </button>
+              <button
+                type="button"
+                onClick={copyDuelLink}
+                className="w-full py-2.5 bg-stone-900 border border-stone-800 hover:bg-stone-800 text-amber-300/90 font-bold rounded-2xl text-xs flex items-center justify-center gap-2 active:scale-95 transition-all"
+              >
+                <span>📋</span>
+                <span>{copiedLink ? 'Скопійовано!' : 'Скопіювати посилання'}</span>
+              </button>
+            </div>
+          )}
+
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={handleCancelDuel}
+              className="w-full py-2.5 bg-stone-900/80 hover:bg-stone-800 text-stone-400 hover:text-stone-200 font-bold rounded-2xl text-xs active:scale-95 transition-all"
+            >
+              Скасувати
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // 5. ДУЕЛЬ СКАСОВАНО
+  // ==========================================
   if (stage === 'cancelled') {
     const isNoFunds = reason === 'no_funds';
     const curPaid = myPaid > 0 ? myPaid : (escrowDone.current ? stake : 0);
     return (
-      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6">
+      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6 select-none">
         <div className="text-center w-full max-w-xs">
           <div className="text-7xl mb-3">{isNoFunds ? '💸' : '❌'}</div>
           <h2 className="text-2xl font-black text-amber-200 mb-2">
@@ -470,7 +1260,7 @@ export default function DuelApp({ duelId }: { duelId: string }) {
           </h2>
           <p className="text-amber-300/80 text-sm mb-4">
             {isNoFunds
-              ? 'У одного з гравців недостатньо коштів для ставки. Дуель скасовано, жодних виплат не здійснено!'
+              ? 'У одного з гравців недостатньо коштів для ставки. Дуель скасовано, кошти не списано.'
               : reason === 'timeout'
               ? 'Час очікування вичерпано.'
               : 'Дуель було скасовано.'}
@@ -480,25 +1270,38 @@ export default function DuelApp({ duelId }: { duelId: string }) {
               ✅ Твою ставку {formatNum(curPaid)} {stakeCur === 'gem' ? '💎' : '🫓'} повернуто на баланс
             </div>
           )}
-          <button onClick={closeApp} className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25">
-            Вийти
-          </button>
+          <div className="space-y-2">
+            <button
+              onClick={resetToLobby}
+              className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25 text-xs"
+            >
+              🔄 В лобі дуелей
+            </button>
+            <button
+              onClick={goToGame}
+              className="w-full py-2.5 bg-stone-900 border border-stone-800 text-stone-400 font-bold rounded-2xl text-xs active:scale-95"
+            >
+              🫓 До головної гри
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // ===== ФИНАЛ =====
+  // ==========================================
+  // 6. ФІНАЛ МАТЧУ (ПЕРЕМОГА / ПОРАЗКА / НІЧИЯ)
+  // ==========================================
   if (stage === 'finished') {
     const iWin = winner === meId;
     const draw = winner === 'draw';
     const reasonText =
-      reason === 'cheat' ? (iWin ? '⚠️ Соперник использовал стороннее ПО' : '🚫 Обнаружено стороннее ПО') :
-      reason === 'forfeit' ? '🏃 Соперник покинул дуэль' :
-      reason === 'time' ? '⏱ Время вышло' :
-      `⚡ Кто быстрее — ${goal} фокач!`;
+      reason === 'cheat' ? (iWin ? '⚠️ Суперник використав стороннє ПЗ' : '🚫 Виявлено стороннє ПЗ') :
+      reason === 'forfeit' ? '🏃 Суперник покинув дуель' :
+      reason === 'time' ? '⏱ Час вийшов' :
+      `⚡ Хто швидше — ${goal} фокач!`;
     return (
-      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6">
+      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6 select-none">
         <div className="text-center w-full max-w-xs">
           <div className="text-7xl mb-3">{draw ? '🤝' : iWin ? '🏆' : '💔'}</div>
           <h1 className={cn('text-3xl font-black mb-2', draw ? 'text-amber-200' : iWin ? 'text-emerald-300' : 'text-red-300')}>
@@ -534,44 +1337,50 @@ export default function DuelApp({ duelId }: { duelId: string }) {
             </div>
           )}
           <div className="glass-card rounded-2xl p-3 mb-5 flex justify-between text-sm font-black">
-            <span className="text-amber-200">{myName || 'Ты'}: {displayScore}</span>
+            <span className="text-amber-200">{myName || 'Ти'}: {displayScore}</span>
             <span className="text-amber-400/70">{oppName}: {oppScore}</span>
           </div>
-          <button onClick={closeApp} className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25">
-            Выйти
-          </button>
+          <div className="space-y-2">
+            <button
+              onClick={resetToLobby}
+              className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl active:scale-95 shadow-lg shadow-amber-500/25 text-xs"
+            >
+              🔄 В лобі дуелей
+            </button>
+            <button
+              onClick={goToGame}
+              className="w-full py-2.5 bg-stone-900 border border-stone-800 text-stone-400 font-bold rounded-2xl text-xs active:scale-95"
+            >
+              🫓 До головної гри
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // ===== ПАУЗА (соперник вышел) =====
+  // ==========================================
+  // 7. ПАУЗА (СУПЕРНИК ВИЙШОВ)
+  // ==========================================
   if (stage === 'paused') {
     return (
-      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6">
+      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6 select-none">
         <div className="text-center">
           <div className="text-6xl mb-3 animate-bob">⏸</div>
-          <h2 className="text-xl font-black text-amber-100 mb-2">Соперник вышел!</h2>
-          <p className="text-amber-300/60 text-sm mb-4">Если он не вернётся — победа техническим нокаутом</p>
+          <h2 className="text-xl font-black text-amber-100 mb-2">Суперник вийшов!</h2>
+          <p className="text-amber-300/60 text-sm mb-4">Якщо він не повернеться — перемога технічним нокаутом</p>
           <div className="text-5xl font-black text-red-300 tabular-nums">{Math.ceil(pausedLeft / 1000)}</div>
         </div>
       </div>
     );
   }
 
-  // ===== ОЖИДАНИЕ ПОСЛЕ ПРИНЯТИЯ =====
-  if (stage === 'accepted' || stage === 'challenge') {
-    return (
-      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6">
-        <div className="text-center">
-          <div className="text-6xl mb-3 animate-bob">⏳</div>
-          <p className="text-amber-200 font-bold">Ожидаем соперника в игре…</p>
-        </div>
-      </div>
-    );
-  }
+  // ===== ОСНОВНИЙ ЕКРАН: ВІДЛІК + БІЙ =====
+  const liveNow = stage === 'live';
+  const msToStart = stage === 'countdown' && startTs ? Math.max(0, startTs - nowAligned()) : 0;
+  const countdownN = Math.ceil(msToStart / 1000);
+  const elapsed = startTs && (stage === 'live' || stage === 'paused') ? Math.max(0, nowAligned() - startTs) : 0;
 
-  // ===== ОСНОВНОЙ ЭКРАН: ОТСЧЁТ + БОЙ =====
   return (
     <div className="h-screen bg-[#0d0a04] text-amber-50 select-none overflow-hidden flex flex-col">
       {/* Верх: таймер + счёт */}

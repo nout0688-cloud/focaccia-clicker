@@ -9588,17 +9588,6 @@ export default function App() {
                 <span className="text-[10px] font-bold text-fuchsia-300/80">+{formatNum(state.prestige * 10)}%</span>
               </button>
             )}
-
-            {/* Trade Pill */}
-            <button
-              type="button"
-              onClick={() => { setTradeModalOpen(true); haptic.selection(); }}
-              className="flex items-center gap-1 bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 active:scale-95 transition-all border border-amber-500/40 px-2 py-0.5 rounded-lg text-xs font-black text-amber-200 shadow-[0_0_8px_rgba(245,158,11,0.2)] whitespace-nowrap cursor-pointer group"
-              title={lang === 'uk' ? '🤝 Трейди (Обмін фокачами, алмазами та скінами)' : '🤝 Трейды (Обмен фокаччами, алмазами и скинами)'}
-            >
-              <span>🤝</span>
-              <span className="text-xs font-bold text-amber-300">{lang === 'uk' ? 'Трейд' : 'Трейд'}</span>
-            </button>
           </div>
         </div>
 
@@ -11016,6 +11005,62 @@ export default function App() {
                 </button>
               </div>
             )}
+
+            {/* Multiplayer Features: Trade & Duels */}
+            <div className="grid grid-cols-2 gap-2">
+              {/* Trade Card */}
+              <div className="glass-card rounded-2xl p-3 border border-amber-500/30 bg-gradient-to-br from-amber-950/40 via-stone-900/60 to-black/60 shadow-lg shadow-black/40 flex flex-col justify-between gap-2.5 animate-card">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center text-lg shadow-md shadow-amber-600/30 shrink-0 border border-amber-400/30">
+                    🤝
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-black text-amber-200 truncate">
+                      {lang === 'uk' ? 'Трейди' : 'Трейды'}
+                    </div>
+                    <div className="text-[9px] text-amber-400/60 truncate">
+                      {lang === 'uk' ? 'Обмін фокач, скінів' : 'Обмен фокачч, скинов'}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setTradeModalOpen(true); haptic.selection(); }}
+                  className="w-full py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-stone-950 font-black text-xs shadow-md shadow-amber-500/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>🤝</span>
+                  <span>{lang === 'uk' ? 'Відкрити' : 'Открыть'}</span>
+                </button>
+              </div>
+
+              {/* Duel Card */}
+              <div className="glass-card rounded-2xl p-3 border border-orange-500/30 bg-gradient-to-br from-orange-950/40 via-stone-900/60 to-black/60 shadow-lg shadow-black/40 flex flex-col justify-between gap-2.5 animate-card">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center text-lg shadow-md shadow-orange-600/30 shrink-0 border border-orange-400/30">
+                    ⚔️
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-black text-orange-200 truncate">
+                      {lang === 'uk' ? 'Дуелі 1 на 1' : 'Дуэли 1 на 1'}
+                    </div>
+                    <div className="text-[9px] text-orange-400/60 truncate">
+                      {lang === 'uk' ? 'Битви на 🫓 та 💎' : 'Битвы на 🫓 и 💎'}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic.heavy();
+                    window.location.href = window.location.pathname + '?v=' + Date.now() + '&duel=lobby';
+                  }}
+                  className="w-full py-2 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-400 hover:to-red-500 text-stone-950 font-black text-xs shadow-md shadow-orange-500/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>⚔️</span>
+                  <span>{lang === 'uk' ? 'У бій' : 'В бой'}</span>
+                </button>
+              </div>
+            </div>
 
             <div className="grid grid-cols-3 gap-1.5">
               {[
