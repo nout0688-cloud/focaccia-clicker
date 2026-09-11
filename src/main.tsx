@@ -4,9 +4,11 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import App from "./App";
 import DuelApp from "./duel/DuelApp";
+import TradeApp from "./trade/TradeApp";
 
-// ?duel=<id> — отдельный экран дуэли (тот же мини-апп, отдельная страница)
+// ?duel=<id> — окремий екран дуелі, ?trade=<id> — окремий екран трейду
 const duelId = new URLSearchParams(window.location.search).get("duel");
+const tradeId = new URLSearchParams(window.location.search).get("trade");
 
 class GlobalErrorBoundary extends React.Component<{ children: React.ReactNode }, { err: string | null }> {
   state = { err: null as string | null };
@@ -86,7 +88,7 @@ class GlobalErrorBoundary extends React.Component<{ children: React.ReactNode },
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <GlobalErrorBoundary>
-      {duelId ? <DuelApp duelId={duelId} /> : <App />}
+      {duelId ? <DuelApp duelId={duelId} /> : tradeId ? <TradeApp tradeId={tradeId} /> : <App />}
     </GlobalErrorBoundary>
   </StrictMode>
 );

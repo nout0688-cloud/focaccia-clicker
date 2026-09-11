@@ -623,6 +623,9 @@ export default function App() {
   const [myRank, setMyRank] = useState<number | null>(null);
   const [leaderCategory, setLeaderCategory] = useState<LeaderCategory>('focaccia');
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [tradeModalOpen, setTradeModalOpen] = useState(false);
+  const [tradeJoinInput, setTradeJoinInput] = useState('');
+  const [tradeCreating, setTradeCreating] = useState(false);
   const [profileTab, setProfileTab] = useState<'overview' | 'shop'>('overview');
   const [cosmeticShopTab, setCosmeticShopTab] = useState<'frames' | 'colors'>('frames');
   const [showcasePickerSlot, setShowcasePickerSlot] = useState<number | null>(null);
@@ -1000,6 +1003,37 @@ export default function App() {
                 });
                 addToast(curT.toastDeduct, formatTemplate(curT.toastDeductDesc, formatNum(data.deduct)), '⚠️');
                 haptic.warning();
+                setTimeout(reportSync, 100);
+              }
+              if (Array.isArray(data?.grantSkins) && data.grantSkins.length > 0) {
+                setState((p) => {
+                  const curOwned = p.skins?.owned || ['skin_classic'];
+                  const toAdd = data.grantSkins.filter((s: string) => !s.startsWith('cat:'));
+                  const newOwned = Array.from(new Set([...curOwned, ...toAdd]));
+                  const next = { ...p, skins: { ...p.skins, owned: newOwned, equipped: p.skins?.equipped || 'skin_classic', levels: p.skins?.levels || {} } };
+                  stateRef.current = next;
+                  saveNow(next);
+                  return next;
+                });
+                addToast(
+                  langRef.current === 'uk' ? 'Трейд завершено! 🎨' : 'Трейд завершен! 🎨',
+                  langRef.current === 'uk' ? `Отримано нові скіни: ${data.grantSkins.length} шт.` : `Получены новые скины: ${data.grantSkins.length} шт.`,
+                  '🎨'
+                );
+                haptic.success();
+                setTimeout(reportSync, 100);
+              }
+              if (Array.isArray(data?.removeSkins) && data.removeSkins.length > 0) {
+                setState((p) => {
+                  const curOwned = p.skins?.owned || ['skin_classic'];
+                  const newOwned = curOwned.filter((s: string) => !data.removeSkins.includes(s) || s === 'skin_classic');
+                  let eq = p.skins?.equipped || 'skin_classic';
+                  if (!newOwned.includes(eq)) eq = 'skin_classic';
+                  const next = { ...p, skins: { ...p.skins, owned: newOwned, equipped: eq, levels: p.skins?.levels || {} } };
+                  stateRef.current = next;
+                  saveNow(next);
+                  return next;
+                });
                 setTimeout(reportSync, 100);
               }
             }
@@ -2424,6 +2458,53 @@ export default function App() {
         haptic.light();
       }
     }, 2500);
+  };
+
+  /* ---- Trades ---- */
+  const handleCreateOpenTrade = async () => {
+    setTradeCreating(true);
+    haptic.medium();
+    const uid = tgUser?.id || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || '0';
+    const uName = tgUser?.first_name || (window.Telegram?.WebApp?.initDataUnsafe?.user?.first_name) || 'Гравець';
+    const uU = tgUser?.username || (window.Telegram?.WebApp?.initDataUnsafe?.user?.username) || '';
+
+    try {
+      const res = await fetch(`${API_BASE}/api/trade`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', from: uid, to: null, fromName: uName, fromU: uU }),
+      });
+      const data = await res.json();
+      if (data?.ok && data.tradeId) {
+        window.location.href = window.location.pathname + '?v=' + Date.now() + '&trade=' + data.tradeId;
+      } else {
+        addToast(langRef.current === 'uk' ? 'Помилка трейду' : 'Ошибка трейда', langRef.current === 'uk' ? 'Не вдалося створити кімнату обміну' : 'Не удалось создать комнату обмена', '❌');
+        haptic.error();
+      }
+    } catch {
+      addToast(langRef.current === 'uk' ? 'Помилка мережі' : 'Ошибка сети', langRef.current === 'uk' ? 'Перевір інтернет-з\'єднання' : 'Проверь интернет-соединение', '❌');
+      haptic.error();
+    } finally {
+      setTradeCreating(false);
+    }
+  };
+
+  const handleJoinTrade = () => {
+    const raw = tradeJoinInput.trim();
+    if (!raw) return;
+    haptic.medium();
+    let targetTradeId = raw;
+    if (raw.includes('trade=')) {
+      try {
+        const parsed = new URL(raw.startsWith('http') ? raw : 'https://' + raw);
+        const pId = parsed.searchParams.get('trade');
+        if (pId) targetTradeId = pId;
+      } catch {
+        const match = raw.match(/trade=([a-zA-Z0-9_-]+)/);
+        if (match) targetTradeId = match[1];
+      }
+    }
+    window.location.href = window.location.pathname + '?v=' + Date.now() + '&trade=' + targetTradeId;
   };
 
   /* ---- Actions ---- */
@@ -8314,6 +8395,88 @@ export default function App() {
       )}
 
 
+      {/* ===== TRADE MODAL ===== */}
+      {tradeModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-stone-900 border border-amber-500/40 rounded-3xl p-5 shadow-2xl text-center relative animate-fade-in">
+            <button
+              onClick={() => { setTradeModalOpen(false); haptic.light(); }}
+              className="absolute top-4 right-4 w-7 h-7 rounded-full bg-stone-800 text-stone-400 hover:text-stone-200 flex items-center justify-center text-sm"
+            >
+              ✕
+            </button>
+
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-3xl mx-auto mb-3 shadow-lg shadow-amber-600/30">
+              🤝
+            </div>
+            <h3 className="text-lg font-black text-amber-200 mb-1">
+              {lang === 'uk' ? 'Безпечні Трейди' : 'Безопасные Трейды'}
+            </h3>
+            <p className="text-xs text-stone-400 mb-5">
+              {lang === 'uk'
+                ? 'Обмінюйся фокачами 🫓, алмазами 💎 та скінами 🎨 з іншими гравцями в окремому міні-аппі!'
+                : 'Обменивайся фокаччами 🫓, алмазами 💎 и скинами 🎨 с другими игроками в отдельном мини-аппе!'}
+            </p>
+
+            <div className="space-y-3 mb-4">
+              <button
+                disabled={tradeCreating}
+                onClick={handleCreateOpenTrade}
+                className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-stone-950 font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-600/20 active:scale-95 transition-all"
+              >
+                <span>🔗</span>
+                <span>{tradeCreating ? 'Створення...' : (lang === 'uk' ? 'Створити відкритий трейд' : 'Создать открытый трейд')}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setTradeModalOpen(false);
+                  const botU = 'focacciaclicker_bot';
+                  try {
+                    const wa = window.Telegram?.WebApp as any;
+                    if (wa?.openTelegramLink) {
+                      wa.openTelegramLink(`https://t.me/${botU}?start=trade`);
+                    } else {
+                      window.open(`https://t.me/${botU}?start=trade`, '_blank');
+                    }
+                  } catch {
+                    window.open(`https://t.me/${botU}?start=trade`, '_blank');
+                  }
+                  haptic.medium();
+                }}
+                className="w-full py-2.5 bg-stone-800 hover:bg-stone-700 text-amber-300 font-bold rounded-xl text-xs border border-stone-700 flex items-center justify-center gap-2 active:scale-95 transition-all"
+              >
+                <span>🤖</span>
+                <span>{lang === 'uk' ? 'Запросити через бота (/trade)' : 'Пригласить через бота (/trade)'}</span>
+              </button>
+            </div>
+
+            {/* Join existing trade code */}
+            <div className="pt-3 border-t border-stone-800/80 text-left">
+              <div className="text-[11px] font-bold text-stone-400 mb-1.5">
+                {lang === 'uk' ? 'Приєднатися за кодом або посиланням:' : 'Присоединиться по коду или ссылке:'}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={tradeJoinInput}
+                  onChange={(e) => setTradeJoinInput(e.target.value)}
+                  placeholder="tr_..."
+                  className="flex-1 bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs font-mono text-amber-200 placeholder-stone-600 focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  disabled={!tradeJoinInput.trim()}
+                  onClick={handleJoinTrade}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-stone-950 font-black rounded-xl text-xs shrink-0"
+                >
+                  Вхід
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== FULLSCREEN PROFILE / ACCOUNT EDITOR ===== */}
       {profileModalOpen && (
         <div className="fixed inset-0 z-[65] bg-[#0c0905] text-amber-100 flex flex-col overflow-hidden select-none safe-top safe-bottom animate-fade-in">
@@ -9425,6 +9588,17 @@ export default function App() {
                 <span className="text-[10px] font-bold text-fuchsia-300/80">+{formatNum(state.prestige * 10)}%</span>
               </button>
             )}
+
+            {/* Trade Pill */}
+            <button
+              type="button"
+              onClick={() => { setTradeModalOpen(true); haptic.selection(); }}
+              className="flex items-center gap-1 bg-gradient-to-r from-amber-500/20 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 active:scale-95 transition-all border border-amber-500/40 px-2 py-0.5 rounded-lg text-xs font-black text-amber-200 shadow-[0_0_8px_rgba(245,158,11,0.2)] whitespace-nowrap cursor-pointer group"
+              title={lang === 'uk' ? '🤝 Трейди (Обмін фокачами, алмазами та скінами)' : '🤝 Трейды (Обмен фокаччами, алмазами и скинами)'}
+            >
+              <span>🤝</span>
+              <span className="text-xs font-bold text-amber-300">{lang === 'uk' ? 'Трейд' : 'Трейд'}</span>
+            </button>
           </div>
         </div>
 
