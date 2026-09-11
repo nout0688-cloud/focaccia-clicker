@@ -746,8 +746,10 @@ export default function App() {
   const extremeSpeedBoost = useRef(0); // імпульс за 22+/с, забувається ×0.75
   const suspicionCooldownUntil = useRef(0); // після пройденого challenge
   const syntheticTaps = useRef<number[]>([]); // ts скриптових подій (isTrusted=false)
+  const untrustedEventsCountRef = useRef(0); // лічильник неправдивих подій (isTrusted=false)
   const lastClickTimeRef = useRef(0); // час останнього кліку для фізичного CPS-лімітера
-  const rapidViolationsRef = useRef(0); // лічильник надшвидких кліків (<50мс)
+  const lastClickPosRef = useRef<{ x: number; y: number } | null>(null); // координати останнього кліку для мультитачу
+  const rapidViolationsRef = useRef(0); // лічильник надшвидких кліків
   const offlineClicksCountRef = useRef(0); // лічильник кліків без інтернету
   const [karmaInfo, setKarmaInfo] = useState(false); // меню «що це?» біля спідометра
   const [lang, setLang] = useState<Lang>('uk'); // мова інтерфейсу
@@ -1331,7 +1333,10 @@ export default function App() {
       subMeans.push(sub.reduce((a, b) => a + b, 0) / sub.length);
     }
     let noiseStructure = 0;
-    if (cv < 0.05) {
+    // Якщо CV < 0.042 на вибірці ≥ 25 тапів — це неможливий для людини метроном (робот з точним таймером)
+    if (cv < 0.042 && taps.length >= 25) {
+      return 95; // Негайне визначення штучного автоклікера-метронома
+    } else if (cv < 0.05) {
       noiseStructure = 100; // идеальный метроном — максимальная структура
     } else if (subMeans.length >= 2) {
       const smMean = subMeans.reduce((a, b) => a + b, 0) / subMeans.length;
@@ -1352,7 +1357,7 @@ export default function App() {
   // C — координати 0..100: статистика руху.
   // Клікання в 1 точку — це абсолютно нормальна людська поведінка в клікері (миша на ПК або палець на булку)!
   const coordScore = (taps: Tap[]): number => {
-    if (taps.length < 60) return 0;
+    if (taps.length < 40) return 0;
     const xs = taps.map((t) => t.x);
     const ys = taps.map((t) => t.y);
 
@@ -1361,9 +1366,14 @@ export default function App() {
     for (let i = 1; i < taps.length; i++) steps.push(Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]));
     const stMean = steps.reduce((a, b) => a + b, 0) / steps.length;
 
-    // Якщо гравець клікає в одну точку (миша на ПК або палець на булку: bbox <= 35 або stMean < 2.5) —
+    // Роботичний піксель-лок: 40+ кліків у точність менше 1.5px без жодного природного мікроруху руки/пальця
+    if (bbox < 1.5 && taps.length >= 40) {
+      return 85;
+    }
+
+    // Якщо гравець клікає в одну область (миша на ПК або палець на булку: bbox <= 45 або stMean < 3.5) —
     // це звичайна нормальна гра, координати НЕ є підозрою на бота!
-    if (bbox <= 35 || stMean < 2.5) {
+    if (bbox <= 45 || stMean < 3.5) {
       return 0;
     }
 
@@ -1521,8 +1531,8 @@ export default function App() {
       if (m10 < 45) extremeSpeedBoost.current = Math.min(25, extremeSpeedBoost.current + 12);
     }
 
-    // H гасит, но не более 25 — высокая человечность не может похоронить сигнал
-    const humanMitigation = Math.min(25, 0.35 * H);
+    // H гасить хибні спрацьовування, до 45 балів (природна людська варіативність і дрейф)
+    const humanMitigation = Math.min(45, 0.45 * H);
     const evidenceRaw = 0.50 * R + 0.25 * C + 0.25 * B - humanMitigation + extremeSpeedBoost.current;
     const evidence = Math.max(0, Math.min(100, evidenceRaw));
 
@@ -1532,14 +1542,13 @@ export default function App() {
     if (recentEvidence.current.length > 5) recentEvidence.current.shift();
     extremeSpeedBoost.current *= 0.75;
 
-    // Триггер: ratio вместо count (не зависит от длины буфера) + ≥2 независимых сигнала.
-    // Метроном (R ≥ 60 при cv < 0.08) — самостоятельный двойной сигнал: так тапает только машина.
-    // Пороги откалиброваны симуляциями (гипотезы до реальных записей):
-    // человек evidence 5-6, indep ≤ 1 (никогда); джиттер-боты → триггер за 10-50с.
+    // Триггер: ratio замість count + ≥2 незалежних сигнали.
+    // Метроном (наднизький CV < 0.045) — самостоятельный подвійний сигнал (машина).
+    // Пороги: у чесної людини evidence < 20 (ніколи не тригерить); боти дають evidence 50-90.
     const recent = recentEvidence.current;
     const enoughHistory = recent.length >= 5;
-    const strongRatio = recent.length === 0 ? 0 : recent.filter((v) => v >= 12).length / recent.length;
-    const veryStrongRatio = recent.length === 0 ? 0 : recent.filter((v) => v >= 20).length / recent.length;
+    const strongRatio = recent.length === 0 ? 0 : recent.filter((v) => v >= 28).length / recent.length;
+    const veryStrongRatio = recent.length === 0 ? 0 : recent.filter((v) => v >= 48).length / recent.length;
 
     let cv40 = 1;
     if (t40.length >= 20) {
@@ -1549,15 +1558,15 @@ export default function App() {
       const s40 = Math.sqrt(ivs40.reduce((a, b) => a + (b - m40) ** 2, 0) / ivs40.length);
       cv40 = m40 > 0 ? s40 / m40 : 1;
     }
-    const metronome = R >= 60 && cv40 < 0.08;
-    const independentSignals = (R >= 45 ? 1 : 0) + (C >= 45 ? 1 : 0) + (B >= 45 ? 1 : 0) + (metronome ? 1 : 0);
+    const metronome = (R >= 75 && cv40 < 0.045) || (t40.length >= 25 && cv40 < 0.038);
+    const independentSignals = (R >= 45 ? 1 : 0) + (C >= 45 ? 1 : 0) + (B >= 45 ? 1 : 0) + (metronome ? 2 : 0);
     const inCooldown = Date.now() < suspicionCooldownUntil.current;
     if (
       !inCooldown &&
       challenge === null &&
       !challengeOpening.current &&
       enoughHistory &&
-      suspicion.current >= 16 &&
+      suspicion.current >= 34 &&
       strongRatio >= 0.60 &&
       veryStrongRatio >= 0.35 &&
       independentSignals >= 2
@@ -2157,13 +2166,13 @@ export default function App() {
     if (caught >= 3) {
       setChallenge((c) => (c ? { ...c, caught, result: 'pending' } : c));
       const finishLocal = () => {
-        // Cooldown PASS: suspicion гаситься, таймер кулдауну 60с
-        suspicion.current *= 0.25;
+        // Cooldown PASS: suspicion гаситься, таймер кулдауну 90с
+        suspicion.current *= 0.20;
         recentEvidence.current = [];
-        suspicionCooldownUntil.current = Date.now() + 60 * 1000;
-        // Відновлюємо трохи карми (+10) за чесне проходження випробування
+        suspicionCooldownUntil.current = Date.now() + 90 * 1000;
+        // Повне відновлення карми (+15) за чесне проходження випробування (компенсує зняті -15)
         const curK = stateRef.current.karma ?? karma;
-        const restoredK = Math.min(100, curK + 10);
+        const restoredK = Math.min(100, curK + 15);
         setKarma(restoredK);
         setState((p) => ({ ...p, karma: restoredK }));
         saveNow({ ...stateRef.current, karma: restoredK });
@@ -2424,23 +2433,47 @@ export default function App() {
       return;
     }
 
-    // 2. Блокування скриптових штучних подій
+    const now = Date.now();
+
+    // 2. Блокування скриптових штучних подій (isTrusted=false)
     if (!e.nativeEvent.isTrusted) {
-      syntheticTaps.current.push(Date.now());
+      syntheticTaps.current.push(now);
       if (syntheticTaps.current.length > 40) syntheticTaps.current.shift();
+      untrustedEventsCountRef.current += 1;
+      // Якщо скрипт спамить штучними подіями (≥5 за короткий час) — негайний челендж!
+      if (untrustedEventsCountRef.current >= 5) {
+        untrustedEventsCountRef.current = 0;
+        triggerChallenge({ reason: 'synthetic_dom_script_injection' });
+      }
       return;
     }
 
-    // 3. Фізичний CPS-лімітер та виявлення автоклікера:
-    // Жодна людина не може робити стабільні кліки швидше 50мс (>20 CPS).
-    const now = Date.now();
+    // 3. Розумний фізичний CPS-лімітер та мультитач (багатопальцевий захист)
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    let isDifferentFinger = false;
+    if (lastClickPosRef.current) {
+      const dist = Math.hypot(x - lastClickPosRef.current.x, y - lastClickPosRef.current.y);
+      if (dist > 20) {
+        isDifferentFinger = true;
+      }
+    }
+    lastClickPosRef.current = { x, y };
+
     const clickInterval = now - lastClickTimeRef.current;
     lastClickTimeRef.current = now;
 
-    if (clickInterval < 50) {
+    // Фізичний поріг інтервалу:
+    // Якщо різні пальці (дистанція > 20px) — гравець тапає 2-3 пальцями по черзі (допустимо до 18мс, ~55 CPS сплеск).
+    // Якщо один і той самий палець/точка (дистанція <= 20px) — фізіологічний ліміт одного пальця 35мс (~28 CPS).
+    const minPhysInterval = isDifferentFinger ? 18 : 35;
+
+    if (clickInterval < minPhysInterval) {
       rapidViolationsRef.current += 1;
-      // При 5 надшвидких кліках підряд — негайно призначаємо страйк і відкриваємо челендж!
-      if (rapidViolationsRef.current >= 5) {
+      // Вимагаємо 12 неможливих надшвидких кліків підряд, щоб випадкові мікро-глюки сенсора не тригерили страйк
+      if (rapidViolationsRef.current >= 12) {
         rapidViolationsRef.current = 0;
         const curK = stateRef.current.karma ?? karma;
         const nextK = Math.max(0, Math.min(curK - 25, 20)); // відразу зона «Тінь бабусі»
@@ -2448,7 +2481,7 @@ export default function App() {
         setState((p) => ({ ...p, karma: nextK }));
         saveNow({ ...stateRef.current, karma: nextK });
         queueOfflineAcEvent({ event: 'flag', reason: 'cps_spike_auto_clicker', ts: now });
-        triggerChallenge({ reason: 'rapid_cps_spike', interval: clickInterval });
+        triggerChallenge({ reason: 'rapid_cps_spike', interval: clickInterval, isDifferentFinger });
       }
       return; // Клік відкидається і не додає фокач!
     } else {
@@ -2456,10 +2489,10 @@ export default function App() {
     }
 
     // 4. Захист від офлайн-фарму великої кількості кліків:
-    // Якщо інтернет вимкнено, після кожних 800 кліків гравець зобов'язаний підтвердити, що він людина
+    // Якщо інтернет вимкнено, після кожних 1600 кліків гравець зобов'язаний підтвердити, що він людина
     if (!navigator.onLine) {
       offlineClicksCountRef.current += 1;
-      if (offlineClicksCountRef.current >= 800) {
+      if (offlineClicksCountRef.current >= 1600) {
         offlineClicksCountRef.current = 0;
         triggerChallenge({ reason: 'offline_volume_check' });
       }
@@ -2468,9 +2501,6 @@ export default function App() {
     }
 
     if (state.energy <= 0) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
     const burning = karma < 25; // «фокачі пригорають» — Тінь бабусі
     const hasComboUp = stateRef.current.vipUpgrades?.includes('vip_combo');
     const comboDelay = hasComboUp ? 2200 : 1200;
