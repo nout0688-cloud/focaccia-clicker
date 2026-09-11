@@ -2463,8 +2463,20 @@ export default function App() {
   /* ---- Trades ---- */
   const handleCreateOpenTrade = async () => {
     setTradeCreating(true);
-    haptic.medium();
-    const uid = tgUser?.id || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) || '0';
+    const tgId = tgUser?.id || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id);
+    let uid = tgId ? String(tgId) : '';
+    if (!uid) {
+      try {
+        let stored = localStorage.getItem('focaccia_user_id');
+        if (!stored) {
+          stored = String(Math.floor(1000000000 + Math.random() * 9000000000));
+          localStorage.setItem('focaccia_user_id', stored);
+        }
+        uid = stored;
+      } catch {
+        uid = '1000000000';
+      }
+    }
     const uName = tgUser?.first_name || (window.Telegram?.WebApp?.initDataUnsafe?.user?.first_name) || 'Гравець';
     const uU = tgUser?.username || (window.Telegram?.WebApp?.initDataUnsafe?.user?.username) || '';
 

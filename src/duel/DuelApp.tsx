@@ -815,16 +815,16 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   // ==========================================
   if (!duelId || duelId === 'lobby') {
     return (
-      <div className="min-h-screen bg-[#0d0a04] text-amber-100 flex flex-col justify-between p-4 select-none safe-top safe-bottom">
+      <div className="min-h-[100dvh] max-h-[100dvh] overflow-y-auto bg-[#0d0a04] text-amber-100 flex flex-col justify-between p-4 pb-16 select-none safe-top safe-bottom">
         {/* Top Header */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <button
               type="button"
               onClick={goToGame}
-              className="px-3 py-1.5 rounded-xl bg-stone-900 border border-stone-800 text-xs font-bold text-amber-400 hover:text-amber-200 flex items-center gap-1.5 active:scale-95 transition-all"
+              className="px-3.5 py-1.5 rounded-xl bg-stone-900 border border-stone-800 text-xs font-black text-amber-400 hover:text-amber-200 flex items-center gap-1.5 active:scale-95 transition-all shadow-sm"
             >
-              <span>🫓</span>
+              <span>←</span>
               <span>В гру</span>
             </button>
 
@@ -1154,7 +1154,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
         </div>
 
         {/* CTA Create Button */}
-        <div className="pt-2">
+        <div className="pt-3 pb-6">
           <button
             type="button"
             disabled={creatingDuel || (oppMode !== 'open' && !selectedOpp) || lobbyStake > currentBalance}
