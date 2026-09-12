@@ -181,7 +181,20 @@ const PlayerAvatar = ({
   return <span className={fallbackClassName}>{initial}</span>;
 };
 
-/* ---- Storage: Smart conflict resolver (localStorage + CloudStorage) ---- */
+/* ---- Progress Score Evaluator for Anti-Wipe Conflict Resolution ---- */
+const computeSaveScore = (obj: any): number => {
+  if (!obj || typeof obj !== 'object') return 0;
+  const prestige = Number(obj.prestige) || 0;
+  const total = Number(obj.total) || 0;
+  const focaccia = Number(obj.focaccia) || 0;
+  const diamonds = Number(obj.diamonds) || 0;
+  const clicks = Number(obj.clicks) || 0;
+  const buildings = Object.values(obj.buildings || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+  const upgrades = Array.isArray(obj.upgrades) ? obj.upgrades.length : 0;
+  return (prestige * 1e12) + Math.max(total, focaccia) + (diamonds * 1e6) + (clicks * 10) + (buildings * 1000) + (upgrades * 5000);
+};
+
+/* ---- Storage: Smart Anti-Wipe Conflict Resolver (localStorage + CloudStorage) ---- */
 const storage = {
   async get(key: string): Promise<string | null> {
     const getLocal = (): string | null => {
@@ -194,7 +207,7 @@ const storage = {
     if (tg?.CloudStorage) {
       try {
         cloudVal = await new Promise<string | null>((resolve) => {
-          const timer = setTimeout(() => resolve(null), 1200);
+          const timer = setTimeout(() => resolve(null), 1500);
           tg.CloudStorage.getItem(key, (err: string | null, value?: string) => {
             clearTimeout(timer);
             if (!err && value) resolve(value);
@@ -208,30 +221,58 @@ const storage = {
     if (!localVal) return cloudVal;
     if (!cloudVal) return localVal;
 
-    // Порівнюємо сейви за `lastSave` (і прогресом), щоб ніколи не затерти свіжіші покупки застарілим кешем
+    // Порівнюємо сейви за вагою прогресу та часом — захищаємо прокачані акаунти від випадкового стирання
     try {
       const lObj = JSON.parse(localVal);
       const cObj = JSON.parse(cloudVal);
+      const lScore = computeSaveScore(lObj);
+      const cScore = computeSaveScore(cObj);
+
+      // 🛡️ АНТИ-ВАЙП ПРАВИЛО #1:
+      // Якщо один сейв має відчутний прогрес, а інший порожній — прогрес ЗАВЖДИ перемагає!
+      if (lScore > 1000 && cScore < 100) return localVal;
+      if (cScore > 1000 && lScore < 100) return cloudVal;
+
+      // 🛡️ АНТИ-ВАЙП ПРАВИЛО #2:
+      // Якщо один сейв значно перевершує інший за прогресом:
+      if (lScore > 0 && cScore > 0) {
+        if (lScore > cScore * 10 && (Number(lObj.prestige) || 0) >= (Number(cObj.prestige) || 0)) return localVal;
+        if (cScore > lScore * 10 && (Number(cObj.prestige) || 0) >= (Number(lObj.prestige) || 0)) return cloudVal;
+      }
+
       const lTime = Number(lObj?.lastSave) || 0;
       const cTime = Number(cObj?.lastSave) || 0;
 
-      // Якщо різниця в часі більше 1 секунди — безумовно перемагає новіший сейв!
-      if (lTime > cTime + 1000) return localVal;
-      if (cTime > lTime + 1000) return cloudVal;
+      // Якщо прогрес близький, враховуємо найновіший час (різниця > 2с)
+      if (lTime > cTime + 2000) return localVal;
+      if (cTime > lTime + 2000) return cloudVal;
 
-      // Якщо час однаковий/близький — перемагає той, де більший загальний видобуток (total)
-      const lTotal = Number(lObj?.total) || 0;
-      const cTotal = Number(cObj?.total) || 0;
-      return lTotal >= cTotal ? localVal : cloudVal;
+      return lScore >= cScore ? localVal : cloudVal;
     } catch {
       return localVal || cloudVal;
     }
   },
   set(key: string, value: string) {
-    // 1. МИТТЄВИЙ синхронний запис у localStorage (0.05 мс, ніколи не губиться при швидкому закритті)
+    // 1. Миттєвий локальний запис
     try { window.localStorage.setItem(key, value); } catch { /* */ }
-    // 2. Асинхронний бекап у Telegram CloudStorage
-    try { if (tg?.CloudStorage) tg.CloudStorage.setItem(key, value, () => {}); } catch { /* WebApp unsupported */ }
+
+    // 2. Безпечний бекап у Telegram CloudStorage (оптимізований під ліміт 4096 байт)
+    try {
+      if (tg?.CloudStorage) {
+        let toCloud = value;
+        if (toCloud.length > 3900 && key === SAVE_KEY) {
+          try {
+            const parsed = JSON.parse(value);
+            delete parsed.photo;
+            delete parsed.offlineEvents;
+            toCloud = JSON.stringify(parsed);
+          } catch {}
+        }
+        if (toCloud.length <= 4096) {
+          tg.CloudStorage.setItem(key, toCloud, () => {});
+        }
+      }
+    } catch { /* WebApp unsupported */ }
   },
   remove(key: string) {
     try { window.localStorage.removeItem(key); } catch { /* */ }
@@ -436,7 +477,7 @@ const defaultState = (): SaveState => ({
   luck: 0,
   karma: 100,
   lang: 'uk',
-  lastReset: 0,
+  lastReset: Date.now(),
   lastSave: Date.now(),
   cosmetics: {
     ownedFrames: ['frame_default'],
@@ -470,7 +511,36 @@ const defaultState = (): SaveState => ({
 
 async function loadState(): Promise<SaveState> {
   try {
-    const raw = await storage.get(SAVE_KEY);
+    let raw = await storage.get(SAVE_KEY);
+
+    // 🛡️ СЕРВЕРНИЙ РЕЗЕРВНИЙ СНАПШОТ (Auto-recovery from Server)
+    // Якщо локальне сховище та CloudStorage порожні (новий пристрій, інкогніто або очищення кешу)
+    if (!raw && tgUser?.id) {
+      try {
+        const snapRes = await fetch(`${API_BASE}/api/reward?action=get_snapshot&userId=${tgUser.id}`)
+          .then((r) => r.json());
+        if (snapRes?.ok && snapRes.snapshot) {
+          raw = JSON.stringify(snapRes.snapshot);
+          try { window.localStorage.setItem(SAVE_KEY, raw); } catch {}
+        } else if (snapRes?.ok && snapRes.leaderboardRecovery) {
+          const rec = snapRes.leaderboardRecovery;
+          const recovered: SaveState = {
+            ...defaultState(),
+            total: rec.total || 0,
+            focaccia: rec.focaccia || 0,
+            prestige: rec.prestige || 0,
+            diamonds: rec.diamonds || 0,
+            clicks: rec.clicks || 0,
+            bossesDefeated: rec.bossesDefeated || 0,
+            lastSave: Date.now(),
+            lastReset: Date.now(),
+          };
+          raw = JSON.stringify(recovered);
+          try { window.localStorage.setItem(SAVE_KEY, raw); } catch {}
+        }
+      } catch {}
+    }
+
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw);
     delete parsed.photo;
@@ -489,6 +559,7 @@ async function loadState(): Promise<SaveState> {
     return {
       ...def,
       ...parsed,
+      lastReset: Math.max(1788541921215, Number(parsed.lastReset) || Date.now()),
       skinsResetVersion: SKINS_RESET_VER,
       lastSkinsReset: Number(parsed.lastSkinsReset) || 0,
       cosmetics: {
@@ -866,6 +937,21 @@ export default function App() {
       .catch(() => null);
   }, [tgUser]);
 
+  const uploadServerSnapshot = useCallback((stateToSnap?: SaveState) => {
+    if (!tgUser?.id) return;
+    const s = stateToSnap || stateRef.current;
+    if (!s || (s.total < 50 && s.prestige === 0 && s.diamonds === 0)) return;
+
+    fetch(`${API_BASE}/api/reward?action=save_snapshot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: tgUser.id,
+        saveState: s,
+      }),
+    }).catch(() => {});
+  }, []);
+
   /* ---- Init ---- */
   useEffect(() => {
     if (tg) { tg.ready(); tg.expand(); }
@@ -919,6 +1005,7 @@ export default function App() {
       stateRef.current = s;
       saveNow(s);
       setTimeout(reportSync, 100);
+      setTimeout(() => uploadServerSnapshot(s), 3000);
 
       // Check for admin rewards, maintenance or reset order
       const checkAdmin = (userState: SaveState) => {
@@ -937,6 +1024,52 @@ export default function App() {
             }
             if (!uid) return;
             if (typeof data?.karma === 'number') setKarma(data.karma);
+
+            // Обробка відновлення акаунта адміністратором
+            if (data?.restore) {
+              const resObj = data.restore;
+              if (resObj.type === 'full_save' && resObj.save) {
+                const restored: SaveState = {
+                  ...defaultState(),
+                  ...resObj.save,
+                  lastSave: Date.now(),
+                  lastReset: Math.max(1788541921215, Date.now()),
+                };
+                storage.set(SAVE_KEY, JSON.stringify(restored));
+                stateRef.current = restored;
+                setState(restored);
+                addToast(
+                  langRef.current === 'uk' ? 'Акаунт відновлено! 🎉' : 'Аккаунт восстановлен! 🎉',
+                  langRef.current === 'uk' ? 'Адміністратор відновив твій повний прогрес!' : 'Администратор восстановил твой прогресс!',
+                  '💾'
+                );
+                haptic.success();
+                setTimeout(reportSync, 100);
+              } else if (resObj.type === 'leaderboard') {
+                setState((p) => {
+                  const next: SaveState = {
+                    ...p,
+                    total: Math.max(p.total, resObj.total || 0),
+                    focaccia: Math.max(p.focaccia, resObj.focaccia || 0),
+                    prestige: Math.max(p.prestige, resObj.prestige || 0),
+                    diamonds: Math.max(p.diamonds, resObj.diamonds || 0),
+                    clicks: Math.max(p.clicks, resObj.clicks || 0),
+                    bossesDefeated: Math.max(p.bossesDefeated, resObj.bossesDefeated || 0),
+                    lastSave: Date.now(),
+                  };
+                  saveNow(next);
+                  return next;
+                });
+                addToast(
+                  langRef.current === 'uk' ? 'Рекорди відновлено! 🏆' : 'Рекорды восстановлены! 🏆',
+                  langRef.current === 'uk' ? 'Твої пікові показники відновлено з лідерборду!' : 'Твои пиковые показатели восстановлены из лидерборда!',
+                  '⭐'
+                );
+                haptic.success();
+                setTimeout(reportSync, 100);
+              }
+            }
+
             if (data?.reset) {
               const fresh = defaultState();
               if (data.resetTime) fresh.lastReset = data.resetTime;
@@ -2304,6 +2437,15 @@ export default function App() {
     }, 2000);
     return () => clearInterval(iv);
   }, [loading, saveNow]);
+
+  /* ---- Server Backup Snapshot (every 2.5 min) ---- */
+  useEffect(() => {
+    if (loading || !tgUser?.id) return;
+    const iv = setInterval(() => {
+      uploadServerSnapshot();
+    }, 150000);
+    return () => clearInterval(iv);
+  }, [loading, uploadServerSnapshot]);
 
   /* ---- Achievements ---- */
   useEffect(() => {
@@ -5017,6 +5159,7 @@ export default function App() {
         setState(next);
         saveNow(next);
         reportSync();
+        uploadServerSnapshot(next);
         addToast(curT.toastRebirthDone, formatTemplate(curT.toastRebirthDoneDesc, (cur.prestige + prestigeGain) * 10), '🔄');
         doFlash('golden');
         burstConfetti(['🔄', '💎', '✨', '⭐', '🫓']);

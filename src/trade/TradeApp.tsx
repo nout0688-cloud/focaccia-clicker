@@ -23,6 +23,18 @@ const haptic = {
   selection: () => { try { tg?.HapticFeedback?.selectionChanged(); } catch {} },
 };
 
+const computeSaveScore = (obj: any): number => {
+  if (!obj || typeof obj !== 'object') return 0;
+  const prestige = Number(obj.prestige) || 0;
+  const total = Number(obj.total) || 0;
+  const focaccia = Number(obj.focaccia) || 0;
+  const diamonds = Number(obj.diamonds) || 0;
+  const clicks = Number(obj.clicks) || 0;
+  const buildings = Object.values(obj.buildings || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+  const upgrades = Array.isArray(obj.upgrades) ? obj.upgrades.length : 0;
+  return (prestige * 1e12) + Math.max(total, focaccia) + (diamonds * 1e6) + (clicks * 10) + (buildings * 1000) + (upgrades * 5000);
+};
+
 const storage = {
   async get(key: string): Promise<string | null> {
     const getLocal = (): string | null => {
@@ -35,7 +47,7 @@ const storage = {
     if (cs) {
       try {
         cloudVal = await new Promise<string | null>((resolve) => {
-          const timer = setTimeout(() => resolve(null), 1200);
+          const timer = setTimeout(() => resolve(null), 1500);
           cs.getItem(key, (err: any, value: string) => {
             clearTimeout(timer);
             if (!err && value) resolve(value);
@@ -52,13 +64,24 @@ const storage = {
     try {
       const lObj = JSON.parse(localVal);
       const cObj = JSON.parse(cloudVal);
+      const lScore = computeSaveScore(lObj);
+      const cScore = computeSaveScore(cObj);
+
+      // 🛡️ АНТИ-ВАЙП: Прогрес завжди перемагає порожній сейв!
+      if (lScore > 1000 && cScore < 100) return localVal;
+      if (cScore > 1000 && lScore < 100) return cloudVal;
+
+      if (lScore > 0 && cScore > 0) {
+        if (lScore > cScore * 10 && (Number(lObj.prestige) || 0) >= (Number(cObj.prestige) || 0)) return localVal;
+        if (cScore > lScore * 10 && (Number(cObj.prestige) || 0) >= (Number(lObj.prestige) || 0)) return cloudVal;
+      }
+
       const lTime = Number(lObj?.lastSave) || 0;
       const cTime = Number(cObj?.lastSave) || 0;
-      if (lTime > cTime + 1000) return localVal;
-      if (cTime > lTime + 1000) return cloudVal;
-      const lTotal = Number(lObj?.total) || 0;
-      const cTotal = Number(cObj?.total) || 0;
-      return lTotal >= cTotal ? localVal : cloudVal;
+      if (lTime > cTime + 2000) return localVal;
+      if (cTime > lTime + 2000) return cloudVal;
+
+      return lScore >= cScore ? localVal : cloudVal;
     } catch {
       return localVal || cloudVal;
     }
@@ -66,7 +89,20 @@ const storage = {
   set(key: string, value: string) {
     try { window.localStorage.setItem(key, value); } catch { /* */ }
     try {
-      if (tg?.CloudStorage) tg.CloudStorage.setItem(key, value, () => {});
+      if (tg?.CloudStorage) {
+        let toCloud = value;
+        if (toCloud.length > 3900 && key === SAVE_KEY) {
+          try {
+            const parsed = JSON.parse(value);
+            delete parsed.photo;
+            delete parsed.offlineEvents;
+            toCloud = JSON.stringify(parsed);
+          } catch {}
+        }
+        if (toCloud.length <= 4096) {
+          tg.CloudStorage.setItem(key, toCloud, () => {});
+        }
+      }
     } catch { /* */ }
   },
 };
