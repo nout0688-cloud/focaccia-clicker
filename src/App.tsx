@@ -313,7 +313,8 @@ const ROFL_SOUNDS: Record<string, { title: string; cdnFallback?: string; emoji: 
   },
 };
 
-async function playRoflSound(soundKey: string, addToastFn?: (title: string, msg: string, emoji: string) => void) {
+// Звуковий тролінг (без сповіщень на екрані, щоб гравець не знав звідки звук)
+async function playRoflSound(soundKey: string) {
   const item = ROFL_SOUNDS[soundKey];
   if (!item) return;
 
@@ -399,10 +400,6 @@ async function playRoflSound(soundKey: string, addToastFn?: (title: string, msg:
     document.body.classList.add('animate-shake');
     setTimeout(() => document.body.classList.remove('animate-shake'), 1200);
   } catch {}
-
-  if (addToastFn) {
-    addToastFn(item.title, '🎭 Спецефект від шеф-кухаря!', item.emoji);
-  }
 }
 
 const DevBadge = ({ className, size = 'md' }: { className?: string; size?: 'sm' | 'md' | 'lg' }) => {
@@ -1339,7 +1336,7 @@ export default function App() {
 
             // 🔊 Звуковий тролінг (рофл від адміна)
             if (data?.roflSound) {
-              playRoflSound(data.roflSound, addToast);
+              playRoflSound(data.roflSound);
             }
 
             // Обробка відновлення акаунта адміністратором
