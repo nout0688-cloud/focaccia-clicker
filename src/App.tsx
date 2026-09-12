@@ -93,97 +93,298 @@ const isDevUser = (id?: number | string | null): boolean => {
   return String(id) === String(ADMIN_ID);
 };
 
-const ROFL_SOUNDS: Record<string, { title: string; file: string; cdnFallback?: string; emoji: string }> = {
+// Надійне отримання Telegram User ID для PC / Desktop / Web
+function getCurrentUserId(): string | number {
+  try {
+    const w = typeof window !== 'undefined' ? (window as any) : null;
+    const tgApp = w?.Telegram?.WebApp;
+    if (tgApp?.initDataUnsafe?.user?.id) {
+      try { localStorage.setItem('focaccia_user_id', String(tgApp.initDataUnsafe.user.id)); } catch {}
+      return tgApp.initDataUnsafe.user.id;
+    }
+    if (tgApp?.initData) {
+      const p = new URLSearchParams(tgApp.initData);
+      const uStr = p.get('user');
+      if (uStr) {
+        const uObj = JSON.parse(uStr);
+        if (uObj?.id) {
+          try { localStorage.setItem('focaccia_user_id', String(uObj.id)); } catch {}
+          return uObj.id;
+        }
+      }
+    }
+    if (typeof window !== 'undefined' && window.location.hash) {
+      const hash = window.location.hash.substring(1);
+      const hp = new URLSearchParams(hash);
+      const tgData = hp.get('tgWebAppData') || hash;
+      const subParams = new URLSearchParams(tgData);
+      const uStr = subParams.get('user');
+      if (uStr) {
+        const uObj = JSON.parse(decodeURIComponent(uStr));
+        if (uObj?.id) {
+          try { localStorage.setItem('focaccia_user_id', String(uObj.id)); } catch {}
+          return uObj.id;
+        }
+      }
+    }
+    if (typeof window !== 'undefined') {
+      const sp = new URLSearchParams(window.location.search);
+      const urlUid = sp.get('userId') || sp.get('uid');
+      if (urlUid) {
+        try { localStorage.setItem('focaccia_user_id', urlUid); } catch {}
+        return urlUid;
+      }
+      const stored = localStorage.getItem('focaccia_user_id') || localStorage.getItem('focaccia-uid');
+      if (stored) return stored;
+    }
+  } catch {}
+  return tgUser?.id || 0;
+}
+
+// Абсолютне визначення URL аудіофайлу для безпомилкового завантаження на ПК
+function getSoundUrl(soundKey: string): string {
+  try {
+    if (typeof window !== 'undefined' && window.location.hostname.includes('github.io')) {
+      return `https://nout0688-cloud.github.io/focaccia-clicker/sounds/${soundKey}.mp3`;
+    }
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    let p = typeof window !== 'undefined' ? window.location.pathname : '/';
+    if (!p.endsWith('/')) {
+      if (!/\.[a-zA-Z0-9]+$/.test(p)) {
+        p = p + '/';
+      } else {
+        p = p.substring(0, p.lastIndexOf('/') + 1);
+      }
+    }
+    return `${origin}${p}sounds/${soundKey}.mp3`;
+  } catch {
+    return `https://nout0688-cloud.github.io/focaccia-clicker/sounds/${soundKey}.mp3`;
+  }
+}
+
+// 🔊 Web Audio API Движок для гарантованого відтворення на ПК
+let globalAudioCtx: AudioContext | null = null;
+const soundBufferCache = new Map<string, AudioBuffer>();
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  if (!globalAudioCtx) {
+    const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioCtxClass) {
+      globalAudioCtx = new AudioCtxClass();
+    }
+  }
+  if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+    globalAudioCtx.resume().catch(() => {});
+  }
+  return globalAudioCtx;
+}
+
+// Автоматичне розблокування аудіо в браузері ПК при першому кліку/дотику/натисканні клавіші
+if (typeof window !== 'undefined') {
+  const unlockAudio = () => {
+    const ctx = getAudioContext();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+  };
+  window.addEventListener('mousedown', unlockAudio, { passive: true });
+  window.addEventListener('pointerdown', unlockAudio, { passive: true });
+  window.addEventListener('click', unlockAudio, { passive: true });
+  window.addEventListener('touchstart', unlockAudio, { passive: true });
+  window.addEventListener('keydown', unlockAudio, { passive: true });
+}
+
+// Резервний синтезатор звуків Web Audio API (на випадок якщо браузер заблокує MP3 мережу)
+function playSynthSoundFallback(ctx: AudioContext, soundKey: string) {
+  try {
+    const now = ctx.currentTime;
+    if (soundKey === 'vine_boom') {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(140, now);
+      osc.frequency.exponentialRampToValueAtTime(30, now + 0.8);
+      gain.gain.setValueAtTime(1.0, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 1.2);
+    } else if (soundKey === 'doorbell') {
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.frequency.setValueAtTime(659.25, now);
+      gain1.gain.setValueAtTime(0.9, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.5);
+
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.frequency.setValueAtTime(523.25, now + 0.25);
+      gain2.gain.setValueAtTime(0.9, now + 0.25);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 1.0);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.25);
+      osc2.stop(now + 1.0);
+    } else if (soundKey === 'alarm') {
+      for (let i = 0; i < 4; i++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(i % 2 === 0 ? 880 : 1200, now + i * 0.2);
+        gain.gain.setValueAtTime(0.8, now + i * 0.2);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + (i + 1) * 0.2);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now + i * 0.2);
+        osc.stop(now + (i + 1) * 0.2);
+      }
+    } else {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.exponentialRampToValueAtTime(70, now + 0.6);
+      gain.gain.setValueAtTime(0.9, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.7);
+    }
+  } catch {}
+}
+
+const ROFL_SOUNDS: Record<string, { title: string; cdnFallback?: string; emoji: string }> = {
   vine_boom: {
     title: '💥 БАБАХ! (Vine Boom)',
-    file: './sounds/vine_boom.mp3',
     cdnFallback: 'https://raw.githubusercontent.com/Azepp/kliks/main/public/audio/vine%20boom.mp3',
     emoji: '💥',
   },
   fart: {
     title: '💨 Хто це пукнув?!',
-    file: './sounds/fart.mp3',
     cdnFallback: 'https://assets.mixkit.co/active_storage/sfx/724/724-preview.mp3',
     emoji: '💨',
   },
   bruh: {
     title: '🗿 BRUH MOMENT',
-    file: './sounds/bruh.mp3',
     cdnFallback: 'https://raw.githubusercontent.com/Ziyangll/BruhButton/master/sounds/Bruh.mp3',
     emoji: '🗿',
   },
   screamer: {
     title: '😱 ААААААААА!',
-    file: './sounds/screamer.mp3',
     cdnFallback: 'https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3',
     emoji: '😱',
   },
   doorbell: {
     title: '🚪 Хтось дзвонить у двері!',
-    file: './sounds/doorbell.mp3',
     cdnFallback: 'https://assets.mixkit.co/active_storage/sfx/2874/2874-preview.mp3',
     emoji: '🚪',
   },
   knocking: {
     title: '✊ ТУК-ТУК-ТУК!',
-    file: './sounds/knocking.mp3',
     cdnFallback: 'https://assets.mixkit.co/active_storage/sfx/2865/2865-preview.mp3',
     emoji: '✊',
   },
   sad_trombone: {
     title: '🎺 Вах-вах-вааау...',
-    file: './sounds/sad_trombone.mp3',
     cdnFallback: 'https://assets.mixkit.co/active_storage/sfx/464/464-preview.mp3',
     emoji: '🎺',
   },
   alarm: {
     title: '⏰ ТРИВОГА! ПРОКИДАЙСЯ!',
-    file: './sounds/alarm.mp3',
     cdnFallback: 'https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3',
     emoji: '⏰',
   },
   airhorn: {
     title: '📢 ТУ-ТУ-ТУ-ТУУУУ!',
-    file: './sounds/airhorn.mp3',
     cdnFallback: 'https://raw.githubusercontent.com/lukasziegler/airhorn/master/docs/media/airhorn/sound.mp3',
     emoji: '📢',
   },
   oof: {
     title: '💀 OOF!',
-    file: './sounds/oof.mp3',
     cdnFallback: 'https://raw.githubusercontent.com/Ziyangll/BruhButton/master/sounds/Oof.mp3',
     emoji: '💀',
   },
 };
 
-function playRoflSound(soundKey: string, addToastFn?: (title: string, msg: string, emoji: string) => void) {
+async function playRoflSound(soundKey: string, addToastFn?: (title: string, msg: string, emoji: string) => void) {
   const item = ROFL_SOUNDS[soundKey];
   if (!item) return;
 
-  try {
-    const audio = new Audio(item.file);
-    audio.volume = 1.0;
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-      playPromise.catch(() => {
-        if (item.cdnFallback) {
-          const fallback = new Audio(item.cdnFallback);
-          fallback.volume = 1.0;
-          fallback.play().catch(() => {});
+  const primaryUrl = getSoundUrl(soundKey);
+  const fallbackUrl = item.cdnFallback;
+  let played = false;
+
+  // 1. Web Audio API (найефективніше на ПК / Mac / браузерах)
+  const ctx = getAudioContext();
+  if (ctx) {
+    try {
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+
+      let audioBuffer = soundBufferCache.get(soundKey);
+      if (!audioBuffer) {
+        const res = await fetch(primaryUrl).catch(() => fallbackUrl ? fetch(fallbackUrl) : null);
+        if (res && res.ok) {
+          const ab = await res.arrayBuffer();
+          audioBuffer = await ctx.decodeAudioData(ab);
+          soundBufferCache.set(soundKey, audioBuffer);
         }
-      });
-    }
-  } catch {
-    if (item.cdnFallback) {
-      try {
-        const fallback = new Audio(item.cdnFallback);
-        fallback.volume = 1.0;
-        fallback.play().catch(() => {});
-      } catch {}
+      }
+
+      if (audioBuffer) {
+        const src = ctx.createBufferSource();
+        src.buffer = audioBuffer;
+        const gain = ctx.createGain();
+        gain.gain.value = 1.0;
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        src.start(0);
+        played = true;
+      }
+    } catch (err) {
+      console.warn('Web Audio API playback failed, trying HTML5 Audio:', err);
     }
   }
 
-  // Haptic feedback (3 heavy pulses)
+  // 2. HTML5 Audio (якщо Web Audio API не заграв або браузер надав перевагу елементу)
+  if (!played) {
+    try {
+      const audio = new Audio(primaryUrl);
+      audio.volume = 1.0;
+      const p = audio.play();
+      if (p !== undefined) {
+        await p;
+        played = true;
+      } else {
+        played = true;
+      }
+    } catch (e1) {
+      if (fallbackUrl) {
+        try {
+          const fb = new Audio(fallbackUrl);
+          fb.volume = 1.0;
+          await fb.play();
+          played = true;
+        } catch (e2) {}
+      }
+    }
+  }
+
+  // 3. Синтетичний бекап звук через динамік ПК, якщо всі MP3 заблоковано
+  if (!played && ctx) {
+    playSynthSoundFallback(ctx, soundKey);
+    played = true;
+  }
+
+  // Haptic feedback (для телефонів)
   try {
     const tgHaptic = (window as any).Telegram?.WebApp?.HapticFeedback;
     if (tgHaptic) {
@@ -193,7 +394,7 @@ function playRoflSound(soundKey: string, addToastFn?: (title: string, msg: strin
     }
   } catch {}
 
-  // Screen shake animation
+  // Анімація тряски екрана
   try {
     document.body.classList.add('animate-shake');
     setTimeout(() => document.body.classList.remove('animate-shake'), 1200);
@@ -1120,20 +1321,20 @@ export default function App() {
 
       // Check for admin rewards, maintenance or reset order
       const checkAdmin = (userState: SaveState) => {
-        const uid = tgUser?.id || 0;
+        const uid = getCurrentUserId();
         fetch(`https://focaccia-bot.vercel.app/api/reward?userId=${uid}&lastReset=${userState.lastReset || 0}&lastSkinsReset=${userState.lastSkinsReset || 0}`)
           .then((r) => r.json())
           .then((data) => {
             if (typeof data?.maintenance === 'boolean') {
               const isM = data.maintenance;
               setIsMaintenance(isM);
-              if (isM && !isDevUser(tgUser?.id) && !hasMaintenanceKicked && maintenanceCountdown === null) {
+              if (isM && !isDevUser(uid) && !hasMaintenanceKicked && maintenanceCountdown === null) {
                 saveNow();
                 reportSync();
                 setMaintenanceCountdown(10);
               }
             }
-            if (!uid) return;
+            if (!uid || uid === 0 || uid === '0') return;
             if (typeof data?.karma === 'number') setKarma(data.karma);
 
             // 🔊 Звуковий тролінг (рофл від адміна)
@@ -3027,6 +3228,9 @@ export default function App() {
 
   /* ---- Actions ---- */
   const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // Гарантоване розблокування аудіоконтексту на ПК при кліку
+    getAudioContext();
+
     // 1. Блокування кліків під час активного випробування «Бабуся не вірить»
     if (challenge !== null) {
       return;
