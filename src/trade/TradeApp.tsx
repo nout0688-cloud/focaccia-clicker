@@ -71,6 +71,13 @@ const storage = {
   },
 };
 
+interface ActivePlayer {
+  id: string;
+  name: string;
+  username?: string;
+  score?: number;
+}
+
 interface Offer {
   focaccia: number;
   diamonds: number;
@@ -98,8 +105,11 @@ interface TradeState {
   opp?: TradePlayer | null;
 }
 
-export default function TradeApp({ tradeId }: { tradeId: string }) {
-  // Надійне визначення User ID: Telegram WebApp -> збережений ID -> згенерований 10-значний ID
+export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string }) {
+  const isLobbyProp = !initialTradeId || initialTradeId === 'lobby' || initialTradeId === 'new';
+  const [activeTradeId, setActiveTradeId] = useState<string>(isLobbyProp ? '' : initialTradeId);
+
+  // Надійне визначення User ID
   const [meId, setMeId] = useState<string>(() => {
     if (tg?.initDataUnsafe?.user?.id) return String(tg.initDataUnsafe.user.id);
     try {
@@ -111,34 +121,46 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
     return newId;
   });
 
+  const isRealTg = Boolean(tg?.initDataUnsafe?.user?.id);
   const myName = String(tg?.initDataUnsafe?.user?.first_name || 'Гравець');
   const myU = String(tg?.initDataUnsafe?.user?.username || '');
 
-  const [trade, setTrade] = useState<TradeState | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
   // Локальний інвентар
-  const [, setUserSave] = useState<any>(null);
   const [myFocaccia, setMyFocaccia] = useState(0);
   const [myDiamonds, setMyDiamonds] = useState(0);
   const [myOwnedSkins, setMyOwnedSkins] = useState<string[]>([]);
   const [myOwnedCatSkins, setMyOwnedCatSkins] = useState<string[]>([]);
 
-  // Поточна пропозиція
+  // ===== Стейт ЛОБІ =====
+  const [lobbyTab, setLobbyTab] = useState<'active' | 'search' | 'open' | 'code'>('active');
+  const [activePlayers, setActivePlayers] = useState<ActivePlayer[]>([]);
+  const [loadingPlayers, setLoadingPlayers] = useState(false);
+  const [playerFilter, setPlayerFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [searchFound, setSearchFound] = useState<ActivePlayer | null>(null);
+  const [searchError, setSearchError] = useState('');
+  const [creatingTrade, setCreatingTrade] = useState(false);
+  const [joinCodeInput, setJoinCodeInput] = useState('');
+
+  // ===== Стейт КІМНАТИ ТРЕЙДУ =====
+  const [trade, setTrade] = useState<TradeState | null>(null);
+  const [roomLoading, setRoomLoading] = useState(true);
+  const [roomError, setRoomError] = useState<string | null>(null);
+
+  // Поточна пропозиція у кімнаті
   const [focOffer, setFocOffer] = useState(0);
   const [diaOffer, setDiaOffer] = useState(0);
   const [selectedSkins, setSelectedSkins] = useState<string[]>([]);
 
-  // UI стан
-  const [activeTab, setActiveTab] = useState<'mine' | 'partner'>('mine');
+  // Модалки та UI
   const [skinModalOpen, setSkinModalOpen] = useState(false);
   const [skinTab, setSkinTab] = useState<'bread' | 'cat'>('bread');
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [confirmTimer, setConfirmTimer] = useState(3);
   const [scamAlert, setScamAlert] = useState<string | null>(null);
-  const [copySuccess, setCopySuccess] = useState(false);
-  const [codeCopied, setCodeCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [isCompletedSettled, setIsCompletedSettled] = useState(false);
 
   const prevOppOfferRef = useRef<Offer | null>(null);
@@ -158,7 +180,7 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
     }
   }, []);
 
-  // Завантаження інвентарю
+  // Завантаження інвентарю з SaveState
   useEffect(() => {
     let active = true;
     const loadInventory = async () => {
@@ -193,7 +215,6 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
       }
 
       if (loadedSave && active) {
-        setUserSave(loadedSave);
         setMyFocaccia(Math.floor(Number(loadedSave.focaccia) || 0));
         setMyDiamonds(Math.floor(Number(loadedSave.diamonds) || 0));
         const breadSkins = Array.isArray(loadedSave.skins?.owned) ? loadedSave.skins.owned : ['skin_classic'];
@@ -207,9 +228,109 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
     return () => { active = false; };
   }, [meId]);
 
-  // Polling синхронізації кожні 800ms
+  // Завантаження списку активних гравців для Лобі
   useEffect(() => {
-    if (!tradeId || !meId) return;
+    if (activeTradeId) return;
+    let active = true;
+    setLoadingPlayers(true);
+
+    fetch(`${API}?action=get_active_players&userId=${meId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!active) return;
+        if (data?.ok && Array.isArray(data.players)) {
+          setActivePlayers(data.players);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoadingPlayers(false);
+      });
+
+    return () => { active = false; };
+  }, [activeTradeId, meId]);
+
+  // Створення трейду з обраним гравцем або відкритого
+  const handleCreateTrade = async (targetUserId: string | null = null) => {
+    if (creatingTrade) return;
+    setCreatingTrade(true);
+    haptic.medium();
+
+    try {
+      const res = await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'create',
+          from: meId,
+          fromName: myName,
+          fromU: myU,
+          to: targetUserId,
+        }),
+      });
+      const data = await res.json();
+      if (data?.ok && data.tradeId) {
+        haptic.success();
+        setActiveTradeId(data.tradeId);
+        window.history.replaceState(null, '', window.location.pathname + '?v=' + Date.now() + '&trade=' + data.tradeId);
+      } else {
+        haptic.error();
+        alert(`Помилка створення трейду: ${data?.error || 'невідома помилка'}`);
+      }
+    } catch {
+      haptic.error();
+      alert('Не вдалося зв’язатися із сервером');
+    } finally {
+      setCreatingTrade(false);
+    }
+  };
+
+  // Пошук гравця за @юзернеймом
+  const handleSearchPlayer = async () => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    setSearching(true);
+    setSearchError('');
+    setSearchFound(null);
+    haptic.light();
+
+    try {
+      const res = await fetch(`${API}?action=find_player&q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (data?.ok && data.player) {
+        setSearchFound(data.player);
+        haptic.success();
+      } else {
+        setSearchError('Гравця з таким юзернеймом або ID не знайдено');
+        haptic.error();
+      }
+    } catch {
+      setSearchError('Помилка пошуку');
+      haptic.error();
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // Вхід до кімнати за кодом або посиланням
+  const handleJoinByCode = () => {
+    const raw = joinCodeInput.trim();
+    if (!raw) return;
+    let target = raw;
+    const match = raw.match(/tr_[a-zA-Z0-9_-]+/);
+    if (match) target = match[0];
+    else if (raw.includes('trade=')) {
+      const p = new URL(raw.startsWith('http') ? raw : 'https://dummy.com/' + raw).searchParams.get('trade');
+      if (p) target = p;
+    }
+    haptic.medium();
+    setActiveTradeId(target);
+    window.history.replaceState(null, '', window.location.pathname + '?v=' + Date.now() + '&trade=' + target);
+  };
+
+  // Polling синхронізації кімнати (кожні 800мс)
+  useEffect(() => {
+    if (!activeTradeId || !meId) return;
 
     let iv: ReturnType<typeof setInterval> | undefined;
 
@@ -220,10 +341,11 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
       try {
         const payload: any = {
           action: 'sync',
-          tradeId,
+          tradeId: activeTradeId,
           userId: meId,
           name: myName,
           u: myU,
+          clientBalance: { f: myFocaccia, d: myDiamonds },
         };
 
         if (!trade?.me?.locked) {
@@ -242,18 +364,18 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
         const data: TradeState = await res.json();
 
         if (data.ok === false && data.error) {
-          setError(
+          setRoomError(
             data.error === 'not_found'
               ? 'Трейд не знайдено або термін його дії закінчився'
               : data.error === 'not_a_participant'
               ? 'У цій кімнаті вже є 2 учасники'
               : `Помилка: ${data.error}`
           );
-          setLoading(false);
+          setRoomLoading(false);
           return;
         }
 
-        // Анти-скам детекція зміни пропозиції партнером
+        // Анти-скам: сповіщення при зміні пропозиції партнером
         if (data.opp?.offer && prevOppOfferRef.current) {
           const p = prevOppOfferRef.current;
           const cur = data.opp.offer;
@@ -263,8 +385,8 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
 
           if (focChanged || diaChanged || skinsChanged) {
             haptic.warning();
-            setScamAlert('⚠️ Партнер змінив свою пропозицію! Перевір предмети перед блокуванням.');
-            setTimeout(() => setScamAlert(null), 6000);
+            setScamAlert('⚠️ Партнер змінив пропозицію! Перевір перед фіксацією.');
+            setTimeout(() => setScamAlert(null), 5000);
           }
         }
         if (data.opp?.offer) {
@@ -272,7 +394,7 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
         }
 
         setTrade(data);
-        setLoading(false);
+        setRoomLoading(false);
 
         if (data.stage !== 'active' && iv) {
           clearInterval(iv);
@@ -287,9 +409,9 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
     syncTick();
     iv = setInterval(syncTick, 850);
     return () => { if (iv) clearInterval(iv); };
-  }, [tradeId, meId, focOffer, diaOffer, selectedSkins, trade?.me?.locked]);
+  }, [activeTradeId, meId, focOffer, diaOffer, selectedSkins, trade?.me?.locked, myFocaccia, myDiamonds]);
 
-  // Безпечний таймер для модалки підтвердження
+  // Таймер підтвердження
   useEffect(() => {
     if (!confirmModalOpen) {
       setConfirmTimer(3);
@@ -313,7 +435,7 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'lock',
-          tradeId,
+          tradeId: activeTradeId,
           userId: meId,
           locked: wantLock,
         }),
@@ -339,8 +461,9 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'confirm',
-          tradeId,
+          tradeId: activeTradeId,
           userId: meId,
+          clientBalance: { f: myFocaccia, d: myDiamonds },
         }),
       });
       const data = await res.json();
@@ -354,8 +477,8 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
       } else {
         haptic.error();
         alert(data.error === 'insufficient_funds_p1' || data.error === 'insufficient_funds_p2'
-          ? 'Помилка: на балансі одного з гравців недостатньо коштів для виконання трейду!'
-          : `Помилка підтвердження: ${data.error}`);
+          ? 'Помилка: на балансі одного з гравців недостатньо коштів для трейду!'
+          : `Помилка: ${data.error}`);
       }
     } catch {
       haptic.error();
@@ -370,13 +493,13 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
       await fetch(API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'cancel', tradeId, userId: meId, reason: 'Скасовано гравцем' }),
+        body: JSON.stringify({ action: 'cancel', tradeId: activeTradeId, userId: meId, reason: 'Скасовано гравцем' }),
       });
     } catch { /* */ }
-    returnToGame();
+    returnToLobby();
   };
 
-  // Збереження результатів після успішного трейду
+  // Збереження результатів після успішного завершення
   useEffect(() => {
     if (trade?.stage !== 'completed' || isCompletedSettled) return;
     setIsCompletedSettled(true);
@@ -387,17 +510,20 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
         let s: any = null;
         const raw = await storage.get(SAVE_KEY);
         if (raw) s = JSON.parse(raw);
-        if (!s) s = { focaccia: 0, diamonds: 0, skins: { owned: ['skin_classic'], equipped: 'skin_classic' } };
+        if (!s) s = { focaccia: 0, total: 0, diamonds: 0, skins: { owned: ['skin_classic'], equipped: 'skin_classic' } };
 
         const myGive = trade.me?.offer || { focaccia: 0, diamonds: 0, skins: [] };
         const myReceive = trade.opp?.offer || { focaccia: 0, diamonds: 0, skins: [] };
 
         const newFoc = Math.max(0, (Number(s.focaccia) || 0) - myGive.focaccia + myReceive.focaccia);
+        const newTotal = Math.max(0, (Number(s.total) || 0) + myReceive.focaccia);
         const newDia = Math.max(0, (Number(s.diamonds) || 0) - myGive.diamonds + myReceive.diamonds);
 
         s.focaccia = newFoc;
+        s.total = newTotal;
         s.diamonds = newDia;
 
+        // Скіни хліба
         let currentSkins: string[] = Array.isArray(s.skins?.owned) ? s.skins.owned : ['skin_classic'];
         const givenBreadSkins = myGive.skins.filter((sk) => !sk.startsWith('cat:'));
         currentSkins = currentSkins.filter((sk) => !givenBreadSkins.includes(sk) || sk === 'skin_classic');
@@ -409,11 +535,10 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
         });
 
         let equipped = s.skins?.equipped || 'skin_classic';
-        if (!currentSkins.includes(equipped)) {
-          equipped = 'skin_classic';
-        }
+        if (!currentSkins.includes(equipped)) equipped = 'skin_classic';
         s.skins = { ...s.skins, owned: currentSkins, equipped };
 
+        // Скіни котиків
         let currentCatSkins: string[] = Array.isArray(s.cat?.ownedSkins) ? s.cat.ownedSkins : ['murchik'];
         const givenCatSkins = myGive.skins.filter((sk) => sk.startsWith('cat:')).map((sk) => sk.replace('cat:', ''));
         const receivedCatSkins = myReceive.skins.filter((sk) => sk.startsWith('cat:')).map((sk) => sk.replace('cat:', ''));
@@ -424,66 +549,79 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
         });
 
         let equippedCat = s.cat?.skin || 'murchik';
-        if (!currentCatSkins.includes(equippedCat)) {
-          equippedCat = 'murchik';
-        }
+        if (!currentCatSkins.includes(equippedCat)) equippedCat = 'murchik';
 
-        if (s.cat) {
-          s.cat.ownedSkins = currentCatSkins;
-          s.cat.skin = equippedCat;
-        }
+        if (!s.cat) s.cat = { unlocked: false, level: 1, pestsCaught: 0, skin: 'murchik', ownedSkins: ['murchik'] };
+        s.cat.ownedSkins = currentCatSkins;
+        s.cat.skin = equippedCat;
 
+        // Фіксуємо ідемпотентність
+        s.settledTrades = Array.from(new Set([...(s.settledTrades || []), activeTradeId]));
         s.lastSave = Date.now();
+
         storage.set(SAVE_KEY, JSON.stringify(s));
         storage.set('focaccia-balance', JSON.stringify({ f: newFoc, d: newDia, ts: Date.now() }));
+        try { localStorage.setItem(`trade_settled_${activeTradeId}`, '1'); } catch {}
+
+        // Надсилаємо ack на сервер
+        fetch(API, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'ack_trade', tradeId: activeTradeId, userId: meId }),
+        }).catch(() => {});
       } catch (err) {
         console.error('Error settling trade save:', err);
       }
     };
 
     settleSave();
-  }, [trade?.stage, isCompletedSettled]);
+  }, [trade?.stage, isCompletedSettled, activeTradeId, meId]);
 
-  // Поділитися в Telegram (прямо через відкриття меню вибору чату)
+  // Поділитися в Telegram через бота (завжди відкриває TMA з сесією)
   const handleTelegramShare = () => {
-    const deepLink = `https://t.me/${BOT_USERNAME}?start=trade_${tradeId}`;
-    const text = `🤝 Заходь у мій трейд у Фокача Клікері! Обміняємося фокачами 🫓, алмазами 💎 чи рідкісними скінами 🎨:`;
+    const deepLink = `https://t.me/${BOT_USERNAME}?start=trade_${activeTradeId}`;
+    const text = `🤝 Заходь у мій безпечний трейд у Фокача Клікері! Обміняємося фокачами 🫓, алмазами 💎 чи скінами 🎨:`;
     const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(text)}`;
     try {
-      if (tg?.openTelegramLink) {
-        tg.openTelegramLink(tgShareUrl);
-      } else {
-        window.open(tgShareUrl, '_blank');
-      }
+      if (tg?.openTelegramLink) tg.openTelegramLink(tgShareUrl);
+      else window.open(tgShareUrl, '_blank');
     } catch {
       window.open(tgShareUrl, '_blank');
     }
     haptic.medium();
   };
 
-  // Копіювання повного прямого посилання
+  // Копіювання посилання (використовує бот-лінк для надійності)
   const handleCopyLink = () => {
-    const directLink = `https://nout0688-cloud.github.io/focaccia-clicker/?v=1.4.0&trade=${tradeId}`;
+    const botLink = `https://t.me/${BOT_USERNAME}?start=trade_${activeTradeId}`;
     try {
       if (navigator.clipboard) {
-        navigator.clipboard.writeText(directLink);
-        setCopySuccess(true);
+        navigator.clipboard.writeText(botLink);
+        setCopiedLink(true);
         haptic.success();
-        setTimeout(() => setCopySuccess(false), 2500);
+        setTimeout(() => setCopiedLink(false), 2500);
       }
     } catch { /* */ }
   };
 
-  // Копіювання тільки коду кімнати
+  // Копіювання ID кімнати
   const handleCopyCode = () => {
     try {
       if (navigator.clipboard) {
-        navigator.clipboard.writeText(tradeId);
-        setCodeCopied(true);
+        navigator.clipboard.writeText(activeTradeId);
+        setCopiedCode(true);
         haptic.light();
-        setTimeout(() => setCodeCopied(false), 2000);
+        setTimeout(() => setCopiedCode(false), 2000);
       }
     } catch { /* */ }
+  };
+
+  const returnToLobby = () => {
+    haptic.light();
+    setActiveTradeId('');
+    setTrade(null);
+    setRoomError(null);
+    window.history.replaceState(null, '', window.location.pathname + '?v=' + Date.now() + '&trade=lobby');
   };
 
   const returnToGame = () => {
@@ -491,7 +629,7 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
     window.location.href = window.location.pathname + '?v=' + Date.now();
   };
 
-  // Відображення плашки скіна
+  // Картка відображення скіна
   const renderSkinCard = (skinKey: string, onRemove?: () => void) => {
     const isCat = skinKey.startsWith('cat:');
     const actualId = isCat ? skinKey.replace('cat:', '') : skinKey;
@@ -499,19 +637,19 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
     if (isCat) {
       const cat = getCatSkin(actualId);
       return (
-        <div key={skinKey} className="relative flex items-center gap-2.5 bg-stone-950/90 border border-amber-500/40 rounded-xl p-2 shadow-sm">
-          <div className="w-10 h-10 rounded-lg bg-amber-950/70 border border-amber-500/50 flex items-center justify-center text-2xl overflow-hidden shrink-0 shadow-inner">
+        <div key={skinKey} className="relative flex items-center gap-2 bg-stone-950/90 border border-amber-500/40 rounded-xl p-1.5 shadow-sm">
+          <div className="w-8 h-8 rounded-lg bg-amber-950/80 border border-amber-500/50 flex items-center justify-center text-xl shrink-0">
             🐱
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-xs font-black text-amber-200 truncate">{cat.nameUk}</div>
-            <div className="text-[10px] text-amber-400/80 font-semibold truncate">Кіт • {cat.breedUk}</div>
+            <div className="text-[11px] font-black text-amber-200 truncate">{cat.nameUk}</div>
+            <div className="text-[9px] text-amber-400/80 font-semibold truncate">Кіт • {cat.breedUk}</div>
           </div>
           {onRemove && (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRemove(); }}
-              className="w-6 h-6 rounded-full bg-rose-950 text-rose-300 flex items-center justify-center text-xs hover:bg-rose-900 border border-rose-700/60 active:scale-95 cursor-pointer"
+              className="w-5 h-5 rounded-full bg-rose-950 text-rose-300 flex items-center justify-center text-[10px] hover:bg-rose-900 border border-rose-700/60 active:scale-95 cursor-pointer shrink-0"
             >
               ✕
             </button>
@@ -525,24 +663,24 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
     const rarity = RARITY_LABELS[skin.rarity];
 
     return (
-      <div key={skinKey} className={cn("relative flex items-center gap-2.5 bg-stone-950/90 border rounded-xl p-2 shadow-sm", skin.borderColor || 'border-stone-700')}>
-        <div className="w-10 h-10 rounded-lg bg-stone-900 border border-stone-700/70 flex items-center justify-center overflow-hidden shrink-0">
+      <div key={skinKey} className={cn("relative flex items-center gap-2 bg-stone-950/90 border rounded-xl p-1.5 shadow-sm", skin.borderColor || 'border-stone-700')}>
+        <div className="w-8 h-8 rounded-lg bg-stone-900 border border-stone-700 flex items-center justify-center overflow-hidden shrink-0">
           <img src={skin.img} alt={skin.name} className="w-full h-full object-cover" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-xs font-black text-amber-100 truncate">{skin.name}</div>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <span className={cn("text-[9px] px-1.5 py-0.5 rounded font-black tracking-wide", rarity?.color || 'text-stone-300')}>
+          <div className="text-[11px] font-black text-amber-100 truncate">{skin.name}</div>
+          <div className="flex items-center gap-1 mt-0.5">
+            <span className={cn("text-[8px] px-1 py-0.2 rounded font-black", rarity?.color || 'text-stone-300')}>
               {rarity?.uk || 'Скін'}
             </span>
-            <span className="text-[10px] text-stone-400 truncate">{skin.bonusDesc}</span>
+            <span className="text-[9px] text-stone-400 truncate">{skin.bonusDesc}</span>
           </div>
         </div>
         {onRemove && (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onRemove(); }}
-            className="w-6 h-6 rounded-full bg-rose-950 text-rose-300 flex items-center justify-center text-xs hover:bg-rose-900 border border-rose-700/60 active:scale-95 cursor-pointer"
+            className="w-5 h-5 rounded-full bg-rose-950 text-rose-300 flex items-center justify-center text-[10px] hover:bg-rose-900 border border-rose-700/60 active:scale-95 cursor-pointer shrink-0"
           >
             ✕
           </button>
@@ -551,47 +689,334 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
     );
   };
 
-  // Стан завантаження
-  if (loading) {
+  // ==========================================
+  // 1. ЕКРАН ЛОБІ ТРЕЙДІВ (Trade Lobby)
+  // ==========================================
+  if (!activeTradeId) {
+    const filteredPlayers = activePlayers.filter((p) => {
+      if (!playerFilter) return true;
+      const q = playerFilter.toLowerCase();
+      return p.name.toLowerCase().includes(q) || (p.username && p.username.toLowerCase().includes(q));
+    });
+
+    return (
+      <div className="min-h-[100dvh] bg-[#0c0906] text-stone-100 flex flex-col justify-between select-none safe-top safe-bottom">
+        {/* Top Header */}
+        <header className="sticky top-0 z-30 bg-[#0c0906]/95 backdrop-blur-md border-b border-amber-500/20 px-3.5 py-2.5 flex items-center justify-between gap-2 shadow-sm">
+          <button
+            type="button"
+            onClick={returnToGame}
+            className="px-3 py-1.5 rounded-xl bg-stone-900 border border-stone-800 hover:border-amber-500/40 text-amber-300 text-xs font-black flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shrink-0"
+          >
+            <span>←</span>
+            <span>В гру</span>
+          </button>
+
+          <div className="flex items-center gap-1.5 text-xs font-black text-amber-200">
+            <span className="text-base">🤝</span>
+            <span>Лобі Трейдів</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-[11px] font-mono bg-stone-900/80 px-2.5 py-1 rounded-xl border border-stone-800 shrink-0">
+            <span className="text-amber-400 font-bold">{formatNum(myFocaccia)} 🫓</span>
+            <span className="text-stone-600">•</span>
+            <span className="text-cyan-400 font-bold">{myDiamonds} 💎</span>
+          </div>
+        </header>
+
+        {/* Warning if opened in external browser */}
+        {!isRealTg && (
+          <div className="mx-3.5 mt-3 bg-amber-950/80 border border-amber-500/60 rounded-2xl p-3 text-xs text-amber-200 flex items-center justify-between gap-2">
+            <div className="leading-tight">
+              <span className="font-bold">⚠️ Браузерна сесія:</span> Відкрийте через Telegram, щоб обмінювати власні предмети!
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const url = `https://t.me/${BOT_USERNAME}?start=trade`;
+                window.open(url, '_blank');
+              }}
+              className="px-2.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-black rounded-lg text-[10px] shrink-0"
+            >
+              В Telegram
+            </button>
+          </div>
+        )}
+
+        {/* Main Content */}
+        <div className="p-3.5 flex-1 space-y-3.5 max-w-lg mx-auto w-full">
+          {/* Segmented Lobby Tabs */}
+          <div className="glass-card rounded-2xl p-1 flex border border-stone-800 text-xs font-bold gap-1 bg-stone-950/60">
+            <button
+              type="button"
+              onClick={() => { setLobbyTab('active'); haptic.selection(); }}
+              className={cn(
+                'flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5',
+                lobbyTab === 'active'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 font-black shadow-md'
+                  : 'text-stone-400 hover:text-stone-200'
+              )}
+            >
+              <span>👥</span>
+              <span>Онлайн</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setLobbyTab('search'); haptic.selection(); }}
+              className={cn(
+                'flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5',
+                lobbyTab === 'search'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 font-black shadow-md'
+                  : 'text-stone-400 hover:text-stone-200'
+              )}
+            >
+              <span>🔍</span>
+              <span>Пошук</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setLobbyTab('open'); haptic.selection(); }}
+              className={cn(
+                'flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5',
+                lobbyTab === 'open'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 font-black shadow-md'
+                  : 'text-stone-400 hover:text-stone-200'
+              )}
+            >
+              <span>🔗</span>
+              <span>Лінк</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setLobbyTab('code'); haptic.selection(); }}
+              className={cn(
+                'flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5',
+                lobbyTab === 'code'
+                  ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 font-black shadow-md'
+                  : 'text-stone-400 hover:text-stone-200'
+              )}
+            >
+              <span>⌨️</span>
+              <span>Код</span>
+            </button>
+          </div>
+
+          {/* TAB 1: Гравці онлайн */}
+          {lobbyTab === 'active' && (
+            <div className="space-y-2.5 animate-fade-in">
+              <input
+                type="text"
+                value={playerFilter}
+                onChange={(e) => setPlayerFilter(e.target.value)}
+                placeholder="Фільтр за іменем або @юзернеймом..."
+                className="w-full bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-amber-200 placeholder-stone-600 focus:outline-none focus:border-amber-500"
+              />
+
+              {loadingPlayers ? (
+                <div className="py-12 text-center text-xs text-stone-500 animate-pulse">
+                  Завантаження списку активних гравців...
+                </div>
+              ) : filteredPlayers.length === 0 ? (
+                <div className="py-12 text-center text-xs text-stone-500">
+                  Активних гравців не знайдено. Спробуй пошук або відкрите посилання!
+                </div>
+              ) : (
+                <div className="space-y-1.5 max-h-[60vh] overflow-y-auto pr-1">
+                  {filteredPlayers.map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between p-2.5 rounded-2xl bg-stone-900/70 border border-stone-800/80 hover:border-amber-500/40 transition-all shadow-sm"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-600/20 border border-amber-500/30 flex items-center justify-center text-base shrink-0">
+                          👤
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-black text-amber-200 truncate">{p.name}</div>
+                          <div className="text-[10px] text-stone-400 truncate">
+                            {p.username ? `@${p.username}` : `ID: ${p.id}`}
+                            {p.score ? ` • ${formatNum(p.score)} 🫓` : ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={creatingTrade}
+                        onClick={() => handleCreateTrade(p.id)}
+                        className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-stone-950 font-black text-xs shadow-md shadow-amber-600/20 active:scale-95 transition-all shrink-0 cursor-pointer disabled:opacity-50"
+                      >
+                        Запросити
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: Пошук за юзернеймом */}
+          {lobbyTab === 'search' && (
+            <div className="space-y-3 animate-fade-in">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearchPlayer()}
+                  placeholder="@username або ID гравця..."
+                  className="flex-1 bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs text-amber-200 placeholder-stone-600 focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  disabled={searching || !searchQuery.trim()}
+                  onClick={handleSearchPlayer}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-stone-950 font-black rounded-xl text-xs shrink-0 active:scale-95"
+                >
+                  {searching ? '...' : 'Знайти'}
+                </button>
+              </div>
+
+              {searchError && (
+                <div className="p-3 bg-rose-950/40 border border-rose-600/40 rounded-xl text-xs text-rose-300">
+                  {searchError}
+                </div>
+              )}
+
+              {searchFound && (
+                <div className="p-3.5 rounded-2xl bg-stone-900 border border-emerald-500/50 shadow-lg flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-950/60 border border-emerald-500/50 flex items-center justify-center text-lg text-emerald-300 shrink-0">
+                      ✓
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-black text-amber-100 truncate">{searchFound.name}</div>
+                      <div className="text-[10px] text-stone-400 truncate">
+                        {searchFound.username ? `@${searchFound.username}` : `ID: ${searchFound.id}`}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={creatingTrade}
+                    onClick={() => handleCreateTrade(searchFound.id)}
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-stone-950 font-black text-xs shadow-md active:scale-95 transition-all shrink-0 cursor-pointer"
+                  >
+                    Запросити
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: Відкритий трейд */}
+          {lobbyTab === 'open' && (
+            <div className="glass-card rounded-3xl p-5 border border-amber-500/30 bg-stone-900/60 text-center space-y-3.5 animate-fade-in">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-2xl mx-auto shadow-lg shadow-amber-600/30">
+                🔗
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-amber-200">Створити відкритий трейд</h3>
+                <p className="text-xs text-stone-400 mt-1 max-w-xs mx-auto">
+                  Буде створено відкриту кімнату, до якої зможе приєднатися будь-який гравець за твоїм посиланням або кодом!
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={creatingTrade}
+                onClick={() => handleCreateTrade(null)}
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-400 to-orange-500 hover:brightness-110 text-stone-950 font-black text-xs shadow-lg shadow-amber-600/30 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>🤝</span>
+                <span>{creatingTrade ? 'Створення...' : 'Створити кімнату зараз'}</span>
+              </button>
+            </div>
+          )}
+
+          {/* TAB 4: Вхід за кодом */}
+          {lobbyTab === 'code' && (
+            <div className="glass-card rounded-3xl p-5 border border-stone-800 bg-stone-900/60 space-y-3.5 animate-fade-in">
+              <div>
+                <div className="text-xs font-black text-amber-200 mb-1">Приєднатися за кодом або лінком:</div>
+                <div className="text-[11px] text-stone-400">Встав код кімнати (tr_...) або посилання, яке надіслав партнер:</div>
+              </div>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={joinCodeInput}
+                  onChange={(e) => setJoinCodeInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleJoinByCode()}
+                  placeholder="tr_... або посилання"
+                  className="flex-1 bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs font-mono text-amber-200 placeholder-stone-600 focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  type="button"
+                  disabled={!joinCodeInput.trim()}
+                  onClick={handleJoinByCode}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-stone-950 font-black rounded-xl text-xs shrink-0 active:scale-95"
+                >
+                  Вхід
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer info */}
+        <div className="p-3 text-center text-[10px] text-stone-600">
+          Фокача Клікер • Безпечні обміни v2.0
+        </div>
+      </div>
+    );
+  }
+
+  // ==========================================
+  // 2. ЕКРАН КІМНАТИ ТРЕЙДУ (Trade Room)
+  // ==========================================
+
+  // Стан завантаження кімнати
+  if (roomLoading) {
     return (
       <div className="min-h-[100dvh] bg-[#0c0906] text-amber-100 flex flex-col items-center justify-center p-6 text-center select-none safe-top safe-bottom">
         <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-3xl shadow-xl shadow-amber-600/30 mb-4 animate-bounce">
           🤝
         </div>
         <div className="text-base font-black text-amber-300">Підключення до кімнати...</div>
-        <div className="text-xs text-stone-500 font-mono mt-1">ID: {tradeId}</div>
+        <div className="text-xs text-stone-500 font-mono mt-1">ID: {activeTradeId}</div>
       </div>
     );
   }
 
   // Помилка підключення
-  if (error || !trade) {
+  if (roomError || !trade) {
     return (
       <div className="min-h-[100dvh] bg-[#0c0906] text-amber-100 flex flex-col items-center justify-center p-6 text-center select-none safe-top safe-bottom">
         <div className="w-16 h-16 rounded-2xl bg-rose-950/60 border border-rose-600/50 flex items-center justify-center text-3xl mb-4 text-rose-400 shadow-lg shadow-rose-950/40">
           ⚠️
         </div>
         <h2 className="text-lg font-black text-rose-300 mb-2">Не вдалося увійти в трейд</h2>
-        <p className="text-xs text-stone-400 max-w-xs mb-6 leading-relaxed">{error || 'Трейд не знайдено або термін його дії закінчився.'}</p>
+        <p className="text-xs text-stone-400 max-w-xs mb-6 leading-relaxed">{roomError || 'Трейд не знайдено або термін його дії закінчився.'}</p>
         <button
           type="button"
-          onClick={returnToGame}
-          className="px-6 py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 font-black rounded-xl text-xs shadow-lg shadow-amber-600/30 active:scale-95 transition-all flex items-center gap-2 cursor-pointer"
+          onClick={returnToLobby}
+          className="px-6 py-3 bg-stone-800 hover:bg-stone-700 text-amber-200 font-black rounded-xl text-xs border border-stone-700 active:scale-95 transition-all"
         >
-          <span>🫓</span>
-          <span>Повернутися в гру</span>
+          ← Повернутися в лобі
         </button>
       </div>
     );
   }
 
-  // Екран завершеного успішного трейду
+  // Екран успіху
   if (trade.stage === 'completed') {
     const myGive = trade.me?.offer || { focaccia: 0, diamonds: 0, skins: [] };
     const myReceive = trade.opp?.offer || { focaccia: 0, diamonds: 0, skins: [] };
 
     return (
-      <div className="min-h-[100dvh] bg-gradient-to-b from-amber-950/30 via-[#0c0906] to-[#080604] text-amber-100 flex flex-col items-center justify-center p-5 text-center select-none safe-top safe-bottom">
+      <div className="min-h-[100dvh] bg-gradient-to-b from-amber-950/30 via-[#0c0906] to-[#080604] text-amber-100 flex flex-col items-center justify-center p-5 text-center select-none safe-top safe-bottom animate-fade-in">
         <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-amber-500 to-yellow-300 flex items-center justify-center text-4xl shadow-2xl shadow-amber-500/40 mb-3 animate-bounce">
           🎉
         </div>
@@ -599,7 +1024,7 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
           Обмін успішно виконано!
         </h1>
         <p className="text-xs text-stone-400 mb-5">
-          Предмети та валюту безпечно оновлено у вашому інвентарі.
+          Предмети та валюту збережено й надіслано в гру.
         </p>
 
         <div className="w-full max-w-sm bg-stone-900/80 border border-amber-500/30 rounded-2xl p-4 mb-6 text-left space-y-3 shadow-xl backdrop-blur-md">
@@ -664,10 +1089,10 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
         </p>
         <button
           type="button"
-          onClick={returnToGame}
-          className="px-6 py-3.5 bg-stone-800 hover:bg-stone-700 text-amber-200 font-bold rounded-xl text-xs border border-stone-700 active:scale-95 transition-all"
+          onClick={returnToLobby}
+          className="px-6 py-3 bg-stone-800 hover:bg-stone-700 text-amber-200 font-bold rounded-xl text-xs border border-stone-700 active:scale-95 transition-all"
         >
-          🫓 Повернутися в гру
+          ← Повернутися в лобі
         </button>
       </div>
     );
@@ -675,9 +1100,9 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
 
   const me = trade.me;
   const opp = trade.opp;
-  const bothLocked = !!(me?.locked && opp?.locked);
-  const myLocked = !!me?.locked;
-  const oppLocked = !!opp?.locked;
+  const bothLocked = Boolean(me?.locked && opp?.locked);
+  const myLocked = Boolean(me?.locked);
+  const oppLocked = Boolean(opp?.locked);
 
   return (
     <div className="min-h-[100dvh] max-h-[100dvh] overflow-y-auto bg-[#0c0906] text-stone-100 flex flex-col justify-between pb-16 select-none safe-top safe-bottom">
@@ -685,11 +1110,11 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
       <header className="sticky top-0 z-30 bg-[#0c0906]/95 backdrop-blur-md border-b border-amber-500/20 px-3.5 py-2.5 flex items-center justify-between gap-2 shadow-sm">
         <button
           type="button"
-          onClick={returnToGame}
+          onClick={returnToLobby}
           className="px-3 py-1.5 rounded-xl bg-stone-900 border border-stone-800 hover:border-amber-500/40 text-amber-300 text-xs font-black flex items-center gap-1.5 active:scale-95 transition-all shadow-sm shrink-0"
         >
           <span>←</span>
-          <span>В гру</span>
+          <span>Лобі</span>
         </button>
 
         {/* Room Code Badge */}
@@ -701,7 +1126,7 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
         >
           <span className="text-xs">🤝</span>
           <span className="text-xs font-mono font-black text-amber-300">
-            {codeCopied ? 'Скопійовано!' : tradeId.slice(-7)}
+            {copiedCode ? 'Скопійовано!' : activeTradeId.slice(-7)}
           </span>
         </button>
 
@@ -733,13 +1158,27 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
       <div className="p-3.5 space-y-3.5 flex-1">
         {/* Anti-Scam Alert Banner */}
         {scamAlert && (
-          <div className="bg-amber-950/90 border border-amber-500/70 rounded-2xl p-3 text-xs text-amber-200 flex items-start gap-2.5 shadow-lg shadow-amber-950/50">
+          <div className="bg-amber-950/90 border border-amber-500/70 rounded-2xl p-3 text-xs text-amber-200 flex items-start gap-2.5 shadow-lg shadow-amber-950/50 animate-bounce">
             <span className="text-xl shrink-0">⚠️</span>
             <div className="font-bold leading-relaxed">{scamAlert}</div>
           </div>
         )}
 
-        {/* HERO WAITING CARD (if partner hasn't connected yet) */}
+        {/* Browser session warning banner */}
+        {!isRealTg && (
+          <div className="bg-amber-950/80 border border-amber-500/50 rounded-2xl p-3 text-xs text-amber-200 flex items-center justify-between gap-2">
+            <span className="text-[11px]">Для повної синхронізації відкрийте трейд через бота:</span>
+            <button
+              type="button"
+              onClick={handleTelegramShare}
+              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-stone-950 font-black rounded-lg text-[10px] shrink-0"
+            >
+              В Telegram
+            </button>
+          </div>
+        )}
+
+        {/* HERO WAITING CARD (якщо партнер ще не увійшов) */}
         {!opp && (
           <div className="glass-card rounded-3xl p-4.5 border border-amber-500/40 bg-gradient-to-b from-amber-950/40 via-stone-900/70 to-black/70 shadow-xl text-center space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-2xl mx-auto shadow-md shadow-amber-600/30">
@@ -769,7 +1208,7 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
                 className="py-2.5 px-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-300 font-bold text-xs border border-amber-500/30 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <span>📋</span>
-                <span>{copySuccess ? 'Скопійовано!' : 'Копіювати лінк'}</span>
+                <span>{copiedLink ? 'Скопійовано!' : 'Копіювати лінк'}</span>
               </button>
             </div>
 
@@ -781,53 +1220,20 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
                 onClick={handleCopyCode}
                 className="font-mono text-amber-300 font-bold px-2 py-0.5 rounded-md bg-stone-950 border border-stone-800 hover:border-amber-500/40"
               >
-                {tradeId}
+                {activeTradeId}
               </button>
             </div>
           </div>
         )}
 
-        {/* MOBILE SEGMENTED TABS (Mine vs Partner) */}
-        <div className="glass-card rounded-2xl p-1 flex border border-stone-800 text-xs font-bold md:hidden">
-          <button
-            type="button"
-            onClick={() => { setActiveTab('mine'); haptic.selection(); }}
-            className={cn(
-              'flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5',
-              activeTab === 'mine'
-                ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 font-black shadow-md'
-                : 'text-stone-400 hover:text-stone-200'
-            )}
-          >
-            <span>📤</span>
-            <span>Твоя пропозиція</span>
-            {myLocked && <span className="text-xs">🔒</span>}
-          </button>
-          <button
-            type="button"
-            onClick={() => { setActiveTab('partner'); haptic.selection(); }}
-            className={cn(
-              'flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5',
-              activeTab === 'partner'
-                ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-stone-950 font-black shadow-md'
-                : 'text-stone-400 hover:text-stone-200'
-            )}
-          >
-            <span>📥</span>
-            <span>Партнер {opp ? `(${opp.name})` : ''}</span>
-            {oppLocked && <span className="text-xs">🔒</span>}
-          </button>
-        </div>
-
-        {/* GRID OF TWO SIDES (Responsive: 1 col on mobile with tab toggle, 2 cols on md+) */}
+        {/* DUAL PANELS OF BOTH SIDES */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {/* === SIDE 1: MY OFFER === */}
           <div className={cn(
             "glass-card rounded-3xl p-4 border flex flex-col gap-3.5 transition-all",
-            myLocked ? "border-emerald-500/50 bg-emerald-950/10 shadow-lg shadow-emerald-950/30" : "border-stone-800 bg-stone-900/60",
-            activeTab === 'mine' ? 'block' : 'hidden md:flex'
+            myLocked ? "border-emerald-500/50 bg-emerald-950/10 shadow-lg shadow-emerald-950/30" : "border-stone-800 bg-stone-900/60"
           )}>
-            {/* Header: Identity & Lock Toggle */}
+            {/* Header */}
             <div className="flex items-center justify-between pb-2.5 border-b border-stone-800">
               <div>
                 <div className="text-xs font-black text-amber-200 flex items-center gap-1.5">
@@ -990,11 +1396,11 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
                 )}
               </div>
 
-              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                 {selectedSkins.length === 0 ? (
                   <div
                     onClick={() => !myLocked && setSkinModalOpen(true)}
-                    className="py-5 border border-dashed border-stone-800 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer hover:border-amber-500/30 transition-all"
+                    className="py-4 border border-dashed border-stone-800 rounded-2xl flex flex-col items-center justify-center text-center cursor-pointer hover:border-amber-500/30 transition-all"
                   >
                     <span className="text-xl mb-0.5">🎨</span>
                     <span className="text-xs text-stone-400 font-bold">Скіни не обрано</span>
@@ -1017,10 +1423,9 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
           {/* === SIDE 2: PARTNER OFFER === */}
           <div className={cn(
             "glass-card rounded-3xl p-4 border flex flex-col gap-3.5 transition-all",
-            oppLocked ? "border-emerald-500/50 bg-emerald-950/10 shadow-lg shadow-emerald-950/30" : "border-stone-800 bg-stone-900/60",
-            activeTab === 'partner' ? 'block' : 'hidden md:flex'
+            oppLocked ? "border-emerald-500/50 bg-emerald-950/10 shadow-lg shadow-emerald-950/30" : "border-stone-800 bg-stone-900/60"
           )}>
-            {/* Header: Partner Identity */}
+            {/* Header */}
             <div className="flex items-center justify-between pb-2.5 border-b border-stone-800">
               <div>
                 <div className="text-xs font-black text-amber-200 flex items-center gap-1.5">
@@ -1079,9 +1484,9 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
               <div className="text-[11px] font-bold text-stone-300 mb-1.5">
                 🎨 Скіни від партнера ({opp?.offer?.skins?.length || 0}):
               </div>
-              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                 {(!opp?.offer?.skins || opp.offer.skins.length === 0) ? (
-                  <div className="py-6 border border-dashed border-stone-800 rounded-2xl flex flex-col items-center justify-center text-center text-stone-500">
+                  <div className="py-5 border border-dashed border-stone-800 rounded-2xl flex flex-col items-center justify-center text-center text-stone-500">
                     <span className="text-xs">Партнер ще не обрав скінів</span>
                   </div>
                 ) : (
@@ -1115,13 +1520,13 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
         {/* Big Action Button */}
         <button
           type="button"
-          disabled={!bothLocked || !!me?.confirmed}
+          disabled={!bothLocked || Boolean(me?.confirmed)}
           onClick={() => {
             setConfirmModalOpen(true);
             haptic.medium();
           }}
           className={cn(
-            "w-full py-4 rounded-2xl text-sm font-black transition-all flex items-center justify-center gap-2 shadow-xl cursor-pointer",
+            "w-full py-3.5 rounded-2xl text-sm font-black transition-all flex items-center justify-center gap-2 shadow-xl cursor-pointer",
             bothLocked && !me?.confirmed
               ? "bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-stone-950 shadow-emerald-500/30 active:scale-95 animate-pulse"
               : me?.confirmed
@@ -1194,8 +1599,8 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
               {skinTab === 'bread' ? (
                 myOwnedSkins.filter((sk) => sk !== 'skin_classic').length === 0 ? (
                   <div className="py-12 text-center text-stone-500 text-xs">
-                    У тебе немає доступних для обміну скінів фокачі.
-                    <div className="text-[10px] text-stone-600 mt-1">(Базова фокача є невід'ємною)</div>
+                    У тебе немає додаткових скінів фокачі для обміну.
+                    <div className="text-[10px] text-stone-600 mt-1">(Базова фокача закріплена назавжди)</div>
                   </div>
                 ) : (
                   myOwnedSkins.filter((sk) => sk !== 'skin_classic').map((skinId) => {
@@ -1311,8 +1716,8 @@ export default function TradeApp({ tradeId }: { tradeId: string }) {
 
       {/* MODAL 2: 2-Step Safety Verification Confirm Dialog */}
       {confirmModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 select-none">
-          <div className="w-full max-w-sm bg-stone-900 border border-amber-500/40 rounded-3xl p-5 shadow-2xl text-center animate-fade-in">
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4 select-none animate-fade-in">
+          <div className="w-full max-w-sm bg-stone-900 border border-amber-500/40 rounded-3xl p-5 shadow-2xl text-center">
             <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-2xl mx-auto mb-2">
               ⚖️
             </div>

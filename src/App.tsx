@@ -327,6 +327,7 @@ interface SaveState {
     autoRepairEnabled?: boolean;
     totalRepairsDone?: number;
   };
+  settledTrades?: string[];
 }
 
 interface FloatText {
@@ -440,6 +441,7 @@ const defaultState = (): SaveState => ({
     autoRepairEnabled: true,
     totalRepairsDone: 0,
   },
+  settledTrades: [],
 });
 
 async function loadState(): Promise<SaveState> {
@@ -1005,18 +1007,130 @@ export default function App() {
                 haptic.warning();
                 setTimeout(reportSync, 100);
               }
-              if (Array.isArray(data?.grantSkins) && data.grantSkins.length > 0) {
+              if (data?.deductDiamonds && data.deductDiamonds > 0) {
                 setState((p) => {
-                  const curOwned = p.skins?.owned || ['skin_classic'];
-                  const toAdd = data.grantSkins.filter((s: string) => !s.startsWith('cat:'));
-                  const newOwned = Array.from(new Set([...curOwned, ...toAdd]));
-                  const next = { ...p, skins: { ...p.skins, owned: newOwned, equipped: p.skins?.equipped || 'skin_classic', levels: p.skins?.levels || {} } };
+                  const next = { ...p, diamonds: Math.max(0, (p.diamonds || 0) - data.deductDiamonds) };
                   stateRef.current = next;
                   saveNow(next);
                   return next;
                 });
                 addToast(
-                  langRef.current === 'uk' ? 'Трейд завершено! 🎨' : 'Трейд завершен! 🎨',
+                  langRef.current === 'uk' ? 'Списання алмазів 💎' : 'Списание алмазов 💎',
+                  langRef.current === 'uk' ? `Списано -${data.deductDiamonds} 💎` : `Списано -${data.deductDiamonds} 💎`,
+                  '💎'
+                );
+                haptic.warning();
+                setTimeout(reportSync, 100);
+              }
+              // Обробка завершених безпечних трейдів (Гарантована черга)
+              if (Array.isArray(data?.trades) && data.trades.length > 0) {
+                for (const t of data.trades) {
+                  const tradeKey = `trade_settled_${t.tradeId}`;
+                  const alreadySettled = localStorage.getItem(tradeKey) === '1' || (stateRef.current.settledTrades && stateRef.current.settledTrades.includes(t.tradeId));
+                  
+                  // Підтверджуємо бекенду очищення черги для цього гравця
+                  fetch(`https://focaccia-bot.vercel.app/api/reward?action=ack_trade&userId=${uid}&tradeId=${t.tradeId}`).catch(() => {});
+
+                  if (!alreadySettled) {
+                    setState((p) => {
+                      const focGain = Number(t.focacciaGain) || 0;
+                      const focLoss = Number(t.focacciaLoss) || 0;
+                      const diaGain = Number(t.diamondGain) || 0;
+                      const diaLoss = Number(t.diamondLoss) || 0;
+
+                      const newFoc = Math.max(0, (Number(p.focaccia) || 0) + focGain - focLoss);
+                      const newTotal = Math.max(0, (Number(p.total) || 0) + focGain);
+                      const newDia = Math.max(0, (Number(p.diamonds) || 0) + diaGain - diaLoss);
+
+                      // Скіни хліба
+                      const curBread = p.skins?.owned || ['skin_classic'];
+                      const grantBread = (t.grantSkins || []).filter((s: string) => !s.startsWith('cat:'));
+                      const removeBread = (t.removeSkins || []).filter((s: string) => !s.startsWith('cat:'));
+                      let newBread = Array.from(new Set([...curBread, ...grantBread]));
+                      newBread = newBread.filter((s) => !removeBread.includes(s) || s === 'skin_classic');
+                      let eqBread = p.skins?.equipped || 'skin_classic';
+                      if (!newBread.includes(eqBread)) eqBread = 'skin_classic';
+
+                      // Скіни котиків
+                      const curCat = p.cat?.ownedSkins || ['murchik'];
+                      const grantCat = (t.grantSkins || []).filter((s: string) => s.startsWith('cat:')).map((s: string) => s.replace('cat:', ''));
+                      const removeCat = (t.removeSkins || []).filter((s: string) => s.startsWith('cat:')).map((s: string) => s.replace('cat:', ''));
+                      let newCat = Array.from(new Set([...curCat, ...grantCat]));
+                      newCat = newCat.filter((s) => !removeCat.includes(s) || s === 'murchik');
+                      let eqCat = p.cat?.skin || 'murchik';
+                      if (!newCat.includes(eqCat)) eqCat = 'murchik';
+
+                      const nextSettled = Array.from(new Set([...(p.settledTrades || []), t.tradeId]));
+
+                      const next: SaveState = {
+                        ...p,
+                        focaccia: newFoc,
+                        total: newTotal,
+                        diamonds: newDia,
+                        skins: { ...p.skins, owned: newBread, equipped: eqBread, levels: p.skins?.levels || {} },
+                        cat: {
+                          unlocked: p.cat?.unlocked ?? false,
+                          level: p.cat?.level ?? 1,
+                          pestsCaught: p.cat?.pestsCaught ?? 0,
+                          skin: eqCat,
+                          ownedSkins: newCat,
+                        },
+                        settledTrades: nextSettled,
+                      };
+
+                      stateRef.current = next;
+                      saveNow(next);
+                      return next;
+                    });
+
+                    try { localStorage.setItem(tradeKey, '1'); } catch {}
+
+                    const parts = [];
+                    if (t.focacciaGain > 0) parts.push(`+${formatNum(t.focacciaGain)} 🫓`);
+                    if (t.diamondGain > 0) parts.push(`+${t.diamondGain} 💎`);
+                    if (t.grantSkins?.length > 0) parts.push(`+${t.grantSkins.length} 🎨`);
+                    const summary = parts.join(', ') || (langRef.current === 'uk' ? 'обмін' : 'обмен');
+
+                    addToast(
+                      langRef.current === 'uk' ? '🤝 Трейд завершено!' : '🤝 Трейд завершен!',
+                      langRef.current === 'uk'
+                        ? `Отримано від ${t.partnerName || 'партнера'}: ${summary}`
+                        : `Получено от ${t.partnerName || 'партнера'}: ${summary}`,
+                      '🤝'
+                    );
+                    haptic.success();
+                    setTimeout(reportSync, 100);
+                  }
+                }
+              }
+              // Fallback нарахування скінів хліба та котиків
+              if (Array.isArray(data?.grantSkins) && data.grantSkins.length > 0) {
+                setState((p) => {
+                  const curOwned = p.skins?.owned || ['skin_classic'];
+                  const breadToAdd = data.grantSkins.filter((s: string) => !s.startsWith('cat:'));
+                  const newOwned = Array.from(new Set([...curOwned, ...breadToAdd]));
+
+                  const curCat = p.cat?.ownedSkins || ['murchik'];
+                  const catToAdd = data.grantSkins.filter((s: string) => s.startsWith('cat:')).map((s: string) => s.replace('cat:', ''));
+                  const newCat = Array.from(new Set([...curCat, ...catToAdd]));
+
+                  const next = {
+                    ...p,
+                    skins: { ...p.skins, owned: newOwned, equipped: p.skins?.equipped || 'skin_classic', levels: p.skins?.levels || {} },
+                    cat: {
+                      unlocked: p.cat?.unlocked ?? false,
+                      level: p.cat?.level ?? 1,
+                      pestsCaught: p.cat?.pestsCaught ?? 0,
+                      skin: p.cat?.skin || 'murchik',
+                      ownedSkins: newCat,
+                    },
+                  };
+                  stateRef.current = next;
+                  saveNow(next);
+                  return next;
+                });
+                addToast(
+                  langRef.current === 'uk' ? 'Отримано скіни! 🎨' : 'Получены скины! 🎨',
                   langRef.current === 'uk' ? `Отримано нові скіни: ${data.grantSkins.length} шт.` : `Получены новые скины: ${data.grantSkins.length} шт.`,
                   '🎨'
                 );
@@ -1026,10 +1140,28 @@ export default function App() {
               if (Array.isArray(data?.removeSkins) && data.removeSkins.length > 0) {
                 setState((p) => {
                   const curOwned = p.skins?.owned || ['skin_classic'];
-                  const newOwned = curOwned.filter((s: string) => !data.removeSkins.includes(s) || s === 'skin_classic');
+                  const breadToRemove = data.removeSkins.filter((s: string) => !s.startsWith('cat:'));
+                  const newOwned = curOwned.filter((s: string) => !breadToRemove.includes(s) || s === 'skin_classic');
                   let eq = p.skins?.equipped || 'skin_classic';
                   if (!newOwned.includes(eq)) eq = 'skin_classic';
-                  const next = { ...p, skins: { ...p.skins, owned: newOwned, equipped: eq, levels: p.skins?.levels || {} } };
+
+                  const curCat = p.cat?.ownedSkins || ['murchik'];
+                  const catToRemove = data.removeSkins.filter((s: string) => s.startsWith('cat:')).map((s: string) => s.replace('cat:', ''));
+                  const newCat = curCat.filter((s: string) => !catToRemove.includes(s) || s === 'murchik');
+                  let eqCat = p.cat?.skin || 'murchik';
+                  if (!newCat.includes(eqCat)) eqCat = 'murchik';
+
+                  const next = {
+                    ...p,
+                    skins: { ...p.skins, owned: newOwned, equipped: eq, levels: p.skins?.levels || {} },
+                    cat: {
+                      unlocked: p.cat?.unlocked ?? false,
+                      level: p.cat?.level ?? 1,
+                      pestsCaught: p.cat?.pestsCaught ?? 0,
+                      skin: eqCat,
+                      ownedSkins: newCat,
+                    },
+                  };
                   stateRef.current = next;
                   saveNow(next);
                   return next;
@@ -1043,12 +1175,35 @@ export default function App() {
 
       checkAdmin(s);
 
-      // Check every 25 seconds while playing
-      adminIv = setInterval(() => checkAdmin(stateRef.current), 25000);
+      // Check every 20 seconds while playing
+      adminIv = setInterval(() => checkAdmin(stateRef.current), 20000);
+
+      // Fast check when player returns to the game tab
+      const handleVisChange = () => {
+        if (document.visibilityState === 'visible') {
+          checkAdmin(stateRef.current);
+        }
+      };
+      const handleFocus = () => {
+        checkAdmin(stateRef.current);
+      };
+      document.addEventListener('visibilitychange', handleVisChange);
+      window.addEventListener('focus', handleFocus);
+
+      // Store cleanup handlers
+      cleanupEvents = () => {
+        document.removeEventListener('visibilitychange', handleVisChange);
+        window.removeEventListener('focus', handleFocus);
+      };
     });
 
-    // Cleanup: clear the admin polling interval on component unmount
-    return () => clearInterval(adminIv);
+    let cleanupEvents: (() => void) | undefined;
+
+    // Cleanup on component unmount
+    return () => {
+      if (adminIv) clearInterval(adminIv);
+      if (cleanupEvents) cleanupEvents();
+    };
   }, []);
 
   /* Sync Telegram WebApp BackButton with fullscreen modals */
@@ -11037,7 +11192,10 @@ export default function App() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => { setTradeModalOpen(true); haptic.selection(); }}
+                  onClick={() => {
+                    haptic.heavy();
+                    window.location.href = window.location.pathname + '?v=' + Date.now() + '&trade=lobby';
+                  }}
                   className="w-full py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-stone-950 font-black text-xs shadow-md shadow-amber-500/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <span>🤝</span>
