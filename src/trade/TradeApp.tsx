@@ -92,6 +92,19 @@ interface TradePlayer {
   locked: boolean;
   confirmed: boolean;
   online?: boolean;
+  rebirthLocked?: boolean;
+  rebirthRemainingMs?: number;
+}
+
+const REBIRTH_TRADE_LOCK_MS = 5 * 24 * 60 * 60 * 1000;
+
+function formatRemaining(ms: number): string {
+  const days = Math.floor(ms / (24 * 60 * 60 * 1000));
+  const hours = Math.floor((ms % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+  const minutes = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));
+  if (days > 0) return `${days} дн. ${hours} год.`;
+  if (hours > 0) return `${hours} год. ${minutes} хв.`;
+  return `${Math.max(1, minutes)} хв.`;
 }
 
 interface TradeState {
@@ -148,6 +161,10 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
   const [myDiamonds, setMyDiamonds] = useState(0);
   const [myOwnedSkins, setMyOwnedSkins] = useState<string[]>([]);
   const [myOwnedCatSkins, setMyOwnedCatSkins] = useState<string[]>([]);
+  const [myLastRebirthTime, setMyLastRebirthTime] = useState<number>(0);
+
+  const rebirthLockRemaining = Math.max(0, REBIRTH_TRADE_LOCK_MS - (Date.now() - (myLastRebirthTime || 0)));
+  const isRebirthLocked = (myLastRebirthTime || 0) > 0 && rebirthLockRemaining > 0;
 
   // ===== Стейт ЛОБІ =====
   const [lobbyTab, setLobbyTab] = useState<'active' | 'search' | 'open' | 'code'>('active');
@@ -203,9 +220,11 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
     let active = true;
     const loadInventory = async () => {
       let loadedSave: any = null;
+      let rbt = 0;
       try {
         const raw = await storage.get(SAVE_KEY);
         if (raw) loadedSave = JSON.parse(raw);
+        if (loadedSave?.lastRebirthTime) rbt = Number(loadedSave.lastRebirthTime) || 0;
       } catch { /* */ }
 
       if (!loadedSave || (!loadedSave.focaccia && !loadedSave.diamonds)) {
@@ -216,6 +235,7 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
             if (!loadedSave) loadedSave = {};
             if (typeof b.f === 'number') loadedSave.focaccia = b.f;
             if (typeof b.d === 'number') loadedSave.diamonds = b.d;
+            if (b.rbt && typeof b.rbt === 'number') rbt = Math.max(rbt, b.rbt);
           }
         } catch { /* */ }
       }
@@ -228,11 +248,15 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
             if (!loadedSave) loadedSave = {};
             if (typeof sBal.focaccia === 'number') loadedSave.focaccia = Math.max(Number(loadedSave.focaccia) || 0, sBal.focaccia);
             if (typeof sBal.diamonds === 'number') loadedSave.diamonds = Math.max(Number(loadedSave.diamonds) || 0, sBal.diamonds);
+            if (typeof sBal.lastRebirthTime === 'number' && sBal.lastRebirthTime > 0) {
+              rbt = Math.max(rbt, sBal.lastRebirthTime);
+            }
           }
         } catch { /* */ }
       }
 
       if (loadedSave && active) {
+        setMyLastRebirthTime(rbt);
         setMyFocaccia(Math.floor(Number(loadedSave.focaccia) || 0));
         setMyDiamonds(Math.floor(Number(loadedSave.diamonds) || 0));
         const breadSkins = Array.isArray(loadedSave.skins?.owned) ? loadedSave.skins.owned : ['skin_classic'];
@@ -271,6 +295,11 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
   // Створення трейду з обраним гравцем або відкритого
   const handleCreateTrade = async (targetUserId: string | null = null) => {
     if (creatingTrade) return;
+    if (isRebirthLocked) {
+      haptic.warning();
+      alert(`⏳ Трейди тимчасово заблоковано на 5 днів після ребіртху!\nЗалишилося: ${formatRemaining(rebirthLockRemaining)}`);
+      return;
+    }
     setCreatingTrade(true);
     haptic.medium();
 
@@ -284,6 +313,7 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
           fromName: myName,
           fromU: myU,
           to: targetUserId,
+          clientLastRebirthTime: myLastRebirthTime,
         }),
       });
       const data = await res.json();
@@ -291,6 +321,12 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
         haptic.success();
         setActiveTradeId(data.tradeId);
         window.history.replaceState(null, '', window.location.pathname + '?v=' + Date.now() + '&trade=' + data.tradeId);
+      } else if (data?.error === 'rebirth_locked') {
+        haptic.error();
+        alert(`⏳ Трейди заблоковано на 5 днів після ребіртху!\nЗалишилося: ${formatRemaining(data.remainingMs || rebirthLockRemaining)}`);
+      } else if (data?.error === 'recipient_rebirth_locked') {
+        haptic.error();
+        alert(`⏳ Обраний гравець нещодавно зробив ребіртх. Трейди для нього заблоковані на 5 днів.`);
       } else {
         haptic.error();
         alert(`Помилка створення трейду: ${data?.error || 'невідома помилка'}`);
@@ -332,6 +368,11 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
 
   // Вхід до кімнати за кодом або посиланням
   const handleJoinByCode = () => {
+    if (isRebirthLocked) {
+      haptic.warning();
+      alert(`⏳ Трейди тимчасово заблоковано на 5 днів після ребіртху!\nЗалишилося: ${formatRemaining(rebirthLockRemaining)}`);
+      return;
+    }
     const raw = joinCodeInput.trim();
     if (!raw) return;
     let target = raw;
@@ -364,6 +405,7 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
           name: myName,
           u: myU,
           clientBalance: { f: myFocaccia, d: myDiamonds },
+          clientLastRebirthTime: myLastRebirthTime,
         };
 
         if (!trade?.me?.locked) {
@@ -387,6 +429,8 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
               ? 'Трейд не знайдено або термін його дії закінчився'
               : data.error === 'not_a_participant'
               ? 'У цій кімнаті вже є 2 учасники'
+              : data.error === 'rebirth_locked'
+              ? `Трейди заблоковано на 5 днів після ребіртху! Залишилося: ${formatRemaining((data as any).remainingMs || rebirthLockRemaining)}`
               : `Помилка: ${data.error}`
           );
           setRoomLoading(false);
@@ -394,42 +438,38 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
         }
 
         // Анти-скам: сповіщення при зміні пропозиції партнером
-        if (data.opp?.offer && prevOppOfferRef.current) {
-          const p = prevOppOfferRef.current;
-          const cur = data.opp.offer;
-          const focChanged = p.focaccia !== cur.focaccia;
-          const diaChanged = p.diamonds !== cur.diamonds;
-          const skinsChanged = JSON.stringify(p.skins.slice().sort()) !== JSON.stringify(cur.skins.slice().sort());
+        if (data?.opp?.offer && prevOppOfferRef.current) {
+          const prev = prevOppOfferRef.current;
+          const curr = data.opp.offer;
+          const focDiff = curr.focaccia !== prev.focaccia;
+          const diaDiff = curr.diamonds !== prev.diamonds;
+          const skinsDiff = JSON.stringify(curr.skins.slice().sort()) !== JSON.stringify(prev.skins.slice().sort());
 
-          if (focChanged || diaChanged || skinsChanged) {
+          if (focDiff || diaDiff || skinsDiff) {
             haptic.warning();
-            setScamAlert('⚠️ Партнер змінив пропозицію! Перевір перед фіксацією.');
-            setTimeout(() => setScamAlert(null), 5000);
+            setScamAlert('⚠️ Партнер змінив пропозицію! Замки скинуто.');
+            setTimeout(() => setScamAlert(null), 4000);
           }
         }
-        if (data.opp?.offer) {
-          prevOppOfferRef.current = { ...data.opp.offer };
+        if (data?.opp?.offer) {
+          prevOppOfferRef.current = data.opp.offer;
         }
 
         setTrade(data);
         setRoomLoading(false);
-
-        if (data.stage !== 'active' && iv) {
-          clearInterval(iv);
-        }
       } catch {
-        /* network glitch */
+        /* silent polling error */
       } finally {
         inFlightRef.current = false;
       }
     };
 
     syncTick();
-    iv = setInterval(syncTick, 850);
+    iv = setInterval(syncTick, 800);
     return () => { if (iv) clearInterval(iv); };
-  }, [activeTradeId, meId, focOffer, diaOffer, selectedSkins, trade?.me?.locked, myFocaccia, myDiamonds]);
+  }, [activeTradeId, meId, myName, myU, myFocaccia, myDiamonds, focOffer, diaOffer, selectedSkins, trade?.me?.locked, myLastRebirthTime, isRebirthLocked, rebirthLockRemaining]);
 
-  // Таймер підтвердження
+  // Скидання таймера 3с при підтвердженні
   useEffect(() => {
     if (!confirmModalOpen) {
       setConfirmTimer(3);
@@ -444,11 +484,21 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
   // Фіксація або розблокування (Lock)
   const handleToggleLock = async () => {
     if (!trade || trade.stage !== 'active') return;
+    if (isRebirthLocked) {
+      haptic.warning();
+      alert(`⏳ Трейди тимчасово заблоковано на 5 днів після ребіртху!\nЗалишилося: ${formatRemaining(rebirthLockRemaining)}`);
+      return;
+    }
+    if (trade.opp?.rebirthLocked) {
+      haptic.warning();
+      alert(`⏳ Партнер по обміну перебуває під блокуванням ребіртху (ще ${formatRemaining(trade.opp.rebirthRemainingMs || 0)}). Обмін неможливий.`);
+      return;
+    }
     const wantLock = !trade.me?.locked;
     haptic.medium();
 
     try {
-      await fetch(API, {
+      const res = await fetch(API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -456,8 +506,15 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
           tradeId: activeTradeId,
           userId: meId,
           locked: wantLock,
+          clientLastRebirthTime: myLastRebirthTime,
         }),
       });
+      const data = await res.json();
+      if (data?.error === 'rebirth_locked') {
+        haptic.error();
+        alert(`⏳ Трейди заблоковано на 5 днів після ребіртху!\nЗалишилося: ${formatRemaining(data.remainingMs || rebirthLockRemaining)}`);
+        return;
+      }
       setTrade((prev) => prev && prev.me ? {
         ...prev,
         me: { ...prev.me, locked: wantLock, confirmed: wantLock ? prev.me.confirmed : false },
@@ -470,6 +527,16 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
   // Фінальне підтвердження обміну (Confirm)
   const handleFinalConfirm = async () => {
     if (!trade || trade.stage !== 'active' || confirmTimer > 0) return;
+    if (isRebirthLocked) {
+      haptic.warning();
+      alert(`⏳ Трейди тимчасово заблоковано на 5 днів після ребіртху!\nЗалишилося: ${formatRemaining(rebirthLockRemaining)}`);
+      return;
+    }
+    if (trade.opp?.rebirthLocked) {
+      haptic.warning();
+      alert(`⏳ Партнер по обміну перебуває під блокуванням ребіртху. Обмін неможливий.`);
+      return;
+    }
     haptic.heavy();
     setConfirmModalOpen(false);
 
@@ -482,6 +549,7 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
           tradeId: activeTradeId,
           userId: meId,
           clientBalance: { f: myFocaccia, d: myDiamonds },
+          clientLastRebirthTime: myLastRebirthTime,
         }),
       });
       const data = await res.json();
@@ -492,6 +560,9 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
           stage: data.stage || prev.stage,
           me: { ...prev.me, confirmed: true },
         } : prev);
+      } else if (data.error === 'rebirth_locked') {
+        haptic.error();
+        alert(`⏳ Трейди заблоковано на 5 днів після ребіртху!\nЗалишилося: ${formatRemaining(data.remainingMs || rebirthLockRemaining)}`);
       } else {
         haptic.error();
         alert(data.error === 'insufficient_funds_p1' || data.error === 'insufficient_funds_p2'
@@ -773,6 +844,25 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
           </div>
         )}
 
+        {/* Warning if rebirth locked */}
+        {isRebirthLocked && (
+          <div className="mx-3.5 mt-3 bg-red-950/80 border border-red-500/60 rounded-2xl p-3.5 text-xs text-red-200 flex items-start gap-3 shadow-lg shadow-red-950/40 animate-fade-in">
+            <span className="text-2xl shrink-0">⏳</span>
+            <div className="flex-1">
+              <div className="font-black text-red-300 text-sm mb-0.5">
+                Трейди заблоковано після ребіртху
+              </div>
+              <div className="text-[11px] text-stone-300 leading-snug">
+                Після останнього переродження має пройти 5 днів для захисту балансу та запобігання нечесному переливу ресурсів.
+              </div>
+              <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-900/60 border border-red-500/40 text-red-200 text-[11px] font-black">
+                <span>Залишилося:</span>
+                <span className="font-mono text-white">{formatRemaining(rebirthLockRemaining)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Main Content */}
         <div className="p-3.5 flex-1 space-y-3.5 max-w-lg mx-auto w-full">
           {/* Segmented Lobby Tabs */}
@@ -955,13 +1045,19 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
 
               <button
                 type="button"
-                disabled={creatingTrade}
+                disabled={creatingTrade || isRebirthLocked}
                 onClick={() => handleCreateTrade(null)}
-                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-400 to-orange-500 hover:brightness-110 text-stone-950 font-black text-xs shadow-lg shadow-amber-600/30 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-amber-500 via-yellow-400 to-orange-500 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed text-stone-950 font-black text-xs shadow-lg shadow-amber-600/30 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
               >
                 <span>🤝</span>
                 <span>{creatingTrade ? 'Створення...' : 'Створити кімнату зараз'}</span>
               </button>
+
+              {isRebirthLocked && (
+                <div className="text-[11px] font-bold text-red-400">
+                  ⏳ Створення заблоковано ще {formatRemaining(rebirthLockRemaining)}
+                </div>
+              )}
             </div>
           )}
 
@@ -980,17 +1076,24 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
                   onChange={(e) => setJoinCodeInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleJoinByCode()}
                   placeholder="tr_... або посилання"
-                  className="flex-1 bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs font-mono text-amber-200 placeholder-stone-600 focus:outline-none focus:border-amber-500"
+                  disabled={isRebirthLocked}
+                  className="flex-1 bg-stone-950 border border-stone-800 disabled:opacity-40 rounded-xl px-3 py-2 text-xs font-mono text-amber-200 placeholder-stone-600 focus:outline-none focus:border-amber-500"
                 />
                 <button
                   type="button"
-                  disabled={!joinCodeInput.trim()}
+                  disabled={!joinCodeInput.trim() || isRebirthLocked}
                   onClick={handleJoinByCode}
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-stone-950 font-black rounded-xl text-xs shrink-0 active:scale-95"
                 >
                   Вхід
                 </button>
               </div>
+
+              {isRebirthLocked && (
+                <div className="text-[11px] font-bold text-red-400">
+                  ⏳ Вхід заблоковано ще {formatRemaining(rebirthLockRemaining)}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1268,6 +1371,34 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
           </div>
         )}
 
+        {/* Warning if rebirth locked */}
+        {isRebirthLocked && (
+          <div className="p-3.5 rounded-2xl bg-red-950/80 border border-red-500/60 text-left flex items-start gap-2.5 shadow-lg shadow-red-950/40 animate-fade-in">
+            <span className="text-xl shrink-0">⏳</span>
+            <div className="text-xs">
+              <div className="font-black text-red-300">
+                Трейди заблоковано після ребіртху
+              </div>
+              <div className="text-stone-300 mt-0.5 leading-snug">
+                Ви не можете здійснювати обмін ще <span className="font-bold text-white">{formatRemaining(rebirthLockRemaining)}</span>.
+              </div>
+            </div>
+          </div>
+        )}
+        {trade?.opp?.rebirthLocked && (
+          <div className="p-3.5 rounded-2xl bg-red-950/80 border border-red-500/60 text-left flex items-start gap-2.5 shadow-lg shadow-red-950/40 animate-fade-in">
+            <span className="text-xl shrink-0">⏳</span>
+            <div className="text-xs">
+              <div className="font-black text-red-300">
+                Партнер під блокуванням ребіртху
+              </div>
+              <div className="text-stone-300 mt-0.5 leading-snug">
+                Партнер {trade.opp.name} нещодавно зробив ребіртх і не може торгувати ще <span className="font-bold text-white">{formatRemaining(trade.opp.rebirthRemainingMs || 0)}</span>.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* DUAL PANELS OF BOTH SIDES */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
           {/* === SIDE 1: MY OFFER === */}
@@ -1293,10 +1424,13 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
 
               <button
                 type="button"
+                disabled={isRebirthLocked || Boolean(trade?.opp?.rebirthLocked)}
                 onClick={handleToggleLock}
                 className={cn(
                   "px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 border active:scale-95 cursor-pointer shadow-sm",
-                  myLocked
+                  (isRebirthLocked || Boolean(trade?.opp?.rebirthLocked))
+                    ? "bg-stone-900 text-stone-600 border-stone-800 opacity-40 cursor-not-allowed"
+                    : myLocked
                     ? "bg-stone-800 text-stone-300 border-stone-700 hover:bg-stone-700"
                     : "bg-gradient-to-r from-emerald-600 to-teal-600 text-stone-950 border-emerald-400 shadow-emerald-600/20"
                 )}
@@ -1596,21 +1730,39 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
         {/* Big Action Button */}
         <button
           type="button"
-          disabled={!bothLocked || Boolean(me?.confirmed)}
+          disabled={!bothLocked || Boolean(me?.confirmed) || isRebirthLocked || Boolean(trade?.opp?.rebirthLocked)}
           onClick={() => {
+            if (isRebirthLocked) {
+              alert(`⏳ Трейди заблоковано на 5 днів після ребіртху!\nЗалишилося: ${formatRemaining(rebirthLockRemaining)}`);
+              return;
+            }
+            if (trade?.opp?.rebirthLocked) {
+              alert(`⏳ Партнер по обміну перебуває під блокуванням ребіртху. Обмін неможливий.`);
+              return;
+            }
             setConfirmModalOpen(true);
             haptic.medium();
           }}
           className={cn(
             "w-full py-3.5 rounded-2xl text-sm font-black transition-all flex items-center justify-center gap-2 shadow-xl cursor-pointer",
-            bothLocked && !me?.confirmed
+            bothLocked && !me?.confirmed && !isRebirthLocked && !trade?.opp?.rebirthLocked
               ? "bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-stone-950 shadow-emerald-500/30 active:scale-95 animate-pulse"
               : me?.confirmed
               ? "bg-emerald-950 border border-emerald-500/50 text-emerald-300 opacity-90 cursor-default"
               : "bg-stone-800 text-stone-500 border border-stone-700/50 opacity-50 cursor-not-allowed"
           )}
         >
-          {me?.confirmed ? (
+          {isRebirthLocked ? (
+            <>
+              <span>🔒</span>
+              <span>ОБМІН ЗАБЛОКОВАНО ({formatRemaining(rebirthLockRemaining)})</span>
+            </>
+          ) : trade?.opp?.rebirthLocked ? (
+            <>
+              <span>🔒</span>
+              <span>ПАРТНЕР ПІД БЛОКУВАННЯМ РЕБІРТХУ</span>
+            </>
+          ) : me?.confirmed ? (
             <>
               <span>⏳</span>
               <span>ТВОЄ ПІДТВЕРДЖЕННЯ ПРИЙНЯТО</span>

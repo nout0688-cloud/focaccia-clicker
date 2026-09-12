@@ -328,6 +328,29 @@ interface SaveState {
     totalRepairsDone?: number;
   };
   settledTrades?: string[];
+  lastRebirthTime?: number;
+}
+
+export const REBIRTH_TRADE_LOCK_MS = 5 * 24 * 60 * 60 * 1000; // 5 days
+
+export function getRebirthTradeLockRemaining(lastRebirthTime?: number): number {
+  if (!lastRebirthTime || typeof lastRebirthTime !== 'number') return 0;
+  const elapsed = Date.now() - lastRebirthTime;
+  const rem = REBIRTH_TRADE_LOCK_MS - elapsed;
+  return rem > 0 ? rem : 0;
+}
+
+export function formatTradeLockDuration(ms: number, lang: 'uk' | 'ru' = 'uk'): string {
+  const days = Math.floor(ms / (24 * 60 * 60 * 1000));
+  const hours = Math.floor((ms % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+  const minutes = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));
+  if (days > 0) {
+    return lang === 'uk' ? `${days} дн. ${hours} год.` : `${days} дн. ${hours} ч.`;
+  }
+  if (hours > 0) {
+    return lang === 'uk' ? `${hours} год. ${minutes} хв.` : `${hours} ч. ${minutes} мин.`;
+  }
+  return lang === 'uk' ? `${Math.max(1, minutes)} хв.` : `${Math.max(1, minutes)} мин.`;
 }
 
 interface FloatText {
@@ -442,6 +465,7 @@ const defaultState = (): SaveState => ({
     totalRepairsDone: 0,
   },
   settledTrades: [],
+  lastRebirthTime: 0,
 });
 
 async function loadState(): Promise<SaveState> {
@@ -793,7 +817,7 @@ export default function App() {
     const toSave: SaveState = { ...cur, lastSave: Date.now() };
     stateRef.current = toSave;
     storage.set(SAVE_KEY, JSON.stringify(toSave));
-    storage.set('focaccia-balance', JSON.stringify({ f: toSave.focaccia, d: toSave.diamonds, ts: Date.now() }));
+    storage.set('focaccia-balance', JSON.stringify({ f: toSave.focaccia, d: toSave.diamonds, rbt: toSave.lastRebirthTime || 0, ts: Date.now() }));
   }, []);
 
   const reportSync = useCallback(() => {
@@ -810,6 +834,7 @@ export default function App() {
         username: tgUser.username || '',
         total: Math.floor(cur.total),
         prestige: cur.prestige,
+        lastRebirthTime: cur.lastRebirthTime || 0,
         clicks: Math.floor(cur.clicks),
         focaccia: Math.floor(cur.focaccia),
         diamonds: Math.floor(cur.diamonds),
@@ -994,7 +1019,7 @@ export default function App() {
               }
               if (data?.rebirth && data.rebirth > 0) {
                 setState((p) => {
-                  const next = { ...p, prestige: p.prestige + data.rebirth };
+                  const next = { ...p, prestige: p.prestige + data.rebirth, lastRebirthTime: Date.now() };
                   stateRef.current = next;
                   saveNow(next);
                   return next;
@@ -2638,6 +2663,19 @@ export default function App() {
 
   /* ---- Trades ---- */
   const handleCreateOpenTrade = async () => {
+    const lockRem = getRebirthTradeLockRemaining(stateRef.current.lastRebirthTime);
+    if (lockRem > 0) {
+      addToast(
+        langRef.current === 'uk' ? 'Трейди заблоковано ⏳' : 'Трейды заблокированы ⏳',
+        langRef.current === 'uk'
+          ? `Після ребіртха обмін заблоковано на 5 днів. Залишилося: ${formatTradeLockDuration(lockRem, 'uk')}`
+          : `После ребиртха обмен заблокирован на 5 дней. Осталось: ${formatTradeLockDuration(lockRem, 'ru')}`,
+        '🔄'
+      );
+      haptic.warning();
+      return;
+    }
+
     setTradeCreating(true);
     const tgId = tgUser?.id || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id);
     let uid = tgId ? String(tgId) : '';
@@ -2660,11 +2698,28 @@ export default function App() {
       const res = await fetch(`${API_BASE}/api/trade`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', from: uid, to: null, fromName: uName, fromU: uU }),
+        body: JSON.stringify({
+          action: 'create',
+          from: uid,
+          to: null,
+          fromName: uName,
+          fromU: uU,
+          clientLastRebirthTime: stateRef.current.lastRebirthTime || 0,
+        }),
       });
       const data = await res.json();
       if (data?.ok && data.tradeId) {
         window.location.href = window.location.pathname + '?v=' + Date.now() + '&trade=' + data.tradeId;
+      } else if (data?.error === 'rebirth_locked') {
+        const rem = data.remainingMs || lockRem;
+        addToast(
+          langRef.current === 'uk' ? 'Трейди заблоковано ⏳' : 'Трейды заблокированы ⏳',
+          langRef.current === 'uk'
+            ? `Після ребіртха обмін заблоковано на 5 днів. Залишилося: ${formatTradeLockDuration(rem, 'uk')}`
+            : `После ребиртха обмен заблокирован на 5 дней. Осталось: ${formatTradeLockDuration(rem, 'ru')}`,
+          '🔄'
+        );
+        haptic.warning();
       } else {
         addToast(langRef.current === 'uk' ? 'Помилка трейду' : 'Ошибка трейда', langRef.current === 'uk' ? 'Не вдалося створити кімнату обміну' : 'Не удалось создать комнату обмена', '❌');
         haptic.error();
@@ -2678,6 +2733,19 @@ export default function App() {
   };
 
   const handleJoinTrade = () => {
+    const lockRem = getRebirthTradeLockRemaining(stateRef.current.lastRebirthTime);
+    if (lockRem > 0) {
+      addToast(
+        langRef.current === 'uk' ? 'Трейди заблоковано ⏳' : 'Трейды заблокированы ⏳',
+        langRef.current === 'uk'
+          ? `Після ребіртха обмін заблоковано на 5 днів. Залишилося: ${formatTradeLockDuration(lockRem, 'uk')}`
+          : `После ребиртха обмен заблокирован на 5 дней. Осталось: ${formatTradeLockDuration(lockRem, 'ru')}`,
+        '🔄'
+      );
+      haptic.warning();
+      return;
+    }
+
     const raw = tradeJoinInput.trim();
     if (!raw) return;
     haptic.medium();
@@ -4927,6 +4995,7 @@ export default function App() {
           settledTrades: cur.settledTrades,
           karma: cur.karma,
           prestige: cur.prestige + prestigeGain,
+          lastRebirthTime: Date.now(),
           diamonds: cur.diamonds,
           vipUpgrades: cur.vipUpgrades,
           diamondBuildings: cur.diamondBuildings,
@@ -8609,61 +8678,95 @@ export default function App() {
                 : 'Обменивайся фокаччами 🫓, алмазами 💎 и скинами 🎨 с другими игроками в отдельном мини-аппе!'}
             </p>
 
-            <div className="space-y-3 mb-4">
-              <button
-                disabled={tradeCreating}
-                onClick={handleCreateOpenTrade}
-                className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-stone-950 font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-600/20 active:scale-95 transition-all"
-              >
-                <span>🔗</span>
-                <span>{tradeCreating ? 'Створення...' : (lang === 'uk' ? 'Створити відкритий трейд' : 'Создать открытый трейд')}</span>
-              </button>
+            {(() => {
+              const modalLockRem = getRebirthTradeLockRemaining(state.lastRebirthTime);
+              return (
+                <>
+                  {modalLockRem > 0 && (
+                    <div className="mb-4 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/40 text-left flex items-start gap-2.5">
+                      <span className="text-lg shrink-0">⏳</span>
+                      <div className="text-[11px] leading-snug">
+                        <div className="font-black text-amber-300">
+                          {lang === 'uk' ? 'Трейди заблоковано після ребіртху' : 'Трейды заблокированы после ребиртха'}
+                        </div>
+                        <div className="text-stone-300 mt-0.5">
+                          {lang === 'uk'
+                            ? `Після останнього переродження має пройти 5 днів. Залишилося: ${formatTradeLockDuration(modalLockRem, 'uk')}.`
+                            : `После последнего перерождения должно пройти 5 дней. Осталось: ${formatTradeLockDuration(modalLockRem, 'ru')}.`}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
-              <button
-                onClick={() => {
-                  setTradeModalOpen(false);
-                  const botU = 'focacciaclicker_bot';
-                  try {
-                    const wa = window.Telegram?.WebApp as any;
-                    if (wa?.openTelegramLink) {
-                      wa.openTelegramLink(`https://t.me/${botU}?start=trade`);
-                    } else {
-                      window.open(`https://t.me/${botU}?start=trade`, '_blank');
-                    }
-                  } catch {
-                    window.open(`https://t.me/${botU}?start=trade`, '_blank');
-                  }
-                  haptic.medium();
-                }}
-                className="w-full py-2.5 bg-stone-800 hover:bg-stone-700 text-amber-300 font-bold rounded-xl text-xs border border-stone-700 flex items-center justify-center gap-2 active:scale-95 transition-all"
-              >
-                <span>🤖</span>
-                <span>{lang === 'uk' ? 'Запросити через бота (/trade)' : 'Пригласить через бота (/trade)'}</span>
-              </button>
-            </div>
+                  <div className="space-y-3 mb-4">
+                    <button
+                      disabled={tradeCreating || modalLockRem > 0}
+                      onClick={handleCreateOpenTrade}
+                      className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 disabled:opacity-40 text-stone-950 font-black rounded-xl text-xs flex items-center justify-center gap-2 shadow-md shadow-amber-600/20 active:scale-95 transition-all"
+                    >
+                      <span>🔗</span>
+                      <span>{tradeCreating ? 'Створення...' : (lang === 'uk' ? 'Створити відкритий трейд' : 'Создать открытый трейд')}</span>
+                    </button>
 
-            {/* Join existing trade code */}
-            <div className="pt-3 border-t border-stone-800/80 text-left">
-              <div className="text-[11px] font-bold text-stone-400 mb-1.5">
-                {lang === 'uk' ? 'Приєднатися за кодом або посиланням:' : 'Присоединиться по коду или ссылке:'}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={tradeJoinInput}
-                  onChange={(e) => setTradeJoinInput(e.target.value)}
-                  placeholder="tr_..."
-                  className="flex-1 bg-stone-950 border border-stone-800 rounded-xl px-3 py-2 text-xs font-mono text-amber-200 placeholder-stone-600 focus:outline-none focus:border-amber-500"
-                />
-                <button
-                  disabled={!tradeJoinInput.trim()}
-                  onClick={handleJoinTrade}
-                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-stone-950 font-black rounded-xl text-xs shrink-0"
-                >
-                  Вхід
-                </button>
-              </div>
-            </div>
+                    <button
+                      disabled={modalLockRem > 0}
+                      onClick={() => {
+                        if (modalLockRem > 0) {
+                          addToast(
+                            lang === 'uk' ? 'Трейди заблоковано ⏳' : 'Трейды заблокированы ⏳',
+                            lang === 'uk' ? `Залишилося: ${formatTradeLockDuration(modalLockRem, 'uk')}` : `Осталось: ${formatTradeLockDuration(modalLockRem, 'ru')}`,
+                            '🔄'
+                          );
+                          haptic.warning();
+                          return;
+                        }
+                        setTradeModalOpen(false);
+                        const botU = 'focacciaclicker_bot';
+                        try {
+                          const wa = window.Telegram?.WebApp as any;
+                          if (wa?.openTelegramLink) {
+                            wa.openTelegramLink(`https://t.me/${botU}?start=trade`);
+                          } else {
+                            window.open(`https://t.me/${botU}?start=trade`, '_blank');
+                          }
+                        } catch {
+                          window.open(`https://t.me/${botU}?start=trade`, '_blank');
+                        }
+                        haptic.medium();
+                      }}
+                      className="w-full py-2.5 bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-amber-300 font-bold rounded-xl text-xs border border-stone-700 flex items-center justify-center gap-2 active:scale-95 transition-all"
+                    >
+                      <span>🤖</span>
+                      <span>{lang === 'uk' ? 'Запросити через бота (/trade)' : 'Пригласить через бота (/trade)'}</span>
+                    </button>
+                  </div>
+
+                  {/* Join existing trade code */}
+                  <div className="pt-3 border-t border-stone-800/80 text-left">
+                    <div className="text-[11px] font-bold text-stone-400 mb-1.5">
+                      {lang === 'uk' ? 'Приєднатися за кодом або посиланням:' : 'Присоединиться по коду или ссылке:'}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={tradeJoinInput}
+                        onChange={(e) => setTradeJoinInput(e.target.value)}
+                        placeholder="tr_..."
+                        disabled={modalLockRem > 0}
+                        className="flex-1 bg-stone-950 border border-stone-800 disabled:opacity-40 rounded-xl px-3 py-2 text-xs font-mono text-amber-200 placeholder-stone-600 focus:outline-none focus:border-amber-500"
+                      />
+                      <button
+                        disabled={!tradeJoinInput.trim() || modalLockRem > 0}
+                        onClick={handleJoinTrade}
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-stone-950 font-black rounded-xl text-xs shrink-0"
+                      >
+                        Вхід
+                      </button>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -9688,6 +9791,18 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
+                    const lockRem = getRebirthTradeLockRemaining(state.lastRebirthTime);
+                    if (lockRem > 0) {
+                      addToast(
+                        lang === 'uk' ? 'Трейди заблоковано ⏳' : 'Трейды заблокированы ⏳',
+                        lang === 'uk'
+                          ? `Після ребіртха обмін заблоковано на 5 днів. Залишилося: ${formatTradeLockDuration(lockRem, 'uk')}`
+                          : `После ребиртха обмен заблокирован на 5 дней. Осталось: ${formatTradeLockDuration(lockRem, 'ru')}`,
+                        '🔄'
+                      );
+                      haptic.warning();
+                      return;
+                    }
                     haptic.medium();
                     setViewingProfile(null);
                     window.location.href = `${window.location.pathname}?v=${Date.now()}&trade=lobby&target=${viewingProfile.id}`;
@@ -9825,18 +9940,43 @@ export default function App() {
             </button>
 
             {/* Trades Pill */}
-            <button
-              type="button"
-              onClick={() => {
-                haptic.medium();
-                window.location.href = window.location.pathname + '?v=' + Date.now() + '&trade=lobby';
-              }}
-              className="flex items-center gap-1 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 hover:from-amber-500/35 hover:to-yellow-500/35 active:scale-95 transition-all border border-amber-500/40 px-2 py-0.5 rounded-lg text-xs font-black text-amber-200 shadow-[0_0_8px_rgba(245,158,11,0.2)] whitespace-nowrap cursor-pointer"
-              title={lang === 'uk' ? '🤝 Безпечні Трейди' : '🤝 Безопасные Трейды'}
-            >
-              <span>🤝</span>
-              <span className="text-[10px] uppercase tracking-wider font-bold">{lang === 'uk' ? 'Трейди' : 'Трейды'}</span>
-            </button>
+            {(() => {
+              const headerTradeLock = getRebirthTradeLockRemaining(state.lastRebirthTime);
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (headerTradeLock > 0) {
+                      addToast(
+                        lang === 'uk' ? 'Трейди заблоковано ⏳' : 'Трейды заблокированы ⏳',
+                        lang === 'uk'
+                          ? `Після ребіртха обмін заблоковано на 5 днів. Залишилося: ${formatTradeLockDuration(headerTradeLock, 'uk')}`
+                          : `После ребиртха обмен заблокирован на 5 дней. Осталось: ${formatTradeLockDuration(headerTradeLock, 'ru')}`,
+                        '🔄'
+                      );
+                      haptic.warning();
+                      return;
+                    }
+                    haptic.medium();
+                    window.location.href = window.location.pathname + '?v=' + Date.now() + '&trade=lobby';
+                  }}
+                  className={cn(
+                    "flex items-center gap-1 transition-all px-2 py-0.5 rounded-lg text-xs font-black whitespace-nowrap cursor-pointer",
+                    headerTradeLock > 0
+                      ? "bg-stone-800/80 border border-stone-700 text-stone-400 shadow-none opacity-80"
+                      : "bg-gradient-to-r from-amber-500/20 to-yellow-500/20 hover:from-amber-500/35 hover:to-yellow-500/35 active:scale-95 border border-amber-500/40 text-amber-200 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
+                  )}
+                  title={
+                    headerTradeLock > 0
+                      ? (lang === 'uk' ? `⏳ Трейди заблоковано ще ${formatTradeLockDuration(headerTradeLock, 'uk')}` : `⏳ Трейды заблокированы еще ${formatTradeLockDuration(headerTradeLock, 'ru')}`)
+                      : (lang === 'uk' ? '🤝 Безпечні Трейди' : '🤝 Безопасные Трейды')
+                  }
+                >
+                  <span>{headerTradeLock > 0 ? '🔒' : '🤝'}</span>
+                  <span className="text-[10px] uppercase tracking-wider font-bold">{lang === 'uk' ? 'Трейди' : 'Трейды'}</span>
+                </button>
+              );
+            })()}
           </div>
         </div>
 
