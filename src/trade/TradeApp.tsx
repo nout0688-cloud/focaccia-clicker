@@ -109,9 +109,26 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
   const isLobbyProp = !initialTradeId || initialTradeId === 'lobby' || initialTradeId === 'new';
   const [activeTradeId, setActiveTradeId] = useState<string>(isLobbyProp ? '' : initialTradeId);
 
-  // Надійне визначення User ID
+  // Надійне визначення User ID (без race condition)
   const [meId, setMeId] = useState<string>(() => {
-    if (tg?.initDataUnsafe?.user?.id) return String(tg.initDataUnsafe.user.id);
+    try {
+      const w = typeof window !== 'undefined' ? (window as any) : null;
+      const tgApp = w?.Telegram?.WebApp;
+      if (tgApp?.initDataUnsafe?.user?.id) return String(tgApp.initDataUnsafe.user.id);
+      if (tgApp?.initData) {
+        const p = new URLSearchParams(tgApp.initData);
+        const uStr = p.get('user');
+        if (uStr) {
+          const uObj = JSON.parse(uStr);
+          if (uObj?.id) return String(uObj.id);
+        }
+      }
+    } catch {}
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const urlUid = p.get('userId') || p.get('uid');
+      if (urlUid) return urlUid;
+    } catch {}
     try {
       const stored = localStorage.getItem('focaccia_user_id');
       if (stored) return stored;
@@ -121,6 +138,7 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
     return newId;
   });
 
+  const [copiedDirectLink, setCopiedDirectLink] = useState(false);
   const isRealTg = Boolean(tg?.initDataUnsafe?.user?.id);
   const myName = String(tg?.initDataUnsafe?.user?.first_name || 'Гравець');
   const myU = String(tg?.initDataUnsafe?.user?.username || '');
@@ -600,6 +618,18 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
         setCopiedLink(true);
         haptic.success();
         setTimeout(() => setCopiedLink(false), 2500);
+      }
+    } catch { /* */ }
+  };
+
+  const handleCopyDirectLink = () => {
+    const directUrl = `https://nout0688-cloud.github.io/focaccia-clicker/?v=${Date.now()}&trade=${activeTradeId}`;
+    try {
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(directUrl);
+        setCopiedDirectLink(true);
+        haptic.success();
+        setTimeout(() => setCopiedDirectLink(false), 2500);
       }
     } catch { /* */ }
   };
@@ -1192,24 +1222,35 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
             </div>
 
             {/* Main Action Buttons */}
-            <div className="grid grid-cols-2 gap-2 pt-1">
+            <div className="space-y-2 pt-1">
               <button
                 type="button"
                 onClick={handleTelegramShare}
-                className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-stone-950 font-black text-xs shadow-md shadow-amber-600/20 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                className="w-full py-3 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-stone-950 font-black text-xs shadow-md shadow-amber-600/20 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <span>📤</span>
-                <span>В Telegram</span>
+                <span>Поділитися в Telegram</span>
               </button>
 
-              <button
-                type="button"
-                onClick={handleCopyLink}
-                className="py-2.5 px-3 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-300 font-bold text-xs border border-amber-500/30 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <span>📋</span>
-                <span>{copiedLink ? 'Скопійовано!' : 'Копіювати лінк'}</span>
-              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="py-2.5 px-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-300 font-bold text-[11px] border border-amber-500/30 active:scale-95 transition-all flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <span>📋</span>
+                  <span>{copiedLink ? 'Скопійовано!' : 'Бот-лінк'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopyDirectLink}
+                  className="py-2.5 px-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-cyan-300 font-bold text-[11px] border border-cyan-500/30 active:scale-95 transition-all flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <span>🌐</span>
+                  <span>{copiedDirectLink ? 'Скопійовано!' : 'Веб-лінк'}</span>
+                </button>
+              </div>
             </div>
 
             {/* Room Code Quick Display */}
@@ -1218,9 +1259,10 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
               <button
                 type="button"
                 onClick={handleCopyCode}
-                className="font-mono text-amber-300 font-bold px-2 py-0.5 rounded-md bg-stone-950 border border-stone-800 hover:border-amber-500/40"
+                className="font-mono text-amber-300 font-bold px-2 py-0.5 rounded-md bg-stone-950 border border-stone-800 hover:border-amber-500/40 cursor-pointer"
+                title="Натисни, щоб скопіювати код"
               >
-                {activeTradeId}
+                {copiedCode ? 'Скопійовано!' : activeTradeId}
               </button>
             </div>
           </div>
@@ -1296,28 +1338,45 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
 
               {/* Quick Focaccia Chips */}
               {!myLocked && (
-                <div className="grid grid-cols-5 gap-1 mt-1.5">
-                  {[10000, 100000, 1000000, 10000000].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      disabled={myFocaccia < amt}
-                      onClick={() => {
-                        setFocOffer((prev) => Math.min(myFocaccia, prev + amt));
-                        haptic.light();
-                      }}
-                      className="py-1 rounded-lg bg-stone-950 border border-stone-800 text-[10px] text-amber-300 font-bold hover:border-amber-500/40 disabled:opacity-30 active:scale-95 transition-all"
-                    >
-                      +{formatNum(amt)}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => { setFocOffer(myFocaccia); haptic.light(); }}
-                    className="py-1 rounded-lg bg-amber-500/20 border border-amber-500/40 text-[10px] text-amber-300 font-black hover:bg-amber-500/30 active:scale-95 transition-all"
-                  >
-                    Всі
-                  </button>
+                <div className="space-y-1.5 mt-1.5">
+                  <div className="grid grid-cols-4 gap-1">
+                    {[0.1, 0.25, 0.5, 1].map((pct) => {
+                      const label = pct === 1 ? 'MAX' : `${Math.round(pct * 100)}%`;
+                      const calculated = Math.max(0, Math.floor(myFocaccia * pct));
+                      return (
+                        <button
+                          key={pct}
+                          type="button"
+                          disabled={myFocaccia <= 0}
+                          onClick={() => { setFocOffer(calculated); haptic.light(); }}
+                          className={cn(
+                            'py-1 rounded-lg text-xs font-black border transition-all cursor-pointer active:scale-95',
+                            focOffer === calculated && calculated > 0
+                              ? 'bg-amber-500 text-stone-950 border-amber-400'
+                              : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
+                          )}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {[10000, 100000, 1000000, 10000000].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        disabled={myFocaccia < amt}
+                        onClick={() => {
+                          setFocOffer((prev) => Math.min(myFocaccia, prev + amt));
+                          haptic.light();
+                        }}
+                        className="py-1 rounded-lg bg-stone-950 border border-stone-800 text-[10px] text-amber-300 font-bold hover:border-amber-500/40 disabled:opacity-30 active:scale-95 transition-all cursor-pointer"
+                      >
+                        +{formatNum(amt)}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -1346,7 +1405,7 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
                   <button
                     type="button"
                     onClick={() => setDiaOffer(0)}
-                    className="absolute right-3 text-stone-500 hover:text-stone-300 text-xs font-bold"
+                    className="absolute right-3 text-stone-500 hover:text-stone-300 text-xs font-bold cursor-pointer"
                   >
                     ✕
                   </button>
@@ -1355,28 +1414,45 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
 
               {/* Quick Diamond Chips */}
               {!myLocked && (
-                <div className="grid grid-cols-5 gap-1 mt-1.5">
-                  {[1, 5, 25, 100].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      disabled={myDiamonds < amt}
-                      onClick={() => {
-                        setDiaOffer((prev) => Math.min(myDiamonds, prev + amt));
-                        haptic.light();
-                      }}
-                      className="py-1 rounded-lg bg-stone-950 border border-stone-800 text-[10px] text-cyan-300 font-bold hover:border-cyan-500/40 disabled:opacity-30 active:scale-95 transition-all"
-                    >
-                      +{amt}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => { setDiaOffer(myDiamonds); haptic.light(); }}
-                    className="py-1 rounded-lg bg-cyan-500/20 border border-cyan-500/40 text-[10px] text-cyan-300 font-black hover:bg-cyan-500/30 active:scale-95 transition-all"
-                  >
-                    Всі
-                  </button>
+                <div className="space-y-1.5 mt-1.5">
+                  <div className="grid grid-cols-4 gap-1">
+                    {[0.1, 0.25, 0.5, 1].map((pct) => {
+                      const label = pct === 1 ? 'MAX' : `${Math.round(pct * 100)}%`;
+                      const calculated = Math.max(0, Math.floor(myDiamonds * pct));
+                      return (
+                        <button
+                          key={pct}
+                          type="button"
+                          disabled={myDiamonds <= 0}
+                          onClick={() => { setDiaOffer(calculated); haptic.light(); }}
+                          className={cn(
+                            'py-1 rounded-lg text-xs font-black border transition-all cursor-pointer active:scale-95',
+                            diaOffer === calculated && calculated > 0
+                              ? 'bg-cyan-500 text-stone-950 border-cyan-400'
+                              : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
+                          )}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {[1, 5, 25, 100].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        disabled={myDiamonds < amt}
+                        onClick={() => {
+                          setDiaOffer((prev) => Math.min(myDiamonds, prev + amt));
+                          haptic.light();
+                        }}
+                        className="py-1 rounded-lg bg-stone-950 border border-stone-800 text-[10px] text-cyan-300 font-bold hover:border-cyan-500/40 disabled:opacity-30 active:scale-95 transition-all cursor-pointer"
+                      >
+                        +{amt}💎
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

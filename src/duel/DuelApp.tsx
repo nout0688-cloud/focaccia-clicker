@@ -184,6 +184,17 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   const [insufficientFunds, setInsufficientFunds] = useState<string | null>(null);
   const [, forceTick] = useState(0);
 
+  // Dynamic Combat & Tap Juice
+  const [combo, setCombo] = useState(0);
+  const [cps, setCps] = useState(0);
+  const [floatingPops, setFloatingPops] = useState<{ id: number; x: number; y: number; text: string; color: string }[]>([]);
+  const [tilt, setTilt] = useState(0);
+  const [copiedDirectLink, setCopiedDirectLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+
+  const comboTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tapTimesRef = useRef<number[]>([]);
+
   const pendingRef = useRef(0);
   const inFlight = useRef(false);
   const offsetRef = useRef(0);
@@ -432,6 +443,25 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
     } catch {
       /* */
     }
+  };
+
+  const copyDirectWebLink = () => {
+    const link = `https://nout0688-cloud.github.io/focaccia-clicker/?v=${Date.now()}&duel=${duelId}`;
+    try {
+      navigator.clipboard?.writeText(link);
+      setCopiedDirectLink(true);
+      setTimeout(() => setCopiedDirectLink(false), 2500);
+      haptic.success();
+    } catch {}
+  };
+
+  const copyDuelCode = () => {
+    try {
+      navigator.clipboard?.writeText(duelId);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+      haptic.success();
+    } catch {}
   };
 
   // счёт = серверный + неотправленные
@@ -687,9 +717,56 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   const handleTap = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (!e.nativeEvent.isTrusted) return;
     if (stage !== 'live') return;
+
     setPending((p) => p + 1);
     pendingRef.current += 1;
-    navigator.vibrate?.(8);
+
+    // Relative tap coordinates for floating number
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    // Combo streak
+    if (comboTimerRef.current) clearTimeout(comboTimerRef.current);
+    setCombo((prev) => {
+      const next = prev + 1;
+      if (next % 10 === 0) haptic.medium();
+      else haptic.light();
+      return next;
+    });
+    comboTimerRef.current = setTimeout(() => {
+      setCombo(0);
+      setCps(0);
+    }, 1100);
+
+    // CPS Calculation (sliding window of 1.5s)
+    const now = Date.now();
+    tapTimesRef.current.push(now);
+    tapTimesRef.current = tapTimesRef.current.filter((t) => now - t <= 1500);
+    const curCps = Math.round((tapTimesRef.current.length / 1.5) * 10) / 10;
+    setCps(curCps);
+
+    // 3D Tilt alternation
+    setTilt((prev) => (prev <= 0 ? 2 : -2));
+
+    // Floating particle
+    const popId = Date.now() + Math.random();
+    const isFire = combo >= 10;
+    setFloatingPops((prev) => [
+      ...prev.slice(-12),
+      {
+        id: popId,
+        x: Math.max(25, Math.min(rect.width - 25, x)),
+        y: Math.max(25, Math.min(rect.height - 25, y)),
+        text: isFire ? '🔥 +1' : '+1',
+        color: isFire ? 'text-amber-300' : 'text-emerald-300',
+      },
+    ]);
+    setTimeout(() => {
+      setFloatingPops((prev) => prev.filter((p) => p.id !== popId));
+    }, 650);
+
+    try { navigator.vibrate?.(10); } catch {}
   };
 
   // ==========================================
@@ -1031,60 +1108,53 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
               </div>
             </div>
 
-            {/* Quick Stake Buttons */}
-            <div className="grid grid-cols-5 gap-1.5">
+            {/* Percentage Chips */}
+            <div className="grid grid-cols-4 gap-1.5">
+              {[0.1, 0.25, 0.5, 1].map((pct) => {
+                const label = pct === 1 ? 'MAX' : `${Math.round(pct * 100)}%`;
+                const calculated = Math.max(1, Math.floor(currentBalance * pct));
+                return (
+                  <button
+                    key={pct}
+                    type="button"
+                    onClick={() => { setLobbyStake(calculated); haptic.light(); }}
+                    className={cn(
+                      'py-1 rounded-lg text-xs font-black border transition-all cursor-pointer active:scale-95',
+                      lobbyStake === calculated
+                        ? (lobbyStakeCur === 'gem' ? 'bg-cyan-500 text-stone-950 border-cyan-400' : 'bg-amber-500 text-stone-950 border-amber-400')
+                        : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Quick Increment Stake Chips */}
+            <div className="grid grid-cols-4 gap-1.5">
               {lobbyStakeCur === 'foc' ? (
-                <>
-                  {[1000, 10000, 100000, 1000000].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => { setLobbyStake(amt); haptic.light(); }}
-                      className={cn(
-                        'py-1.5 rounded-lg text-[10px] font-black border transition-all',
-                        lobbyStake === amt ? 'bg-amber-500/30 border-amber-400 text-amber-200' : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
-                      )}
-                    >
-                      +{formatNum(amt)}
-                    </button>
-                  ))}
+                [1000, 10000, 50000, 100000].map((amt) => (
                   <button
+                    key={amt}
                     type="button"
-                    onClick={() => { setLobbyStake(myFocaccia); haptic.light(); }}
-                    className={cn(
-                      'py-1.5 rounded-lg text-[10px] font-black border transition-all',
-                      lobbyStake === myFocaccia ? 'bg-amber-500/30 border-amber-400 text-amber-200' : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
-                    )}
+                    onClick={() => { setLobbyStake((prev) => Math.min(myFocaccia, prev + amt)); haptic.light(); }}
+                    className="py-1 rounded-lg text-[10px] font-black border bg-stone-950 border-stone-800 text-amber-300 hover:border-amber-500/40 active:scale-95 transition-all cursor-pointer"
                   >
-                    Всі
+                    +{formatNum(amt)}
                   </button>
-                </>
+                ))
               ) : (
-                <>
-                  {[5, 25, 50, 100].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => { setLobbyStake(amt); haptic.light(); }}
-                      className={cn(
-                        'py-1.5 rounded-lg text-[10px] font-black border transition-all',
-                        lobbyStake === amt ? 'bg-cyan-500/30 border-cyan-400 text-cyan-200' : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
-                      )}
-                    >
-                      +{amt}
-                    </button>
-                  ))}
+                [1, 5, 25, 50].map((amt) => (
                   <button
+                    key={amt}
                     type="button"
-                    onClick={() => { setLobbyStake(myDiamonds); haptic.light(); }}
-                    className={cn(
-                      'py-1.5 rounded-lg text-[10px] font-black border transition-all',
-                      lobbyStake === myDiamonds ? 'bg-cyan-500/30 border-cyan-400 text-cyan-200' : 'bg-stone-950 border-stone-800 text-stone-400 hover:text-stone-200'
-                    )}
+                    onClick={() => { setLobbyStake((prev) => Math.min(myDiamonds, prev + amt)); haptic.light(); }}
+                    className="py-1 rounded-lg text-[10px] font-black border bg-stone-950 border-stone-800 text-cyan-300 hover:border-cyan-500/40 active:scale-95 transition-all cursor-pointer"
                   >
-                    Всі
+                    +{amt}💎
                   </button>
-                </>
+                ))
               )}
             </div>
 
@@ -1223,26 +1293,49 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
             </div>
           </div>
 
-          {isOpenRoom && (
-            <div className="space-y-2 pt-1">
-              <button
-                type="button"
-                onClick={shareDuelLink}
-                className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-stone-950 font-black rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-600/25 active:scale-95 transition-all"
-              >
-                <span>📤</span>
-                <span>Поділитися посиланням</span>
-              </button>
+          <div className="space-y-2 pt-1">
+            <button
+              type="button"
+              onClick={shareDuelLink}
+              className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-stone-950 font-black rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-600/25 active:scale-95 transition-all cursor-pointer"
+            >
+              <span>📤</span>
+              <span>Поділитися в Telegram</span>
+            </button>
+
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={copyDuelLink}
-                className="w-full py-2.5 bg-stone-900 border border-stone-800 hover:bg-stone-800 text-amber-300/90 font-bold rounded-2xl text-xs flex items-center justify-center gap-2 active:scale-95 transition-all"
+                className="py-2.5 px-2 bg-stone-900 border border-stone-800 hover:border-amber-500/40 text-amber-300 font-bold rounded-xl text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
               >
                 <span>📋</span>
-                <span>{copiedLink ? 'Скопійовано!' : 'Скопіювати посилання'}</span>
+                <span>{copiedLink ? 'Скопійовано!' : 'Бот-лінк'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={copyDirectWebLink}
+                className="py-2.5 px-2 bg-stone-900 border border-stone-800 hover:border-amber-500/40 text-cyan-300 font-bold rounded-xl text-[11px] flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer"
+              >
+                <span>🌐</span>
+                <span>{copiedDirectLink ? 'Скопійовано!' : 'Веб-лінк'}</span>
               </button>
             </div>
-          )}
+
+            {/* Room Code */}
+            <div className="flex items-center justify-center gap-2 pt-1 text-[11px] text-stone-500">
+              <span>Код дуелі:</span>
+              <button
+                type="button"
+                onClick={copyDuelCode}
+                className="font-mono text-amber-300 font-black px-2 py-0.5 rounded-lg bg-stone-950 border border-stone-800 hover:border-amber-500/40 cursor-pointer"
+                title="Натисни, щоб скопіювати код"
+              >
+                {copiedCode ? 'Скопійовано!' : duelId}
+              </button>
+            </div>
+          </div>
 
           <div className="pt-2">
             <button
@@ -1394,32 +1487,110 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   const countdownN = Math.ceil(msToStart / 1000);
   const elapsed = startTs && (stage === 'live' || stage === 'paused') ? Math.max(0, nowAligned() - startTs) : 0;
 
+  const myPct = Math.min(100, Math.round((displayScore / Math.max(1, goal)) * 100));
+  const oppPct = Math.min(100, Math.round((oppScore / Math.max(1, goal)) * 100));
+  const scoreDiff = displayScore - oppScore;
+  const isDanger = oppScore >= goal * 0.85 && oppScore > displayScore;
+
   return (
-    <div className="h-screen bg-[#0d0a04] text-amber-50 select-none overflow-hidden flex flex-col">
-      {/* Верх: таймер + счёт */}
-      <div className="shrink-0 glass border-b border-amber-500/15 px-4 py-2">
-        <div className="flex justify-between items-center text-[11px] font-bold">
-          <div className="text-center">
-            <div className="text-emerald-300 font-black text-base tabular-nums">{displayScore}</div>
-            <div className="text-amber-500/50">ТЫ</div>
-          </div>
-          <div className="text-center">
-            <div className={cn('font-black tabular-nums text-sm', elapsed > limit * 0.8 ? 'text-red-300' : 'text-amber-200')}>
-              ⏱ {fmt(limit - elapsed)}
+    <div className="h-screen bg-[#0d0a04] text-amber-50 select-none overflow-hidden flex flex-col justify-between">
+      {/* 1. TOP BAR: TIMER + STAKES + FORFEIT */}
+      <div className="shrink-0 glass border-b border-amber-500/20 px-3 py-2 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (stage === 'live' && !confirm('Ти точно хочеш здатися у цій дуелі? Твоя ставка згорить!')) return;
+            handleCancelDuel();
+          }}
+          className="px-2.5 py-1 rounded-xl bg-stone-900 border border-stone-800 text-[11px] font-black text-amber-400 hover:text-amber-200 active:scale-95 transition-all cursor-pointer"
+        >
+          {stage === 'live' ? '🏳️ Здатися' : '← Лобі'}
+        </button>
+
+        {/* Pot badge */}
+        <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-gradient-to-r from-amber-500/10 via-yellow-500/15 to-amber-500/10 border border-amber-500/30">
+          <span className="text-xs">🏆</span>
+          <span className="text-xs font-black text-amber-200 font-mono">
+            {formatNum(pot > 0 ? pot : stake * 2)} {stakeCur === 'gem' ? '💎' : '🫓'}
+          </span>
+        </div>
+
+        {/* Time Remaining */}
+        <div className={cn(
+          "px-2.5 py-1 rounded-xl border text-xs font-mono font-black tabular-nums transition-colors",
+          elapsed > limit * 0.8
+            ? "bg-rose-950/80 border-rose-500/50 text-rose-300 animate-pulse"
+            : "bg-stone-900 border-stone-800 text-stone-300"
+        )}>
+          ⏱ {fmt(Math.max(0, limit - elapsed))}
+        </div>
+      </div>
+
+      {/* 2. TUG-OF-WAR LIVE RACE METER (у режимі бою) */}
+      {liveNow && (
+        <div className="shrink-0 bg-stone-950/90 border-b border-stone-800/80 px-3.5 py-2.5 space-y-2 shadow-md">
+          {/* Opponents and live gap indicator */}
+          <div className="flex items-center justify-between text-xs font-black">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <span className="text-emerald-300 truncate max-w-[85px]">{myName || 'Ти'}</span>
+              <span className="text-emerald-400 font-mono text-sm tabular-nums">({displayScore})</span>
             </div>
-            <div className="text-amber-500/40">из {fmt(limit)}</div>
+
+            {/* Dynamic Lead Indicator */}
+            <div className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full font-black">
+              {scoreDiff > 0 ? (
+                <span className="text-emerald-300 bg-emerald-950/90 border border-emerald-500/40 px-2 py-0.5 rounded-full animate-duel-lead inline-block shadow-sm">
+                  🔥 +{scoreDiff} ТИ ВЕДЕШ!
+                </span>
+              ) : scoreDiff < 0 ? (
+                <span className="text-rose-300 bg-rose-950/90 border border-rose-500/40 px-2 py-0.5 rounded-full animate-pulse inline-block shadow-sm">
+                  ⚠️ {scoreDiff} СУПЕРНИК ВЕДЕ!
+                </span>
+              ) : (
+                <span className="text-amber-300 bg-amber-950/80 border border-amber-500/40 px-2 py-0.5 rounded-full inline-block">
+                  ⚔️ НІЧИЯ ({displayScore}:{oppScore})
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 min-w-0 justify-end">
+              <span className="text-sky-300 font-mono text-sm tabular-nums">({oppScore})</span>
+              <span className="text-sky-300 truncate max-w-[85px]">{oppName}</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-400 shrink-0" />
+            </div>
           </div>
-          <div className="text-center">
-            <div className="text-sky-300 font-black text-base tabular-nums">{oppScore}</div>
-            <div className="text-amber-500/50 truncate max-w-[90px]">{oppName}</div>
+
+          {/* Dual Progress Bar */}
+          <div className="relative h-4 bg-stone-900 rounded-full overflow-hidden border border-stone-800 flex items-center p-0.5">
+            {/* My Progress (Left -> Center) */}
+            <div
+              className="h-full bg-gradient-to-r from-emerald-600 via-emerald-400 to-teal-300 rounded-l-full transition-all duration-150 relative shadow-[0_0_12px_rgba(16,185,129,0.5)]"
+              style={{ width: `${myPct / 2}%` }}
+            />
+
+            {/* Center Goal Flag */}
+            <div className="absolute left-1/2 -translate-x-1/2 z-10 flex flex-col items-center">
+              <span className="text-[10px] leading-none drop-shadow">🏁</span>
+            </div>
+
+            {/* Opponent Progress (Right -> Center) */}
+            <div className="flex-1 flex justify-end">
+              <div
+                className="h-full bg-gradient-to-l from-rose-600 via-rose-400 to-amber-400 rounded-r-full transition-all duration-150 relative shadow-[0_0_12px_rgba(244,63,94,0.5)]"
+                style={{ width: `${oppPct / 2}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Goal and percentages hint */}
+          <div className="flex justify-between text-[10px] text-stone-500 font-mono font-bold">
+            <span className="text-emerald-400/80">{myPct}% до цілі</span>
+            <span className="text-amber-300/90">🎯 Ціль: {goal} тапів</span>
+            <span className="text-sky-400/80">{oppPct}% до цілі</span>
           </div>
         </div>
-        {stake > 0 && (
-          <div className="text-center text-[10px] font-bold text-amber-300/60 mt-1 tabular-nums">
-            💰 Ставка: {formatNum(stake)} {stakeCur === 'gem' ? '💎' : '🫓'} • 🏆 Банк: {formatNum(pot)} {stakeCur === 'gem' ? '💎' : '🫓'}
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Интро VS: фазовая машина — аватар 1 → аватар 2 → VS → затухание. Абсолютные позиции — ноль дёрганий */}
       {stage === 'countdown' && introPhase !== '' && (
@@ -1464,35 +1635,105 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
             <div key={countdownN} className="text-8xl font-black text-amber-300" style={{ animation: 'num-pop 0.5s cubic-bezier(0.34,1.56,0.64,1)' }}>
               {countdownN > 0 ? countdownN : '🔥'}
             </div>
-            <p className="text-amber-400/50 text-xs mt-2">Кто быстрее накликает {goal} фокач!</p>
+            <p className="text-amber-400/70 text-xs mt-3 font-bold">Хто першим наклікає {goal} фокач!</p>
           </div>
         </div>
       )}
 
-      {/* Бой */}
+      {/* 3. BATTLE ARENA (Жвавий клікер) */}
       {liveNow && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-6 p-4">
-          <div className="relative">
+        <div className="flex-1 flex flex-col items-center justify-center p-4 relative overflow-hidden select-none">
+          {/* Danger Alert if opponent is close to goal */}
+          {isDanger && (
+            <div className="absolute top-2 z-20 px-3.5 py-1.5 rounded-full bg-rose-950/90 border border-rose-500 text-rose-200 text-xs font-black shadow-lg shadow-rose-950/60 animate-bounce flex items-center gap-1.5">
+              <span>⚠️</span>
+              <span>Суперник на {oppScore}/{goal}! Тисни швидше!</span>
+            </div>
+          )}
+
+          {/* Combo & CPS HUD */}
+          <div className="mb-3 text-center min-h-[44px] flex flex-col items-center justify-center">
+            {combo >= 3 ? (
+              <div className={cn(
+                "px-3.5 py-1 rounded-full text-xs font-black shadow-lg transition-all animate-scale-pop flex items-center gap-2",
+                combo >= 15
+                  ? "bg-gradient-to-r from-orange-600 via-amber-500 to-red-600 text-stone-950 shadow-orange-500/40"
+                  : "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+              )}>
+                <span>{combo >= 15 ? '🔥 НА ПІКУ' : '⚡ COMBO'}</span>
+                <span className="font-mono text-sm">x{combo}</span>
+                {cps > 0 && <span className="text-[10px] opacity-80">({cps} тап/с)</span>}
+              </div>
+            ) : (
+              <div className="text-xs font-bold text-stone-500">
+                Тапай якнайшвидше — сервер фіксує темп!
+              </div>
+            )}
+          </div>
+
+          {/* Interactive Loaf Clicker Button with 3D Physics */}
+          <div className="relative flex items-center justify-center">
+            {/* Pulsing Aura on fire */}
+            <div className={cn(
+              "absolute -inset-4 rounded-full transition-opacity duration-300 pointer-events-none",
+              combo >= 10 ? "opacity-100 animate-duel-fire" : "opacity-0"
+            )} />
+
+            {/* Floating popups */}
+            {floatingPops.map((pop) => (
+              <div
+                key={pop.id}
+                className={cn("absolute text-xl font-black font-mono animate-duel-pop z-30 drop-shadow-md select-none pointer-events-none", pop.color)}
+                style={{ left: `${pop.x}px`, top: `${pop.y}px` }}
+              >
+                {pop.text}
+              </div>
+            ))}
+
             <button
+              type="button"
               onPointerDown={handleTap}
-              className="w-52 h-52 rounded-full overflow-hidden border-[6px] border-amber-400 shadow-[0_0_60px_rgba(251,191,36,0.4)] active:scale-90 transition-transform duration-75"
+              style={{
+                transform: `rotate(${tilt}deg)`,
+                touchAction: 'manipulation',
+              }}
+              className="w-56 h-56 rounded-full bg-gradient-to-b from-amber-500 via-orange-500 to-amber-700 border-[6px] border-yellow-300 shadow-[0_0_55px_rgba(245,158,11,0.45)] active:scale-[0.88] transition-transform duration-75 flex flex-col items-center justify-center cursor-pointer select-none group relative overflow-hidden"
             >
-              <span className="text-[7rem] leading-none">🫓</span>
+              {/* Inner highlight */}
+              <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-transparent via-white/20 to-transparent opacity-60 pointer-events-none" />
+
+              <span className="text-7xl group-active:scale-95 transition-transform duration-75 drop-shadow-lg leading-none select-none">
+                🫓
+              </span>
+
+              <span className="text-[11px] font-black text-amber-950 mt-2 uppercase tracking-wider bg-yellow-300/90 px-3 py-0.5 rounded-full shadow-sm">
+                ТИСНИ!
+              </span>
             </button>
+
+            {/* Pending buffer badge */}
             {pending > 0 && (
-              <div className="absolute -right-2 -top-2 bg-emerald-500 text-white text-xs font-black px-2 py-0.5 rounded-full">
+              <div className="absolute -right-2 -top-2 bg-emerald-500 text-stone-950 text-xs font-black px-2.5 py-0.5 rounded-full shadow-lg border border-emerald-300 animate-bounce">
                 +{pending}
               </div>
             )}
           </div>
-          <div className="text-3xl font-black tabular-nums text-amber-200">{displayScore} <span className="text-base text-amber-500/50">/ {goal}</span></div>
-          <p className="text-amber-500/40 text-[11px]">Тапай как можно быстрее — счёт идёт на сервере</p>
+
+          {/* Big Score counter */}
+          <div className="mt-5 text-center">
+            <div className="text-3xl font-black tabular-nums text-amber-200">
+              {displayScore} <span className="text-base text-stone-500 font-normal">/ {goal}</span>
+            </div>
+            <div className="text-[11px] text-stone-400 mt-0.5 font-bold">
+              {goal - displayScore > 0 ? `Залишилось ${goal - displayScore} тапів до перемоги` : '🔥 МЕТА ДОСЯГНУТА! Очікуємо фінішу...'}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* ожидание/countdown низ */}
-      <div className="shrink-0 px-4 pb-4 text-center text-[10px] text-amber-500/30">
-        TapSentinel v5 следит за честностью дуэли — автокликеры дисквалифицируются
+      {/* Очікування/countdown низ */}
+      <div className="shrink-0 px-4 pb-3 text-center text-[10px] text-amber-500/40 font-semibold">
+        TapSentinel v5 захищає дуель від автоклікерів
       </div>
     </div>
   );

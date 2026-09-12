@@ -9810,6 +9810,33 @@ export default function App() {
                 <span className="text-[10px] font-bold text-fuchsia-300/80">+{formatNum(state.prestige * 10)}%</span>
               </button>
             )}
+            {/* Duels Pill */}
+            <button
+              type="button"
+              onClick={() => {
+                haptic.medium();
+                window.location.href = window.location.pathname + '?v=' + Date.now() + '&duel=lobby';
+              }}
+              className="flex items-center gap-1 bg-gradient-to-r from-orange-500/20 to-red-500/20 hover:from-orange-500/35 hover:to-red-500/35 active:scale-95 transition-all border border-orange-500/40 px-2 py-0.5 rounded-lg text-xs font-black text-orange-200 shadow-[0_0_8px_rgba(249,115,22,0.2)] whitespace-nowrap cursor-pointer"
+              title={lang === 'uk' ? '⚔️ Арена Дуелей 1v1' : '⚔️ Арена Дуэлей 1v1'}
+            >
+              <span>⚔️</span>
+              <span className="text-[10px] uppercase tracking-wider font-bold">{lang === 'uk' ? 'Дуелі' : 'Дуэли'}</span>
+            </button>
+
+            {/* Trades Pill */}
+            <button
+              type="button"
+              onClick={() => {
+                haptic.medium();
+                window.location.href = window.location.pathname + '?v=' + Date.now() + '&trade=lobby';
+              }}
+              className="flex items-center gap-1 bg-gradient-to-r from-amber-500/20 to-yellow-500/20 hover:from-amber-500/35 hover:to-yellow-500/35 active:scale-95 transition-all border border-amber-500/40 px-2 py-0.5 rounded-lg text-xs font-black text-amber-200 shadow-[0_0_8px_rgba(245,158,11,0.2)] whitespace-nowrap cursor-pointer"
+              title={lang === 'uk' ? '🤝 Безпечні Трейди' : '🤝 Безопасные Трейды'}
+            >
+              <span>🤝</span>
+              <span className="text-[10px] uppercase tracking-wider font-bold">{lang === 'uk' ? 'Трейди' : 'Трейды'}</span>
+            </button>
           </div>
         </div>
 

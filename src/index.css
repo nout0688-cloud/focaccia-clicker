@@ -692,5 +692,33 @@ button { -webkit-tap-highlight-color: transparent; }
   animation: rain-fall 0.8s linear infinite;
 }
 
+/* ⚔️ DUEL JUICY COMBAT ANIMATIONS */
+@keyframes duel-pop-num {
+  0% { opacity: 1; transform: translate(-50%, 0) scale(0.8); }
+  50% { transform: translate(-50%, -35px) scale(1.3); }
+  100% { opacity: 0; transform: translate(-50%, -65px) scale(1); }
+}
+.animate-duel-pop {
+  animation: duel-pop-num 0.65s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
+  pointer-events: none;
+}
+
+@keyframes duel-fire-pulse {
+  0%, 100% { box-shadow: 0 0 25px rgba(249, 115, 22, 0.5), inset 0 0 15px rgba(245, 158, 11, 0.4); }
+  50% { box-shadow: 0 0 50px rgba(239, 68, 68, 0.8), inset 0 0 25px rgba(251, 191, 36, 0.7); }
+}
+.animate-duel-fire {
+  animation: duel-fire-pulse 1s ease-in-out infinite;
+}
+
+@keyframes duel-lead-pulse {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  50% { transform: scale(1.04); filter: brightness(1.3); }
+}
+.animate-duel-lead {
+  animation: duel-lead-pulse 0.8s ease-in-out infinite;
+}
+
+
 
 

@@ -19,8 +19,8 @@ const tgStartParam =
 if (!duelId && !tradeId && tgStartParam) {
   if (tgStartParam.startsWith("duel_") || tgStartParam.startsWith("d_") || tgStartParam === "duel" || tgStartParam === "duel_lobby") {
     duelId = (tgStartParam === "duel" || tgStartParam === "duel_lobby") ? "lobby" : tgStartParam.replace(/^duel_/, "");
-  } else if (tgStartParam.startsWith("trade_") || tgStartParam.startsWith("tr_") || tgStartParam === "trade") {
-    tradeId = tgStartParam.replace(/^trade_/, "");
+  } else if (tgStartParam.startsWith("trade_") || tgStartParam.startsWith("tr_") || tgStartParam === "trade" || tgStartParam === "trade_lobby") {
+    tradeId = (tgStartParam === "trade" || tgStartParam === "trade_lobby") ? "lobby" : (tgStartParam.startsWith("trade_") ? tgStartParam.replace(/^trade_/, "") : tgStartParam);
   }
 }
 
