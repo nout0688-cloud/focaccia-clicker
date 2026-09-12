@@ -9,6 +9,8 @@ type Snap = {
   error?: string;
   stage: 'challenge' | 'accepted' | 'countdown' | 'live' | 'paused' | 'finished' | 'cancelled';
   isOpen?: boolean;
+  creatorId?: string;
+  isCreator?: boolean;
   me?: { id: string; name: string; score: number };
   opp?: { id: string; name: string; score: number; missing?: boolean; u?: string };
   goal?: number;
@@ -153,6 +155,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   const [openPreview, setOpenPreview] = useState<any>(null);
   const [joiningOpen, setJoiningOpen] = useState(false);
   const [isOpenRoom, setIsOpenRoom] = useState(false);
+  const [isCreator, setIsCreator] = useState(false);
 
   const [stage, setStage] = useState('…');
   const [base, setBase] = useState(0);
@@ -291,6 +294,8 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
           to: targetId,
           fromName: myName,
           fromU: myU,
+          toName: selectedOpp?.name || '',
+          toU: selectedOpp?.username || '',
           stakeCur: lobbyStakeCur,
           stake: lobbyStake,
           goal: lobbyGoal,
@@ -300,6 +305,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
       const data = await res.json();
       if (data?.ok && data.duelId) {
         setDuelId(data.duelId);
+        setIsCreator(true);
         setIsOpenRoom(oppMode === 'open');
         setStake(lobbyStake);
         setStakeCur(lobbyStakeCur);
@@ -401,7 +407,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   };
 
   const shareDuelLink = () => {
-    const link = `https://nout0688-cloud.github.io/focaccia-clicker/?v=1.4.0&duel=${duelId}`;
+    const link = `https://t.me/focacciaclicker_bot?start=duel_${duelId}`;
     const text = `⚔️ Я створив дуель у Фокача Клікері на ${formatNum(stake || lobbyStake)} ${stakeCur === 'gem' ? '💎' : '🫓'}! Приєднуйся і бийся зі мною:`;
     const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
     try {
@@ -417,7 +423,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   };
 
   const copyDuelLink = () => {
-    const link = `https://nout0688-cloud.github.io/focaccia-clicker/?v=1.4.0&duel=${duelId}`;
+    const link = `https://t.me/focacciaclicker_bot?start=duel_${duelId}`;
     try {
       navigator.clipboard?.writeText(link);
       setCopiedLink(true);
@@ -445,7 +451,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
         const res = await fetch(API, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'sync', duelId, userId: meId, delta }),
+          body: JSON.stringify({ action: 'sync', duelId, userId: meId, delta, name: myName, u: myU }),
         });
         const data: Snap = await res.json();
         if (data.ok === false && data.error) {
@@ -474,6 +480,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
         if (typeof data.myPaid === 'number') setMyPaid(data.myPaid);
         if (data.stakeCur === 'gem' || data.stakeCur === 'foc') setStakeCur(data.stakeCur);
         if (data.isOpen !== undefined) setIsOpenRoom(Boolean(data.isOpen));
+        if (data.isCreator !== undefined) setIsCreator(Boolean(data.isCreator));
         if (data.me) setBase(data.me.score);
         if (data.opp) {
           setOppScore(data.opp.score);
@@ -549,7 +556,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
 
   // === Ескроу: перевірка балансу та списання ставки ===
   useEffect(() => {
-    if ((stage !== 'countdown' && stage !== 'accepted') || escrowDone.current) return;
+    if ((stage !== 'countdown' && stage !== 'live') || escrowDone.current) return;
     const flagKey = `duel_escrow:${duelId}:${meId}`;
     if (localStorage.getItem(flagKey)) { escrowDone.current = true; return; }
     const curStake = snapRef.current?.stake || stake;
@@ -1186,12 +1193,18 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
 
           <div>
             <h2 className="text-xl font-black text-amber-200 mb-1">
-              {isOpenRoom ? 'Відкрита дуель створена!' : 'Виклик надіслано!'}
+              {isOpenRoom
+                ? 'Відкрита дуель створена!'
+                : isCreator
+                ? 'Виклик надіслано!'
+                : 'Виклик прийнято!'}
             </h2>
             <p className="text-xs text-stone-400">
               {isOpenRoom
                 ? 'Поділися посиланням нижче. Перший гравець, який увійде, розпочне бій!'
-                : `Очікуємо підключення ${oppName || 'суперника'}...`}
+                : isCreator
+                ? `Очікуємо підключення ${oppName || 'суперника'}...`
+                : `Підключення до бою з ${oppName || 'суперником'}...`}
             </p>
           </div>
 

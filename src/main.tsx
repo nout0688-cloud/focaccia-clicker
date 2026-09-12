@@ -7,8 +7,22 @@ import DuelApp from "./duel/DuelApp";
 import TradeApp from "./trade/TradeApp";
 
 // ?duel=<id> — окремий екран дуелі, ?trade=<id> — окремий екран трейду
-const duelId = new URLSearchParams(window.location.search).get("duel");
-const tradeId = new URLSearchParams(window.location.search).get("trade");
+const searchParams = new URLSearchParams(window.location.search);
+let duelId = searchParams.get("duel");
+let tradeId = searchParams.get("trade");
+
+const tgStartParam =
+  searchParams.get("tgWebAppStartParam") ||
+  ((window as unknown as { Telegram?: { WebApp?: { initDataUnsafe?: { start_param?: string } } } })?.Telegram?.WebApp?.initDataUnsafe?.start_param) ||
+  "";
+
+if (!duelId && !tradeId && tgStartParam) {
+  if (tgStartParam.startsWith("duel_") || tgStartParam.startsWith("d_") || tgStartParam === "duel" || tgStartParam === "duel_lobby") {
+    duelId = (tgStartParam === "duel" || tgStartParam === "duel_lobby") ? "lobby" : tgStartParam.replace(/^duel_/, "");
+  } else if (tgStartParam.startsWith("trade_") || tgStartParam.startsWith("tr_") || tgStartParam === "trade") {
+    tradeId = tgStartParam.replace(/^trade_/, "");
+  }
+}
 
 class GlobalErrorBoundary extends React.Component<{ children: React.ReactNode }, { err: string | null }> {
   state = { err: null as string | null };
