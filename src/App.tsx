@@ -9925,58 +9925,6 @@ export default function App() {
                 <span className="text-[10px] font-bold text-fuchsia-300/80">+{formatNum(state.prestige * 10)}%</span>
               </button>
             )}
-            {/* Duels Pill */}
-            <button
-              type="button"
-              onClick={() => {
-                haptic.medium();
-                window.location.href = window.location.pathname + '?v=' + Date.now() + '&duel=lobby';
-              }}
-              className="flex items-center gap-1 bg-gradient-to-r from-orange-500/20 to-red-500/20 hover:from-orange-500/35 hover:to-red-500/35 active:scale-95 transition-all border border-orange-500/40 px-2 py-0.5 rounded-lg text-xs font-black text-orange-200 shadow-[0_0_8px_rgba(249,115,22,0.2)] whitespace-nowrap cursor-pointer"
-              title={lang === 'uk' ? '⚔️ Арена Дуелей 1v1' : '⚔️ Арена Дуэлей 1v1'}
-            >
-              <span>⚔️</span>
-              <span className="text-[10px] uppercase tracking-wider font-bold">{lang === 'uk' ? 'Дуелі' : 'Дуэли'}</span>
-            </button>
-
-            {/* Trades Pill */}
-            {(() => {
-              const headerTradeLock = getRebirthTradeLockRemaining(state.lastRebirthTime);
-              return (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (headerTradeLock > 0) {
-                      addToast(
-                        lang === 'uk' ? 'Трейди заблоковано ⏳' : 'Трейды заблокированы ⏳',
-                        lang === 'uk'
-                          ? `Після ребіртха обмін заблоковано на 5 днів. Залишилося: ${formatTradeLockDuration(headerTradeLock, 'uk')}`
-                          : `После ребиртха обмен заблокирован на 5 дней. Осталось: ${formatTradeLockDuration(headerTradeLock, 'ru')}`,
-                        '🔄'
-                      );
-                      haptic.warning();
-                      return;
-                    }
-                    haptic.medium();
-                    window.location.href = window.location.pathname + '?v=' + Date.now() + '&trade=lobby';
-                  }}
-                  className={cn(
-                    "flex items-center gap-1 transition-all px-2 py-0.5 rounded-lg text-xs font-black whitespace-nowrap cursor-pointer",
-                    headerTradeLock > 0
-                      ? "bg-stone-800/80 border border-stone-700 text-stone-400 shadow-none opacity-80"
-                      : "bg-gradient-to-r from-amber-500/20 to-yellow-500/20 hover:from-amber-500/35 hover:to-yellow-500/35 active:scale-95 border border-amber-500/40 text-amber-200 shadow-[0_0_8px_rgba(245,158,11,0.2)]"
-                  )}
-                  title={
-                    headerTradeLock > 0
-                      ? (lang === 'uk' ? `⏳ Трейди заблоковано ще ${formatTradeLockDuration(headerTradeLock, 'uk')}` : `⏳ Трейды заблокированы еще ${formatTradeLockDuration(headerTradeLock, 'ru')}`)
-                      : (lang === 'uk' ? '🤝 Безпечні Трейди' : '🤝 Безопасные Трейды')
-                  }
-                >
-                  <span>{headerTradeLock > 0 ? '🔒' : '🤝'}</span>
-                  <span className="text-[10px] uppercase tracking-wider font-bold">{lang === 'uk' ? 'Трейди' : 'Трейды'}</span>
-                </button>
-              );
-            })()}
           </div>
         </div>
 
