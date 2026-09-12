@@ -93,6 +93,117 @@ const isDevUser = (id?: number | string | null): boolean => {
   return String(id) === String(ADMIN_ID);
 };
 
+const ROFL_SOUNDS: Record<string, { title: string; file: string; cdnFallback?: string; emoji: string }> = {
+  vine_boom: {
+    title: '💥 БАБАХ! (Vine Boom)',
+    file: './sounds/vine_boom.mp3',
+    cdnFallback: 'https://raw.githubusercontent.com/Azepp/kliks/main/public/audio/vine%20boom.mp3',
+    emoji: '💥',
+  },
+  fart: {
+    title: '💨 Хто це пукнув?!',
+    file: './sounds/fart.mp3',
+    cdnFallback: 'https://assets.mixkit.co/active_storage/sfx/724/724-preview.mp3',
+    emoji: '💨',
+  },
+  bruh: {
+    title: '🗿 BRUH MOMENT',
+    file: './sounds/bruh.mp3',
+    cdnFallback: 'https://raw.githubusercontent.com/Ziyangll/BruhButton/master/sounds/Bruh.mp3',
+    emoji: '🗿',
+  },
+  screamer: {
+    title: '😱 ААААААААА!',
+    file: './sounds/screamer.mp3',
+    cdnFallback: 'https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3',
+    emoji: '😱',
+  },
+  doorbell: {
+    title: '🚪 Хтось дзвонить у двері!',
+    file: './sounds/doorbell.mp3',
+    cdnFallback: 'https://assets.mixkit.co/active_storage/sfx/2874/2874-preview.mp3',
+    emoji: '🚪',
+  },
+  knocking: {
+    title: '✊ ТУК-ТУК-ТУК!',
+    file: './sounds/knocking.mp3',
+    cdnFallback: 'https://assets.mixkit.co/active_storage/sfx/2865/2865-preview.mp3',
+    emoji: '✊',
+  },
+  sad_trombone: {
+    title: '🎺 Вах-вах-вааау...',
+    file: './sounds/sad_trombone.mp3',
+    cdnFallback: 'https://assets.mixkit.co/active_storage/sfx/464/464-preview.mp3',
+    emoji: '🎺',
+  },
+  alarm: {
+    title: '⏰ ТРИВОГА! ПРОКИДАЙСЯ!',
+    file: './sounds/alarm.mp3',
+    cdnFallback: 'https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3',
+    emoji: '⏰',
+  },
+  airhorn: {
+    title: '📢 ТУ-ТУ-ТУ-ТУУУУ!',
+    file: './sounds/airhorn.mp3',
+    cdnFallback: 'https://raw.githubusercontent.com/lukasziegler/airhorn/master/docs/media/airhorn/sound.mp3',
+    emoji: '📢',
+  },
+  oof: {
+    title: '💀 OOF!',
+    file: './sounds/oof.mp3',
+    cdnFallback: 'https://raw.githubusercontent.com/Ziyangll/BruhButton/master/sounds/Oof.mp3',
+    emoji: '💀',
+  },
+};
+
+function playRoflSound(soundKey: string, addToastFn?: (title: string, msg: string, emoji: string) => void) {
+  const item = ROFL_SOUNDS[soundKey];
+  if (!item) return;
+
+  try {
+    const audio = new Audio(item.file);
+    audio.volume = 1.0;
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(() => {
+        if (item.cdnFallback) {
+          const fallback = new Audio(item.cdnFallback);
+          fallback.volume = 1.0;
+          fallback.play().catch(() => {});
+        }
+      });
+    }
+  } catch {
+    if (item.cdnFallback) {
+      try {
+        const fallback = new Audio(item.cdnFallback);
+        fallback.volume = 1.0;
+        fallback.play().catch(() => {});
+      } catch {}
+    }
+  }
+
+  // Haptic feedback (3 heavy pulses)
+  try {
+    const tgHaptic = (window as any).Telegram?.WebApp?.HapticFeedback;
+    if (tgHaptic) {
+      tgHaptic.notificationOccurred('error');
+      setTimeout(() => tgHaptic.impactOccurred('heavy'), 150);
+      setTimeout(() => tgHaptic.impactOccurred('heavy'), 300);
+    }
+  } catch {}
+
+  // Screen shake animation
+  try {
+    document.body.classList.add('animate-shake');
+    setTimeout(() => document.body.classList.remove('animate-shake'), 1200);
+  } catch {}
+
+  if (addToastFn) {
+    addToastFn(item.title, '🎭 Спецефект від шеф-кухаря!', item.emoji);
+  }
+}
+
 const DevBadge = ({ className, size = 'md' }: { className?: string; size?: 'sm' | 'md' | 'lg' }) => {
   if (size === 'sm') {
     return (
@@ -1025,6 +1136,11 @@ export default function App() {
             if (!uid) return;
             if (typeof data?.karma === 'number') setKarma(data.karma);
 
+            // 🔊 Звуковий тролінг (рофл від адміна)
+            if (data?.roflSound) {
+              playRoflSound(data.roflSound, addToast);
+            }
+
             // Обробка відновлення акаунта адміністратором
             if (data?.restore) {
               const resObj = data.restore;
@@ -1340,8 +1456,12 @@ export default function App() {
 
       checkAdmin(s);
 
-      // Check every 20 seconds while playing
-      adminIv = setInterval(() => checkAdmin(stateRef.current), 20000);
+      // Check every 3.5 seconds while playing (instant prank sounds & live sync)
+      adminIv = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          checkAdmin(stateRef.current);
+        }
+      }, 3500);
 
       // Fast check when player returns to the game tab
       const handleVisChange = () => {
