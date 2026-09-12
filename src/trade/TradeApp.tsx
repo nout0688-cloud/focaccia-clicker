@@ -5,7 +5,7 @@ import { getCatSkin } from '../game/cat';
 import { cn } from '../utils/cn';
 
 const API = 'https://focaccia-bot.vercel.app/api/trade';
-const BOT_USERNAME = 'focacciaclicker_bot';
+const BOT_USERNAME = 'focaca_robot';
 const SAVE_KEY = 'focaccia-clicker-v1';
 
 const tg = typeof window !== 'undefined' ? (window as unknown as { Telegram?: { WebApp?: any } }).Telegram?.WebApp : undefined;

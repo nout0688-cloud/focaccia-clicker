@@ -418,7 +418,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   };
 
   const shareDuelLink = () => {
-    const link = `https://t.me/focacciaclicker_bot?start=duel_${duelId}`;
+    const link = `https://t.me/focaca_robot?start=duel_${duelId}`;
     const text = `⚔️ Я створив дуель у Фокача Клікері на ${formatNum(stake || lobbyStake)} ${stakeCur === 'gem' ? '💎' : '🫓'}! Приєднуйся і бийся зі мною:`;
     const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
     try {
@@ -434,7 +434,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   };
 
   const copyDuelLink = () => {
-    const link = `https://t.me/focacciaclicker_bot?start=duel_${duelId}`;
+    const link = `https://t.me/focaca_robot?start=duel_${duelId}`;
     try {
       navigator.clipboard?.writeText(link);
       setCopiedLink(true);

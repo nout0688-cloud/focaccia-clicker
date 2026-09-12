@@ -8721,7 +8721,7 @@ export default function App() {
                           return;
                         }
                         setTradeModalOpen(false);
-                        const botU = 'focacciaclicker_bot';
+                        const botU = 'focaca_robot';
                         try {
                           const wa = window.Telegram?.WebApp as any;
                           if (wa?.openTelegramLink) {
