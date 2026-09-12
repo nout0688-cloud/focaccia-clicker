@@ -623,6 +623,8 @@ export default function App() {
   const [leaders, setLeaders] = useState<LeaderRow[] | null>(null);
   const [leadersLoading, setLeadersLoading] = useState(false);
   const [myRank, setMyRank] = useState<number | null>(null);
+  const [myRanks, setMyRanks] = useState<{ total: number | null; diamonds: number | null; rebirth: number | null }>({ total: null, diamonds: null, rebirth: null });
+  const [myPlayerOutsideTop, setMyPlayerOutsideTop] = useState<LeaderRow | null>(null);
   const [leaderCategory, setLeaderCategory] = useState<LeaderCategory>('focaccia');
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
@@ -828,6 +830,11 @@ export default function App() {
           setState((p) => ({ ...p, karma: data.karma }));
         }
         if (data?.rank) setMyRank(data.rank);
+        if (data?.ranks) {
+          setMyRanks(data.ranks);
+        } else if (data?.rank) {
+          setMyRanks((p) => ({ ...p, total: data.rank }));
+        }
         clearOfflineAcEvents();
         return data;
       })
@@ -1850,14 +1857,24 @@ export default function App() {
     setLeadersLoading(true);
     const syncPromise = tgUser?.id ? reportSync() : Promise.resolve(null);
     syncPromise.finally(() => {
-      fetch(`${API_BASE}/api/leaderboard?sort=${leaderCategory}`)
+      fetch(`${API_BASE}/api/leaderboard?sort=${leaderCategory}&userId=${tgUser?.id || ''}`)
         .then((r) => r.json())
         .then((data) => {
           const list: LeaderRow[] = data?.players || [];
           setLeaders(list);
+          if (data?.userRanks) {
+            setMyRanks(data.userRanks);
+          }
           if (tgUser?.id && list.length > 0) {
             const myIdx = list.findIndex((p) => String(p.id) === String(tgUser.id));
-            if (myIdx >= 0) setMyRank(myIdx + 1);
+            if (myIdx >= 0) {
+              const catKey = leaderCategory === 'focaccia' ? 'total' : leaderCategory;
+              setMyRanks((p) => ({ ...p, [catKey]: myIdx + 1 }));
+              if (leaderCategory === 'focaccia') setMyRank(myIdx + 1);
+              setMyPlayerOutsideTop(null);
+            } else if (data?.myPlayer && data?.userRank && data.userRank > 50) {
+              setMyPlayerOutsideTop(data.myPlayer);
+            }
           }
         })
         .catch(() => setLeaders([]))
@@ -1879,10 +1896,14 @@ export default function App() {
   }, [leaders, leaderCategory]);
 
   const activeCategoryRank = useMemo(() => {
-    if (!tgUser?.id || !sortedLeaders) return myRank;
-    const idx = sortedLeaders.findIndex((p) => String(p.id) === String(tgUser.id));
-    return idx >= 0 ? idx + 1 : null;
-  }, [sortedLeaders, tgUser, myRank]);
+    if (!tgUser?.id) return null;
+    if (sortedLeaders && sortedLeaders.length > 0) {
+      const idx = sortedLeaders.findIndex((p) => String(p.id) === String(tgUser.id));
+      if (idx >= 0) return idx + 1;
+    }
+    const catKey = leaderCategory === 'focaccia' ? 'total' : leaderCategory;
+    return myRanks[catKey as keyof typeof myRanks] ?? (leaderCategory === 'focaccia' ? myRank : null);
+  }, [sortedLeaders, tgUser, myRank, myRanks, leaderCategory]);
 
   useEffect(() => {
     if (page === 'leaders') {
@@ -4902,6 +4923,9 @@ export default function App() {
         const cur = stateRef.current;
         const next: SaveState = {
           ...defaultState(),
+          clicks: cur.clicks,
+          settledTrades: cur.settledTrades,
+          karma: cur.karma,
           prestige: cur.prestige + prestigeGain,
           diamonds: cur.diamonds,
           vipUpgrades: cur.vipUpgrades,
@@ -9658,6 +9682,37 @@ export default function App() {
               </div>
             </div>
 
+            {/* Direct Interaction Buttons */}
+            {viewingProfile && String(viewingProfile.id) !== String(tgUser?.id) && (
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic.medium();
+                    setViewingProfile(null);
+                    window.location.href = `${window.location.pathname}?v=${Date.now()}&trade=lobby&target=${viewingProfile.id}`;
+                  }}
+                  className="py-3 px-2 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black text-xs active:scale-95 transition-all shadow-md shadow-emerald-600/30 flex items-center justify-center gap-1.5 cursor-pointer border border-emerald-400/40"
+                >
+                  <span className="text-sm">🤝</span>
+                  <span>{lang === 'uk' ? 'Обмін (Трейд)' : 'Обмен (Трейд)'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    haptic.medium();
+                    setViewingProfile(null);
+                    window.location.href = `${window.location.pathname}?v=${Date.now()}&duel=lobby&target=${viewingProfile.id}`;
+                  }}
+                  className="py-3 px-2 rounded-2xl bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-500 hover:to-orange-500 text-white font-black text-xs active:scale-95 transition-all shadow-md shadow-red-600/30 flex items-center justify-center gap-1.5 cursor-pointer border border-red-400/40"
+                >
+                  <span className="text-sm">⚔️</span>
+                  <span>{lang === 'uk' ? 'Дуель' : 'Дуэль'}</span>
+                </button>
+              </div>
+            )}
+
             {/* Back Button */}
             <button
               type="button"
@@ -11070,6 +11125,60 @@ export default function App() {
                 </div>
               );
             })}
+
+            {/* Pinned My Rank Card if player is outside Top 50 */}
+            {!leadersLoading && myPlayerOutsideTop && activeCategoryRank && activeCategoryRank > 50 && (
+              <div
+                onClick={() => { setProfileModalOpen(true); haptic.light(); }}
+                className="p-2.5 rounded-xl border border-amber-400/50 bg-gradient-to-r from-amber-950/70 via-black/80 to-amber-950/70 shadow-[0_0_15px_rgba(245,158,11,0.2)] flex items-center gap-2.5 transition active:scale-[0.99] cursor-pointer"
+              >
+                <div className="shrink-0 text-center font-black w-8 flex items-center justify-center text-amber-400 text-xs font-mono">
+                  #{activeCategoryRank}
+                </div>
+                <div className={cn('w-8 h-8 rounded-full overflow-hidden shrink-0 flex items-center justify-center relative shadow-sm', getAvatarFrame(state.cosmetics?.equippedFrame).frameClass)}>
+                  <PlayerAvatar
+                    src={tgUser?.photo_url || myPlayerOutsideTop.avatar}
+                    username={tgUser?.username || myPlayerOutsideTop.username}
+                    name={[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || myPlayerOutsideTop.name}
+                    className="w-full h-full object-cover"
+                    fallbackClassName="text-xs font-black text-amber-200"
+                  />
+                </div>
+                <div className="min-w-0 flex-1 flex flex-col justify-center">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={cn('truncate font-bold text-[13px] leading-snug', getNameColorStyle(state.cosmetics?.equippedNameColor).colorClass)}>
+                      {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || myPlayerOutsideTop.name || (lang === 'uk' ? 'Гравець' : 'Игрок')}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-amber-200/50 flex items-center gap-1.5 font-mono min-w-0 mt-0.5">
+                    <span className="shrink-0 text-[8px] leading-tight bg-gradient-to-r from-amber-500/30 to-amber-600/30 border border-amber-400/40 text-amber-200 px-1.5 py-0.5 rounded-full font-black">
+                      {t.itsYou}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  {leaderCategory === 'focaccia' && (
+                    <div className="font-black text-amber-200 text-sm tabular-nums flex items-center justify-end gap-1">
+                      <span>🫓</span>
+                      <span>{formatNum(myPlayerOutsideTop.total)}</span>
+                    </div>
+                  )}
+                  {leaderCategory === 'diamonds' && (
+                    <div className="font-black text-cyan-200 text-sm tabular-nums flex items-center justify-end gap-1">
+                      <span>💎</span>
+                      <span>{formatNum(myPlayerOutsideTop.diamonds || 0)}</span>
+                    </div>
+                  )}
+                  {leaderCategory === 'rebirth' && (
+                    <div className="font-black text-fuchsia-200 text-sm tabular-nums flex items-center justify-end gap-1">
+                      <span>🔄</span>
+                      <span>{myPlayerOutsideTop.prestige}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="text-amber-500/40 text-sm pl-0.5 font-bold shrink-0 select-none">›</div>
+              </div>
+            )}
 
             {!leadersLoading && (
               <button
