@@ -47,6 +47,7 @@ import {
 } from './game/donate';
 import goldenImg from './assets/golden.png';
 import diamondImg from './assets/diamond.png';
+import emeraldImg from './assets/emerald.png';
 import monoGuideImg from './assets/mono-guide.jpg';
 import catImg from './assets/cat.png';
 import catChefImg from './assets/cat_chef.png';
@@ -647,6 +648,7 @@ interface SaveState {
   maxCombo: number;
   goldenCaught: number;
   diamondCaught?: number;
+  emeraldCaught?: number;
   prestige: number;
   energy: number;
   diamonds: number;
@@ -786,6 +788,7 @@ const defaultState = (): SaveState => ({
   maxCombo: 0,
   goldenCaught: 0,
   diamondCaught: 0,
+  emeraldCaught: 0,
   prestige: 0,
   energy: MAX_ENERGY_BASE,
   diamonds: 0,
@@ -1021,8 +1024,10 @@ export default function App() {
   const [phrase, setPhrase] = useState(PHRASES_I18N.uk[0]);
   const [golden, setGolden] = useState<{ x: number; y: number } | null>(null);
   const [diamondFocaccia, setDiamondFocaccia] = useState<{ x: number; y: number } | null>(null);
+  const [emeraldFocaccia, setEmeraldFocaccia] = useState<{ x: number; y: number } | null>(null);
   const [frenzy, setFrenzy] = useState(0);
   const [diamondFrenzy, setDiamondFrenzy] = useState(0);
+  const [emeraldFrenzy, setEmeraldFrenzy] = useState(0);
   const [offlineGain, setOfflineGain] = useState<number | null>(null);
   const [shake, setShake] = useState(false);
   const [confirmModal, setConfirmModal] = useState<ConfirmModal | null>(null);
@@ -1851,9 +1856,10 @@ export default function App() {
 
   const frenzyMult = (frenzy > 0 ? (state.vipUpgrades?.includes('vip_frenzy') ? 8 : 7) : 1) * (frenzy > 0 && activeSkin?.id === 'skin_demon' ? (1 + 0.5 * activeSkinLevelMult) : 1);
   const diamondMult = diamondFrenzy > 0 ? 15 : 1;
+  const emeraldMult = emeraldFrenzy > 0 ? 20 : 1;
   const comboMult = 1 + Math.min(combo, 100) * 0.02;
   const cpsRef = useRef(cps);
-  cpsRef.current = cps * frenzyMult * diamondMult;
+  cpsRef.current = cps * frenzyMult * diamondMult * emeraldMult;
   const prestigeGain = Math.floor(Math.cbrt(state.total / 1e6));
   const nextRebirthTarget = Math.pow(Math.max(1, prestigeGain + 1), 3) * 1e6;
   const prevRebirthTarget = prestigeGain > 0 ? Math.pow(prestigeGain, 3) * 1e6 : 0;
@@ -2506,6 +2512,13 @@ export default function App() {
     return () => clearTimeout(t);
   }, [diamondFrenzy]);
 
+  /* ---- Emerald Frenzy ---- */
+  useEffect(() => {
+    if (emeraldFrenzy <= 0) return;
+    const t = setTimeout(() => setEmeraldFrenzy((f) => f - 1), 1000);
+    return () => clearTimeout(t);
+  }, [emeraldFrenzy]);
+
   /* ---- Golden Focaccia ---- */
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
@@ -2545,6 +2558,27 @@ export default function App() {
     return () => {
       clearTimeout(timeout);
       clearTimeout(diamondHideTimeout);
+    };
+  }, []);
+
+  /* ---- Emerald Focaccia (Ultra-Rare!) ---- */
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout>;
+    let emeraldHideTimeout: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      // 🌟 ULTRA-RARE Emerald Focaccia: spawns every 2.5 - 5 minutes (150s - 300s)
+      const baseDelay = 150000;
+      const randomExtra = 150000;
+      timeout = setTimeout(() => {
+        setEmeraldFocaccia({ x: 14 + Math.random() * 72, y: 20 + Math.random() * 45 });
+        emeraldHideTimeout = setTimeout(() => setEmeraldFocaccia(null), 9000);
+        schedule();
+      }, baseDelay + Math.random() * randomExtra);
+    };
+    schedule();
+    return () => {
+      clearTimeout(timeout);
+      clearTimeout(emeraldHideTimeout);
     };
   }, []);
 
@@ -3379,7 +3413,7 @@ export default function App() {
     const critChance = baseCritChance + (activeSkin?.critChance || 0) * activeSkinLevelMult;
     const critMultVal = hasCritUp ? 12 : 10;
     const crit = !burning && Math.random() < critChance;
-    const gain = clickPower * comboMult * frenzyMult * diamondMult * (crit ? critMultVal : 1) * (burning ? 0.05 : 1);
+    const gain = clickPower * comboMult * frenzyMult * diamondMult * emeraldMult * (crit ? critMultVal : 1) * (burning ? 0.05 : 1);
 
     setState((p) => {
       const newEnergy = p.energy - 1;
@@ -3630,6 +3664,30 @@ export default function App() {
     saveNow(next);
   };
 
+  const catchEmerald = (byCat: boolean = false) => {
+    setEmeraldFocaccia(null);
+    haptic.heavy();
+    doFlash('emerald');
+    burstConfetti(['💚', '❇️', '✨', '🍀', '💎']);
+    setEmeraldFrenzy(20);
+    const curT = TRANSLATIONS[langRef.current];
+    addToast(
+      byCat
+        ? (langRef.current === 'uk' ? `🐾 ${catSkinInfo.nameUk} спіймав Смарагдову фокачу!` : `🐾 ${catSkinInfo.nameRu} поймал Изумрудную фокаччу!`)
+        : curT.toastEmeraldFrenzy,
+      formatTemplate(curT.toastEmeraldFrenzyDesc, 20, 20),
+      '❇️'
+    );
+    const cur = stateRef.current;
+    const next: SaveState = {
+      ...cur,
+      emeraldCaught: (cur.emeraldCaught || 0) + 1,
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+  };
+
   useEffect(() => {
     if (!state.cat?.unlocked) return;
 
@@ -3649,15 +3707,23 @@ export default function App() {
       return () => clearTimeout(t);
     }
 
-    // ⭐ LV.5 CAT ABILITY: Auto-pickup Diamond Focaccia (15X!) & Golden Focaccia!
+    // ⭐ LV.5 CAT ABILITY: Auto-pickup Emerald (x20!), Diamond (x15!), and Golden Focaccia!
     const isCatLv5 = (state.cat?.level || 1) >= 5;
-    const targetSpecial = diamondFocaccia ? { ...diamondFocaccia, isDiamond: true } : golden ? { ...golden, isDiamond: false } : null;
+    const targetSpecial = emeraldFocaccia
+      ? { ...emeraldFocaccia, type: 'emerald' as const }
+      : diamondFocaccia
+      ? { ...diamondFocaccia, type: 'diamond' as const }
+      : golden
+      ? { ...golden, type: 'golden' as const }
+      : null;
     if (targetSpecial && isCatLv5 && (catState === 'idle' || catState === 'returning')) {
       if (page === 'clicker') {
         setCatPose('idle');
         setCatState('chasing');
         setCatBubble(
-          targetSpecial.isDiamond
+          targetSpecial.type === 'emerald'
+            ? (lang === 'uk' ? '❇️ СМАРАГДОВА ФОКАЧА!' : '❇️ ИЗУМРУДНАЯ ФОКАЧЧА!')
+            : targetSpecial.type === 'diamond'
             ? (lang === 'uk' ? '💎 АЛМАЗНА ФОКАЧА!' : '💎 АЛМАЗНАЯ ФОКАЧЧА!')
             : (lang === 'uk' ? '🌟 ЗОЛОТА ФОКАЧА!' : '🌟 ЗОЛОТАЯ ФОКАЧЧА!')
         );
@@ -3669,11 +3735,15 @@ export default function App() {
         const reachTimer = setTimeout(() => {
           setCatState('pouncing');
           setCatBubble(
-            targetSpecial.isDiamond
+            targetSpecial.type === 'emerald'
+              ? (lang === 'uk' ? '✨ ХАП СМАРАГД (x20)!' : '✨ ХАП СМАРАГД (x20)!')
+              : targetSpecial.type === 'diamond'
               ? (lang === 'uk' ? '✨ ХАП АЛМАЗ (x15)!' : '✨ ХАП АЛМАЗ (x15)!')
               : (lang === 'uk' ? '✨ ХАП ЗОЛОТО!' : '✨ ХАП ЗОЛОТО!')
           );
-          if (targetSpecial.isDiamond) {
+          if (targetSpecial.type === 'emerald') {
+            catchEmerald(true);
+          } else if (targetSpecial.type === 'diamond') {
             catchDiamond(true);
           } else {
             catchGolden(true);
@@ -3683,7 +3753,9 @@ export default function App() {
             setCatState('returning');
             setCatFacing(82 > targetSpecial.x ? -1 : 1);
             setCatBubble(
-              targetSpecial.isDiamond
+              targetSpecial.type === 'emerald'
+                ? (lang === 'uk' ? '😸 Мур-смарагд!' : '😸 Мур-изумруд!')
+                : targetSpecial.type === 'diamond'
                 ? (lang === 'uk' ? '😸 Мур-алмаз!' : '😸 Мур-алмаз!')
                 : (lang === 'uk' ? '😸 Мур-золото!' : '😸 Мур-золото!')
             );
@@ -3706,7 +3778,9 @@ export default function App() {
         // Player is on other tab — Murchik still catches focaccia!
         setCatPose('idle');
         const bgReachTimer = setTimeout(() => {
-          if (targetSpecial.isDiamond) {
+          if (targetSpecial.type === 'emerald') {
+            catchEmerald(true);
+          } else if (targetSpecial.type === 'diamond') {
             catchDiamond(true);
           } else {
             catchGolden(true);
@@ -3763,7 +3837,7 @@ export default function App() {
         return () => clearTimeout(bgReachTimer);
       }
     }
-  }, [pest?.id, golden, diamondFocaccia, activeEvent?.emoji, state.cat?.unlocked, state.cat?.level, catInfo.runDurationMs, page, catSkinInfo, lang]);
+  }, [pest?.id, golden, diamondFocaccia, emeraldFocaccia, activeEvent?.emoji, state.cat?.unlocked, state.cat?.level, catInfo.runDurationMs, page, catSkinInfo, lang]);
 
   const petCat = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -5635,6 +5709,7 @@ export default function App() {
           achievements: cur.achievements,
           goldenCaught: cur.goldenCaught,
           diamondCaught: cur.diamondCaught || 0,
+          emeraldCaught: cur.emeraldCaught || 0,
           maxCombo: cur.maxCombo,
           bossesDefeated: cur.bossesDefeated,
           pestsSquashed: cur.pestsSquashed,
@@ -5777,14 +5852,14 @@ export default function App() {
   }
 
   return (
-    <div className={cn('h-screen bg-[#0d0a04] text-amber-50 font-sans select-none overflow-hidden relative flex flex-col', frenzy > 0 && 'frenzy-bg', diamondFrenzy > 0 && 'diamond-frenzy-bg')}>
+    <div className={cn('h-screen bg-[#0d0a04] text-amber-50 font-sans select-none overflow-hidden relative flex flex-col', frenzy > 0 && 'frenzy-bg', diamondFrenzy > 0 && 'diamond-frenzy-bg', emeraldFrenzy > 0 && 'emerald-frenzy-bg')}>
       {/* Animated BG */}
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute inset-0 opacity-[0.04]" style={{ background: 'radial-gradient(ellipse at 30% 20%, #fbbf24, transparent 50%), radial-gradient(ellipse at 70% 80%, #f97316, transparent 50%)', animation: 'gradient-bg 8s ease-in-out infinite', backgroundSize: '200% 200%' }} />
-        {[...Array(diamondFrenzy > 0 ? 16 : frenzy > 0 ? 14 : 6)].map((_, i) => (
+        {[...Array(emeraldFrenzy > 0 ? 18 : diamondFrenzy > 0 ? 16 : frenzy > 0 ? 14 : 6)].map((_, i) => (
           <div
             key={i}
-            className={cn('absolute text-xs', diamondFrenzy > 0 ? 'text-cyan-300/40' : frenzy > 0 ? 'text-orange-400/30' : 'text-amber-500/20')}
+            className={cn('absolute text-xs', emeraldFrenzy > 0 ? 'text-emerald-300/40' : diamondFrenzy > 0 ? 'text-cyan-300/40' : frenzy > 0 ? 'text-orange-400/30' : 'text-amber-500/20')}
             style={{
               left: `${5 + ((i * 37) % 90)}%`,
               bottom: '-10px',
@@ -5792,7 +5867,7 @@ export default function App() {
               animationDelay: `${i * 0.8}s`,
             }}
           >
-            {(diamondFrenzy > 0 ? ['💎', '✨', '💠', '🔷'] : frenzy > 0 ? ['🔥', '💥', '⭐', '🫓'] : ['🫓', '✨', '•', '🫓', '⭐', '•'])[i % (diamondFrenzy > 0 || frenzy > 0 ? 4 : 6)]}
+            {(emeraldFrenzy > 0 ? ['💚', '❇️', '✨', '🍀'] : diamondFrenzy > 0 ? ['💎', '✨', '💠', '🔷'] : frenzy > 0 ? ['🔥', '💥', '⭐', '🫓'] : ['🫓', '✨', '•', '🫓', '⭐', '•'])[i % (emeraldFrenzy > 0 || diamondFrenzy > 0 || frenzy > 0 ? 4 : 6)]}
           </div>
         ))}
       </div>
@@ -5957,6 +6032,21 @@ export default function App() {
         </button>
       )}
 
+      {/* Emerald focaccia (Ultra-Rare!) */}
+      {emeraldFocaccia && (
+        <button
+          onClick={() => catchEmerald(false)}
+          className="fixed z-40 w-18 h-18 animate-emerald cursor-pointer"
+          style={{ left: `${emeraldFocaccia.x}%`, top: `${emeraldFocaccia.y}%`, filter: 'drop-shadow(0 0 22px rgba(16,185,129,0.95)) drop-shadow(0 0 50px rgba(52,211,153,0.7))' }}
+        >
+          <img src={emeraldImg} alt="Emerald Focaccia" className="w-full h-full object-contain" draggable={false} />
+          <div className="absolute inset-[-8px] rounded-full border-2 border-emerald-300/70" style={{ animation: 'ring-pulse 1.1s ease-out infinite' }} />
+          {[0, 1, 2, 3].map((i) => (
+            <span key={i} className="animate-orbit absolute left-1/2 top-1/2 text-xs" style={{ animationDelay: `${-i * 0.45}s` }}>❇️</span>
+          ))}
+        </button>
+      )}
+
       {/* Screen flash */}
       {flash && (
         <div
@@ -5966,6 +6056,7 @@ export default function App() {
             flash.type === 'crit' && 'bg-red-500/20',
             flash.type === 'golden' && 'bg-amber-300/25',
             flash.type === 'diamond' && 'bg-cyan-400/30',
+            flash.type === 'emerald' && 'bg-emerald-400/35',
             flash.type === 'success' && 'bg-emerald-400/20',
             flash.type === 'tax' && 'bg-red-600/25',
           )}
@@ -9657,6 +9748,7 @@ export default function App() {
                       { emoji: '👆', val: state.clicks.toLocaleString(), label: t.statClicks },
                       { emoji: '⭐', val: String(state.goldenCaught), label: t.statGolden },
                       { emoji: '💠', val: String(state.diamondCaught || 0), label: t.statDiamondFocaccia },
+                      { emoji: '❇️', val: String(state.emeraldCaught || 0), label: t.statEmeraldFocaccia },
                       { emoji: '🏪', val: String(Object.values(state.buildings).reduce((a, b) => a + b, 0)), label: t.statBuildings },
                       { emoji: '🏆', val: `${state.achievements.length}/20`, label: t.tabAchievements },
                     ].map((st, sIdx) => (
@@ -10592,9 +10684,9 @@ export default function App() {
         <div className="flex items-center justify-between gap-2 mt-1 min-h-[18px]">
           {/* Income Rates */}
           <div className="text-amber-400/70 text-[11px] font-medium truncate flex items-center gap-1.5 tabular-nums">
-            <span>{formatCps(cps * frenzyMult * diamondMult)}{t.topBarPerSec}</span>
+            <span>{formatCps(cps * frenzyMult * diamondMult * emeraldMult)}{t.topBarPerSec}</span>
             <span className="text-amber-500/30 font-bold">•</span>
-            <span>{formatNum(clickPower * comboMult * frenzyMult * diamondMult)}{t.topBarPerClick}</span>
+            <span>{formatNum(clickPower * comboMult * frenzyMult * diamondMult * emeraldMult)}{t.topBarPerClick}</span>
           </div>
 
           {/* Active Buffs / Temporary Statuses */}
@@ -10630,6 +10722,12 @@ export default function App() {
               <div className="text-cyan-300 font-black animate-pulse text-[10px] bg-gradient-to-r from-cyan-500/25 to-blue-500/25 px-2 py-0.5 rounded-full border border-cyan-400/50 flex items-center gap-1 shadow-[0_0_10px_rgba(6,182,212,0.4)] whitespace-nowrap">
                 <span>💎</span>
                 <span>x15 {diamondFrenzy}с</span>
+              </div>
+            )}
+            {emeraldFrenzy > 0 && (
+              <div className="text-emerald-300 font-black animate-pulse text-[10px] bg-gradient-to-r from-emerald-500/25 to-teal-500/25 px-2 py-0.5 rounded-full border border-emerald-400/50 flex items-center gap-1 shadow-[0_0_10px_rgba(16,185,129,0.5)] whitespace-nowrap">
+                <span>❇️</span>
+                <span>x20 {emeraldFrenzy}с</span>
               </div>
             )}
           </div>
@@ -10764,10 +10862,16 @@ export default function App() {
 
             {/* Clicker */}
             <div className="relative">
-              {state.energy > 0 && frenzy <= 0 && diamondFrenzy <= 0 && [0, 1, 2].map((i) => (
+              {state.energy > 0 && frenzy <= 0 && diamondFrenzy <= 0 && emeraldFrenzy <= 0 && [0, 1, 2].map((i) => (
                 <span key={i} className="animate-steam pointer-events-none absolute -top-5 text-base" style={{ left: `${28 + i * 22}%`, animationDelay: `${i * 0.8}s` }}>💨</span>
               ))}
-              {diamondFrenzy > 0 ? (
+              {emeraldFrenzy > 0 ? (
+                <div className="pointer-events-none absolute inset-[-30px]">
+                  {[...Array(6)].map((_, i) => (
+                    <span key={i} className="animate-fire absolute text-lg" style={{ left: `${8 + i * 16}%`, bottom: 0, animationDelay: `${i * 0.18}s` }}>❇️</span>
+                  ))}
+                </div>
+              ) : diamondFrenzy > 0 ? (
                 <div className="pointer-events-none absolute inset-[-30px]">
                   {[...Array(6)].map((_, i) => (
                     <span key={i} className="animate-fire absolute text-lg" style={{ left: `${8 + i * 16}%`, bottom: 0, animationDelay: `${i * 0.18}s` }}>💎</span>
@@ -10783,7 +10887,7 @@ export default function App() {
               <div className="absolute inset-[-20px] rounded-full border border-amber-400/10" style={{ animation: 'ring-pulse 3s ease-out infinite' }} />
               <div className="absolute inset-[-35px] rounded-full border border-amber-400/5" style={{ animation: 'ring-pulse-2 3s ease-out infinite', animationDelay: '0.5s' }} />
               <div className={cn('absolute inset-[-15px] rounded-full blur-2xl transition-colors duration-500',
-                diamondFrenzy > 0 ? 'bg-cyan-400/50' : frenzy > 0 ? 'bg-orange-500/40' : state.energy <= 0 ? 'bg-cyan-500/10' : 'bg-amber-400/25'
+                emeraldFrenzy > 0 ? 'bg-emerald-400/55' : diamondFrenzy > 0 ? 'bg-cyan-400/50' : frenzy > 0 ? 'bg-orange-500/40' : state.energy <= 0 ? 'bg-cyan-500/10' : 'bg-amber-400/25'
               )} style={{ animation: 'glow 2.5s ease-in-out infinite' }} />
               {/* SVG circular charge progress meter */}
               {holdProgress > 2 && (
@@ -10816,7 +10920,7 @@ export default function App() {
                   'border-[5px] shadow-[0_0_40px_rgba(251,191,36,0.3),inset_0_-4px_12px_rgba(0,0,0,0.2)] bg-stone-950/80',
                   squish && 'scale-90',
                   portalWarping && 'animate-portal-warp',
-                  diamondFrenzy > 0 ? 'border-cyan-300 animate-spin-slow shadow-[0_0_70px_rgba(6,182,212,0.8)]' : frenzy > 0 ? 'border-orange-400 animate-spin-slow shadow-[0_0_60px_rgba(249,115,22,0.5)]' : 'border-amber-400/80',
+                  emeraldFrenzy > 0 ? 'border-emerald-300 animate-spin-slow shadow-[0_0_75px_rgba(16,185,129,0.85)]' : diamondFrenzy > 0 ? 'border-cyan-300 animate-spin-slow shadow-[0_0_70px_rgba(6,182,212,0.8)]' : frenzy > 0 ? 'border-orange-400 animate-spin-slow shadow-[0_0_60px_rgba(249,115,22,0.5)]' : 'border-amber-400/80',
                   state.energy <= 0 && 'opacity-40 grayscale border-cyan-500/40 shadow-none',
                 )}
               >
@@ -12139,6 +12243,7 @@ export default function App() {
                 ['⚡', `x${state.maxCombo}`, t.statCombo],
                 ['✨', String(state.goldenCaught), t.statGolden],
                 ['💠', String(state.diamondCaught || 0), t.statDiamondFocaccia],
+                ['❇️', String(state.emeraldCaught || 0), t.statEmeraldFocaccia],
                 ['🏗️', String(totalBuildings), t.statBuildings],
               ].map(([emoji, value, label], i) => (
                 <div key={label} style={{ animationDelay: `${Math.min(i, 9) * 40}ms` }} className="glass-card rounded-xl p-2.5 text-center animate-card">
