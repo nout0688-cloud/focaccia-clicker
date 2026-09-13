@@ -647,6 +647,8 @@ interface SaveState {
   upgrades: string[];
   vipUpgrades: string[];
   achievements: string[];
+  badges?: string[];
+  isPatron?: boolean;
   maxCombo: number;
   goldenCaught: number;
   diamondCaught?: number;
@@ -1313,7 +1315,8 @@ export default function App() {
 
     loadState().then((s) => {
       const maxHours = s.vipUpgrades?.includes('vip_offline') ? 12 : 8;
-      const elapsed = Math.min((Date.now() - s.lastSave) / 1000, 60 * 60 * maxHours);
+      const lastSaveTime = Number(s.lastSave) || Date.now();
+      const elapsed = Math.max(0, Math.min((Date.now() - lastSaveTime) / 1000, 60 * 60 * maxHours));
       if (elapsed > 30) {
         let base = 0;
         for (const b of BUILDINGS) base += (s.buildings[b.id] || 0) * b.cps;
@@ -1331,8 +1334,13 @@ export default function App() {
         mult *= (1 + dPercentTotal);
         const karmaMult = (s.karma ?? 100) < 50 ? 0.5 : 1; // погана карма — офлайн-дохід −50%
         const offlineRate = s.vipUpgrades?.includes('vip_offline') ? 0.75 : 0.5;
-        const gain = base * mult * (1 + s.prestige * 0.1) * elapsed * offlineRate * karmaMult;
-        if (gain > 1) { s.focaccia += gain; s.total += gain; setOfflineGain(gain); }
+        const gain = base * mult * (1 + (Number(s.prestige) || 0) * 0.1) * elapsed * offlineRate * karmaMult;
+        if (Number.isFinite(gain) && gain > 1) {
+          const cleanGain = Math.floor(gain);
+          s.focaccia += cleanGain;
+          s.total += cleanGain;
+          setOfflineGain(cleanGain);
+        }
       }
       setState(s);
       setKarma(s.karma ?? 100);
@@ -1497,6 +1505,23 @@ export default function App() {
                   }
                   return p;
                 });
+              }
+              if (data?.patronBadge) {
+                setState((p) => {
+                  const curBadges = p.badges || [];
+                  if (!curBadges.includes('patron') || !p.isPatron) {
+                    const next = { ...p, badges: Array.from(new Set([...curBadges, 'patron'])), isPatron: true };
+                    stateRef.current = next;
+                    saveNow(next);
+                    return next;
+                  }
+                  return p;
+                });
+                addToast(
+                  langRef.current === 'uk' ? '💖 Титул «Меценат»!' : '💖 Титул «Меценат»!',
+                  langRef.current === 'uk' ? 'Тобі надано почесний статус Мецената у профілі' : 'Вам присвоен почётный статус Мецената в профиле',
+                  '💖'
+                );
               }
               if (data?.rebirth && data.rebirth > 0) {
                 setState((p) => {
@@ -1872,7 +1897,7 @@ export default function App() {
   const comboMult = 1 + Math.min(combo, 100) * 0.02;
   const cpsRef = useRef(cps);
   cpsRef.current = cps * frenzyMult * diamondMult * emeraldMult;
-  const prestigeGain = Math.floor(Math.cbrt(state.total / 1e6));
+  const prestigeGain = Number.isFinite(state.total) && state.total > 0 ? Math.floor(Math.cbrt(state.total / 1e6)) : 0;
   const nextRebirthTarget = Math.pow(Math.max(1, prestigeGain + 1), 3) * 1e6;
   const prevRebirthTarget = prestigeGain > 0 ? Math.pow(prestigeGain, 3) * 1e6 : 0;
   const rebirthProgress = Math.min(
@@ -3017,19 +3042,23 @@ export default function App() {
   const casinoCurSym = casinoCur === 'gem' ? '💎' : '🫓';
   const casinoBalance = casinoCur === 'gem' ? state.diamonds : Math.floor(state.focaccia);
   const casinoTake = (b: number) => {
+    const cleanB = Math.max(0, Math.floor(Number(b) || 0));
+    if (cleanB <= 0) return;
     const cur = stateRef.current;
     const next: SaveState = casinoCur === 'gem'
-      ? { ...cur, diamonds: Math.max(0, cur.diamonds - b) }
-      : { ...cur, focaccia: Math.max(0, cur.focaccia - b) };
+      ? { ...cur, diamonds: Math.max(0, cur.diamonds - cleanB) }
+      : { ...cur, focaccia: Math.max(0, cur.focaccia - cleanB) };
     stateRef.current = next;
     setState(next);
     saveNow(next);
   };
   const casinoGive = (curType: 'foc' | 'gem', a: number) => {
+    const cleanA = Math.max(0, Math.floor(Number(a) || 0));
+    if (cleanA <= 0) return;
     const cur = stateRef.current;
     const next: SaveState = curType === 'gem'
-      ? { ...cur, diamonds: cur.diamonds + a }
-      : { ...cur, focaccia: cur.focaccia + a };
+      ? { ...cur, diamonds: cur.diamonds + cleanA }
+      : { ...cur, focaccia: cur.focaccia + cleanA };
     stateRef.current = next;
     setState(next);
     saveNow(next);
@@ -3064,6 +3093,7 @@ export default function App() {
 
   const spinCasino = () => {
     if (casinoSpinning) return;
+    if (!Number.isFinite(casinoBet) || casinoBet < 1) return;
     const curT = TRANSLATIONS[langRef.current];
     if (casinoBet > casinoMaxBet) {
       addToast(curT.toastKarmaLow, formatTemplate(curT.toastKarmaMaxBet, formatNum(casinoMaxBet), casinoCurSym), '❌');
@@ -3126,6 +3156,7 @@ export default function App() {
 
   const rollDice = () => {
     if (casinoSpinning) return;
+    if (!Number.isFinite(casinoBet) || casinoBet < 1) return;
     const curT = TRANSLATIONS[langRef.current];
     if (casinoBet > casinoMaxBet) {
       addToast(curT.toastKarmaLow, formatTemplate(curT.toastKarmaMaxBet, formatNum(casinoMaxBet), casinoCurSym), '❌');
@@ -3183,6 +3214,7 @@ export default function App() {
 
   const spinWheel = () => {
     if (casinoSpinning) return;
+    if (!Number.isFinite(casinoBet) || casinoBet < 1) return;
     const curT = TRANSLATIONS[langRef.current];
     if (casinoBet > casinoMaxBet) {
       addToast(curT.toastKarmaLow, formatTemplate(curT.toastKarmaMaxBet, formatNum(casinoMaxBet), '🫓'), '❌');
@@ -5468,17 +5500,30 @@ export default function App() {
     }
   };
 
-  const awardOrderRewards = (order: { diamonds: number; isStarter?: boolean; isTip?: boolean }) => {
+  const awardOrderRewards = (order: { orderId?: string; diamonds: number; isStarter?: boolean; isTip?: boolean }) => {
     burstConfetti(['💎', '💖', '✨', '👑', '🎉']);
     haptic.success();
-    const diamondsToAdd = order.diamonds || 0;
+    const orderId = order.orderId || '';
+    const flagKey = orderId ? `jar_order_awarded_${orderId}` : null;
+    if (flagKey && localStorage.getItem(flagKey) === '1') {
+      return;
+    }
+    if (flagKey) {
+      try { localStorage.setItem(flagKey, '1'); } catch {}
+    }
 
     setState((p) => {
-      let next = { ...p, diamonds: (p.diamonds || 0) + diamondsToAdd };
+      let next = { ...p };
       if (order.isStarter) {
         const curVip = p.vipUpgrades || [];
-        if (!curVip.includes('rolling_pin')) {
-          next = { ...next, vipUpgrades: [...curVip, 'rolling_pin'] };
+        if (!curVip.includes('vip_hammer')) {
+          next = { ...next, vipUpgrades: [...curVip, 'vip_hammer'] };
+        }
+      }
+      if (order.isTip) {
+        const curBadges = p.badges || [];
+        if (!curBadges.includes('patron') || !p.isPatron) {
+          next = { ...next, badges: Array.from(new Set([...curBadges, 'patron'])), isPatron: true };
         }
       }
       stateRef.current = next;
@@ -5489,8 +5534,8 @@ export default function App() {
     addToast(
       lang === 'uk' ? '🎉 Оплату підтверджено!' : '🎉 Оплата подтверждена!',
       lang === 'uk'
-        ? `Нараховано +${diamondsToAdd} 💎! Дякуємо за підтримку!`
-        : `Начислено +${diamondsToAdd} 💎! Спасибо за поддержку!`,
+        ? `Замовлення схвалено! +${order.diamonds || 0} 💎 зараховано на баланс!`
+        : `Заказ одобрен! +${order.diamonds || 0} 💎 зачислено на баланс!`,
       '💎',
     );
     reportSync();
@@ -5834,7 +5879,7 @@ export default function App() {
   }, [stopHoldBuy]);
 
   const doPrestige = () => {
-    if (prestigeGain < 1) return;
+    if (!Number.isFinite(prestigeGain) || prestigeGain < 1) return;
     const curT = TRANSLATIONS[langRef.current];
     setConfirmModal({
       title: curT.modalRebirthTitle, emoji: '🔄',
@@ -5847,6 +5892,8 @@ export default function App() {
           clicks: cur.clicks,
           settledTrades: cur.settledTrades,
           karma: cur.karma,
+          isPatron: cur.isPatron,
+          badges: cur.badges,
           prestige: cur.prestige + prestigeGain,
           lastRebirthTime: Date.now(),
           diamonds: cur.diamonds,
@@ -9971,6 +10018,12 @@ export default function App() {
                   {[tgUser?.first_name, tgUser?.last_name].filter(Boolean).join(' ') || (lang === 'uk' ? 'Шеф Фокаччо' : 'Шеф Фокаччо')}
                 </span>
                 {isDevUser(tgUser?.id) && <DevBadge size="md" />}
+                {(state.isPatron || state.badges?.includes('patron')) && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-rose-500/20 to-pink-500/20 border border-rose-500/40 text-rose-300 text-[10px] font-black shadow-sm">
+                    <span>💖</span>
+                    <span>{lang === 'uk' ? 'Меценат' : 'Меценат'}</span>
+                  </span>
+                )}
               </div>
 
               {/* Username & ID */}

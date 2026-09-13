@@ -566,8 +566,11 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
         setPausedLeft(data.pausedLeft || 0);
         if (data.winner !== undefined) setWinner(data.winner);
         if (data.reason !== undefined) setReason(data.reason);
-        if (data.stage === 'finished' && iv) clearInterval(iv); // финиш — опрос остановлен
-      } catch { /* сеть мигнула — счёт остался локально */ } finally {
+      } catch {
+        // Мережа блимнула — повертаємо невідправлені тапи назад у чергу
+        pendingRef.current += delta;
+        setPending(pendingRef.current);
+      } finally {
         inFlight.current = false;
       }
     };
@@ -1169,7 +1172,8 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
             <div className="grid grid-cols-4 gap-1.5">
               {[0.1, 0.25, 0.5, 1].map((pct) => {
                 const label = pct === 1 ? 'MAX' : `${Math.round(pct * 100)}%`;
-                const calculated = Math.max(1, Math.floor(currentBalance * pct));
+                const safeBal = Number.isFinite(currentBalance) ? Math.max(0, currentBalance) : 0;
+                const calculated = safeBal > 0 ? Math.max(1, Math.floor(safeBal * pct)) : 0;
                 return (
                   <button
                     key={pct}
@@ -1195,7 +1199,10 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
                   <button
                     key={amt}
                     type="button"
-                    onClick={() => { setLobbyStake((prev) => Math.min(myFocaccia, prev + amt)); haptic.light(); }}
+                    onClick={() => {
+                      setLobbyStake((prev) => Math.min(Math.max(0, Number(myFocaccia) || 0), (Number.isFinite(prev) ? prev : 0) + amt));
+                      haptic.light();
+                    }}
                     className="py-1 rounded-lg text-[10px] font-black border bg-stone-950 border-stone-800 text-amber-300 hover:border-amber-500/40 active:scale-95 transition-all cursor-pointer"
                   >
                     +{formatNum(amt)}
@@ -1206,7 +1213,10 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
                   <button
                     key={amt}
                     type="button"
-                    onClick={() => { setLobbyStake((prev) => Math.min(myDiamonds, prev + amt)); haptic.light(); }}
+                    onClick={() => {
+                      setLobbyStake((prev) => Math.min(Math.max(0, Number(myDiamonds) || 0), (Number.isFinite(prev) ? prev : 0) + amt));
+                      haptic.light();
+                    }}
                     className="py-1 rounded-lg text-[10px] font-black border bg-stone-950 border-stone-800 text-cyan-300 hover:border-cyan-500/40 active:scale-95 transition-all cursor-pointer"
                   >
                     +{amt}💎
@@ -1530,11 +1540,22 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   if (stage === 'paused') {
     return (
       <div className="h-[100dvh] bg-[#0d0a04] flex items-center justify-center p-6 select-none safe-top safe-bottom">
-        <div className="text-center">
+        <div className="text-center max-w-xs w-full">
           <div className="text-6xl mb-3 animate-bob">⏸</div>
           <h2 className="text-xl font-black text-amber-100 mb-2">Суперник вийшов!</h2>
           <p className="text-amber-300/60 text-sm mb-4">Якщо він не повернеться — перемога технічним нокаутом</p>
-          <div className="text-5xl font-black text-red-300 tabular-nums">{Math.ceil(pausedLeft / 1000)}</div>
+          <div className="text-5xl font-black text-red-300 tabular-nums mb-6">{Math.ceil(pausedLeft / 1000)}</div>
+          <button
+            type="button"
+            onClick={async () => {
+              if (confirm('Ти точно хочеш здатися у цій дуелі?')) {
+                await handleForfeitDuel();
+              }
+            }}
+            className="w-full py-2.5 bg-stone-900 border border-stone-800 text-stone-400 hover:text-stone-200 font-bold rounded-2xl text-xs active:scale-95 transition-all"
+          >
+            🏳️ Здатися і вийти
+          </button>
         </div>
       </div>
     );

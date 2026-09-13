@@ -445,10 +445,17 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
         };
 
         if (!trade?.me?.locked) {
+          const safeFoc = Math.max(0, Math.min(myFocaccia, Math.floor(Number(focOffer) || 0)));
+          const safeDia = Math.max(0, Math.min(myDiamonds, Math.floor(Number(diaOffer) || 0)));
+          const safeSkins = Array.from(new Set(selectedSkins)).filter((sk) =>
+            sk.startsWith('cat:')
+              ? myOwnedCatSkins.includes(sk.replace('cat:', ''))
+              : myOwnedSkins.includes(sk)
+          );
           payload.offer = {
-            focaccia: focOffer,
-            diamonds: diaOffer,
-            skins: selectedSkins,
+            focaccia: safeFoc,
+            diamonds: safeDia,
+            skins: safeSkins,
           };
         }
 
@@ -531,6 +538,23 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
       return;
     }
     const wantLock = !trade.me?.locked;
+    if (wantLock) {
+      if (focOffer > myFocaccia || diaOffer > myDiamonds) {
+        haptic.error();
+        alert('⚠️ Недостатньо коштів для цієї пропозиції!');
+        return;
+      }
+      const invalidSkin = selectedSkins.find((sk) =>
+        sk.startsWith('cat:')
+          ? !myOwnedCatSkins.includes(sk.replace('cat:', ''))
+          : !myOwnedSkins.includes(sk)
+      );
+      if (invalidSkin) {
+        haptic.error();
+        alert('⚠️ Помилка: ви не володієте одним із вибраних скінів!');
+        return;
+      }
+    }
     haptic.medium();
 
     try {
@@ -573,6 +597,24 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
       alert(`⏳ Партнер по обміну перебуває під блокуванням ребіртху. Обмін неможливий.`);
       return;
     }
+    if (trade.me?.offer) {
+      const { focaccia: f = 0, diamonds: d = 0, skins = [] } = trade.me.offer;
+      if (f > myFocaccia || d > myDiamonds) {
+        haptic.error();
+        alert('⚠️ Недостатньо коштів на балансі для здійснення обміну!');
+        return;
+      }
+      const invalidSkin = (skins || []).find((sk: string) =>
+        sk.startsWith('cat:')
+          ? !myOwnedCatSkins.includes(sk.replace('cat:', ''))
+          : !myOwnedSkins.includes(sk)
+      );
+      if (invalidSkin) {
+        haptic.error();
+        alert('⚠️ Помилка: ви не володієте одним із вибраних скінів!');
+        return;
+      }
+    }
     haptic.heavy();
     setConfirmModalOpen(false);
 
@@ -584,7 +626,6 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
           action: 'confirm',
           tradeId: activeTradeId,
           userId: meId,
-          clientBalance: { f: myFocaccia, d: myDiamonds },
           clientLastRebirthTime: myLastRebirthTime,
         }),
       });
@@ -632,17 +673,36 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
 
     const settleSave = async () => {
       try {
+        const flagKey = `trade_settled_${activeTradeId}`;
+        if (localStorage.getItem(flagKey) === '1') {
+          return;
+        }
+
         let s: any = null;
         const raw = await storage.get(SAVE_KEY);
         if (raw) s = JSON.parse(raw);
         if (!s) s = { focaccia: 0, total: 0, diamonds: 0, skins: { owned: ['skin_classic'], equipped: 'skin_classic' } };
 
+        if (Array.isArray(s.settledTrades) && s.settledTrades.includes(activeTradeId)) {
+          try { localStorage.setItem(flagKey, '1'); } catch {}
+          return;
+        }
+
         const myGive = trade.me?.offer || { focaccia: 0, diamonds: 0, skins: [] };
         const myReceive = trade.opp?.offer || { focaccia: 0, diamonds: 0, skins: [] };
 
-        const newFoc = Math.max(0, (Number(s.focaccia) || 0) - myGive.focaccia + myReceive.focaccia);
-        const newTotal = Math.max(0, (Number(s.total) || 0) + myReceive.focaccia);
-        const newDia = Math.max(0, (Number(s.diamonds) || 0) - myGive.diamonds + myReceive.diamonds);
+        const safeGiveFoc = Math.max(0, Math.floor(Number(myGive.focaccia) || 0));
+        const safeRecvFoc = Math.max(0, Math.floor(Number(myReceive.focaccia) || 0));
+        const safeGiveDia = Math.max(0, Math.floor(Number(myGive.diamonds) || 0));
+        const safeRecvDia = Math.max(0, Math.floor(Number(myReceive.diamonds) || 0));
+
+        const curFoc = Math.max(0, Math.floor(Number(s.focaccia) || 0));
+        const curDia = Math.max(0, Math.floor(Number(s.diamonds) || 0));
+        const curTotal = Math.max(0, Math.floor(Number(s.total) || 0));
+
+        const newFoc = Math.max(0, curFoc - safeGiveFoc + safeRecvFoc);
+        const newTotal = Math.max(curTotal, curTotal + safeRecvFoc);
+        const newDia = Math.max(0, curDia - safeGiveDia + safeRecvDia);
 
         s.focaccia = newFoc;
         s.total = newTotal;
@@ -650,10 +710,10 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
 
         // Скіни хліба
         let currentSkins: string[] = Array.isArray(s.skins?.owned) ? s.skins.owned : ['skin_classic'];
-        const givenBreadSkins = myGive.skins.filter((sk) => !sk.startsWith('cat:'));
+        const givenBreadSkins = (myGive.skins || []).filter((sk: string) => !sk.startsWith('cat:'));
         currentSkins = currentSkins.filter((sk) => !givenBreadSkins.includes(sk) || sk === 'skin_classic');
 
-        myReceive.skins.forEach((sk) => {
+        (myReceive.skins || []).forEach((sk: string) => {
           if (!sk.startsWith('cat:') && !currentSkins.includes(sk)) {
             currentSkins.push(sk);
           }
@@ -665,8 +725,8 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
 
         // Скіни котиків
         let currentCatSkins: string[] = Array.isArray(s.cat?.ownedSkins) ? s.cat.ownedSkins : ['murchik'];
-        const givenCatSkins = myGive.skins.filter((sk) => sk.startsWith('cat:')).map((sk) => sk.replace('cat:', ''));
-        const receivedCatSkins = myReceive.skins.filter((sk) => sk.startsWith('cat:')).map((sk) => sk.replace('cat:', ''));
+        const givenCatSkins = (myGive.skins || []).filter((sk: string) => sk.startsWith('cat:')).map((sk: string) => sk.replace('cat:', ''));
+        const receivedCatSkins = (myReceive.skins || []).filter((sk: string) => sk.startsWith('cat:')).map((sk: string) => sk.replace('cat:', ''));
 
         currentCatSkins = currentCatSkins.filter((c) => !givenCatSkins.includes(c) || c === 'murchik');
         receivedCatSkins.forEach((c) => {
@@ -686,7 +746,7 @@ export default function TradeApp({ tradeId: initialTradeId }: { tradeId: string 
 
         storage.set(SAVE_KEY, JSON.stringify(s));
         storage.set('focaccia-balance', JSON.stringify({ f: newFoc, d: newDia, ts: Date.now() }));
-        try { localStorage.setItem(`trade_settled_${activeTradeId}`, '1'); } catch {}
+        try { localStorage.setItem(flagKey, '1'); } catch {}
 
         // Надсилаємо ack на сервер
         fetch(API, {
