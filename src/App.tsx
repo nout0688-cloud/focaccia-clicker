@@ -8710,12 +8710,20 @@ export default function App() {
               className="absolute -top-32 left-1/2 -translate-x-1/2 w-[550px] h-[420px] rounded-full blur-[110px] opacity-45 pointer-events-none animate-pulse"
               style={{
                 background:
-                  activeCase.id === 'case_celestial'
+                  activeCase.id === 'case_abyss'
+                    ? 'radial-gradient(circle, rgba(168,85,247,0.85) 0%, rgba(109,40,217,0.45) 50%, transparent 70%)'
+                    : activeCase.id === 'case_celestial'
                     ? 'radial-gradient(circle, rgba(168,85,247,0.7) 0%, rgba(59,130,246,0.3) 50%, transparent 70%)'
+                    : activeCase.id === 'case_arcade'
+                    ? 'radial-gradient(circle, rgba(236,72,153,0.75) 0%, rgba(6,182,212,0.35) 50%, transparent 70%)'
                     : activeCase.id === 'case_diamond'
                     ? 'radial-gradient(circle, rgba(6,182,212,0.7) 0%, rgba(37,99,235,0.3) 50%, transparent 70%)'
+                    : activeCase.id === 'case_steampunk'
+                    ? 'radial-gradient(circle, rgba(245,158,11,0.75) 0%, rgba(180,83,9,0.35) 50%, transparent 70%)'
                     : activeCase.id === 'case_empire'
                     ? 'radial-gradient(circle, rgba(234,179,8,0.7) 0%, rgba(249,115,22,0.3) 50%, transparent 70%)'
+                    : activeCase.id === 'case_nature'
+                    ? 'radial-gradient(circle, rgba(16,185,129,0.75) 0%, rgba(5,150,105,0.35) 50%, transparent 70%)'
                     : 'radial-gradient(circle, rgba(245,158,11,0.6) 0%, rgba(180,83,9,0.3) 50%, transparent 70%)',
               }}
             />
