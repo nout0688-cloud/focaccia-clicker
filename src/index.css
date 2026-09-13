@@ -33,6 +33,14 @@
 }
 .animate-golden { animation: golden 1.2s ease-in-out infinite; }
 
+@keyframes diamond {
+  0%,100% { transform: scale(1) rotate(0deg); filter: brightness(1.2) drop-shadow(0 0 16px rgba(6,182,212,0.8)); }
+  25% { transform: scale(1.16) rotate(-7deg); filter: brightness(1.6) drop-shadow(0 0 28px rgba(34,211,238,1)); }
+  50% { transform: scale(0.96) rotate(5deg); filter: brightness(1.1) drop-shadow(0 0 14px rgba(6,182,212,0.7)); }
+  75% { transform: scale(1.12) rotate(-3deg); filter: brightness(1.8) drop-shadow(0 0 32px rgba(56,189,248,1)); }
+}
+.animate-diamond { animation: diamond 1.2s ease-in-out infinite; }
+
 @keyframes shake {
   0%,100% { transform: translateX(0); }
   15% { transform: translateX(-8px) rotate(-1deg); }
@@ -51,6 +59,12 @@
   50% { background-color: #2a1a08; }
 }
 .frenzy-bg { animation: frenzy 0.6s ease-in-out infinite; }
+
+@keyframes diamond-frenzy {
+  0%,100% { background-color: #031525; }
+  50% { background-color: #06233d; }
+}
+.diamond-frenzy-bg { animation: diamond-frenzy 0.7s ease-in-out infinite; }
 
 /* ---- NEW PREMIUM ANIMATIONS ---- */
 
