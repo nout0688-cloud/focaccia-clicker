@@ -3518,6 +3518,60 @@ export default function App() {
     );
   };
 
+  const catchGolden = (byCat: boolean = false) => {
+    setGolden(null);
+    haptic.heavy();
+    doFlash('golden');
+    burstConfetti(['🫓', '⭐', '✨', '🌟', '💛']);
+    const roll = Math.random();
+    let bonus = 0;
+    let dGain = 0;
+    const curT = TRANSLATIONS[langRef.current];
+    if (roll < 0.45) {
+      const hasFrenzyUp = stateRef.current.vipUpgrades?.includes('vip_frenzy');
+      const dur = hasFrenzyUp ? 25 : 20;
+      const mult = hasFrenzyUp ? 8 : 7;
+      setFrenzy(dur);
+      addToast(
+        byCat
+          ? (langRef.current === 'uk' ? `🐾 ${catSkinInfo.nameUk} спіймав Золоту фокачу!` : `🐾 ${catSkinInfo.nameRu} поймал Золотую фокаччу!`)
+          : curT.toastFrenzy,
+        formatTemplate(curT.toastFrenzyDesc, mult, dur),
+        '🔥'
+      );
+    } else if (roll < 0.8) {
+      bonus = Math.max(cps * 60 * 3, clickPower * 200, 50);
+      addToast(
+        byCat
+          ? (langRef.current === 'uk' ? `🐾 ${catSkinInfo.nameUk} підібрав Золоту фокачу!` : `🐾 ${catSkinInfo.nameRu} подобрал Золотую фокаччу!`)
+          : curT.toastLuck,
+        formatTemplate(curT.toastLuckDesc, formatNum(bonus)),
+        '✨'
+      );
+    } else {
+      // Golden gives diamonds!
+      dGain = 2;
+      addToast(
+        byCat
+          ? (langRef.current === 'uk' ? `🐾 ${catSkinInfo.nameUk} знайшов діаманти у фокачі!` : `🐾 ${catSkinInfo.nameRu} нашел алмазы в фокачче!`)
+          : curT.toastDiamondTreasure,
+        formatTemplate(curT.toastDiamondTreasureDesc, dGain),
+        '💎'
+      );
+    }
+    const cur = stateRef.current;
+    const next: SaveState = {
+      ...cur,
+      focaccia: cur.focaccia + bonus,
+      total: cur.total + bonus,
+      diamonds: cur.diamonds + dGain,
+      goldenCaught: cur.goldenCaught + 1,
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+  };
+
   useEffect(() => {
     if (!state.cat?.unlocked) return;
 
@@ -3535,6 +3589,53 @@ export default function App() {
       setCatBubble(lang === 'uk' ? '😸 Дощ минув!' : '😸 Дождь прошёл!');
       const t = setTimeout(() => setCatBubble(null), 2500);
       return () => clearTimeout(t);
+    }
+
+    // ⭐ LV.5 CAT ABILITY: Auto-pickup Golden Focaccia!
+    const isCatLv5 = (state.cat?.level || 1) >= 5;
+    if (golden && isCatLv5 && (catState === 'idle' || catState === 'returning')) {
+      if (page === 'clicker') {
+        setCatPose('idle');
+        setCatState('chasing');
+        setCatBubble(lang === 'uk' ? '🌟 ЗОЛОТА ФОКАЧА!' : '🌟 ЗОЛОТАЯ ФОКАЧЧА!');
+        setCatFacing(golden.x > catPos.x ? -1 : 1);
+
+        const runDuration = catInfo.runDurationMs;
+        setCatPos({ x: golden.x, y: golden.y });
+
+        const reachTimer = setTimeout(() => {
+          setCatState('pouncing');
+          setCatBubble(lang === 'uk' ? '✨ ХАП ЗОЛОТО!' : '✨ ХАП ЗОЛОТО!');
+          catchGolden(true);
+
+          const returnTimer = setTimeout(() => {
+            setCatState('returning');
+            setCatFacing(82 > golden.x ? -1 : 1);
+            setCatBubble(lang === 'uk' ? '😸 Мур-золото!' : '😸 Мур-золото!');
+            setCatPos({ x: 82, y: 76 });
+
+            const idleTimer = setTimeout(() => {
+              setCatState('idle');
+              setCatFacing(1);
+              setCatBubble(null);
+            }, 1000);
+
+            return () => clearTimeout(idleTimer);
+          }, 500);
+
+          return () => clearTimeout(returnTimer);
+        }, runDuration);
+
+        return () => clearTimeout(reachTimer);
+      } else {
+        // Player is on other tab — Murchik still catches golden focaccia!
+        setCatPose('idle');
+        const bgReachTimer = setTimeout(() => {
+          catchGolden(true);
+        }, Math.min(1800, catInfo.runDurationMs + 400));
+
+        return () => clearTimeout(bgReachTimer);
+      }
     }
 
     if (pest && (catState === 'idle' || catState === 'returning')) {
@@ -3583,7 +3684,7 @@ export default function App() {
         return () => clearTimeout(bgReachTimer);
       }
     }
-  }, [pest?.id, activeEvent?.emoji, state.cat?.unlocked, catInfo.runDurationMs, page, catSkinInfo, lang]);
+  }, [pest?.id, golden, activeEvent?.emoji, state.cat?.unlocked, state.cat?.level, catInfo.runDurationMs, page, catSkinInfo, lang]);
 
   const petCat = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -5432,42 +5533,6 @@ export default function App() {
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
     };
   }, [stopHoldBuy]);
-
-  const catchGolden = () => {
-    setGolden(null);
-    haptic.heavy();
-    doFlash('golden');
-    burstConfetti(['🫓', '⭐', '✨', '🌟', '💛']);
-    const roll = Math.random();
-    let bonus = 0;
-    let dGain = 0;
-    const curT = TRANSLATIONS[langRef.current];
-    if (roll < 0.45) {
-      const hasFrenzyUp = stateRef.current.vipUpgrades?.includes('vip_frenzy');
-      const dur = hasFrenzyUp ? 25 : 20;
-      const mult = hasFrenzyUp ? 8 : 7;
-      setFrenzy(dur);
-      addToast(curT.toastFrenzy, formatTemplate(curT.toastFrenzyDesc, mult, dur), '🔥');
-    } else if (roll < 0.8) {
-      bonus = Math.max(cps * 60 * 3, clickPower * 200, 50);
-      addToast(curT.toastLuck, formatTemplate(curT.toastLuckDesc, formatNum(bonus)), '✨');
-    } else {
-      // Golden gives diamonds!
-      dGain = 2;
-      addToast(curT.toastDiamondTreasure, formatTemplate(curT.toastDiamondTreasureDesc, dGain), '💎');
-    }
-    const cur = stateRef.current;
-    const next: SaveState = {
-      ...cur,
-      focaccia: cur.focaccia + bonus,
-      total: cur.total + bonus,
-      diamonds: cur.diamonds + dGain,
-      goldenCaught: cur.goldenCaught + 1,
-    };
-    stateRef.current = next;
-    setState(next);
-    saveNow(next);
-  };
 
   const doPrestige = () => {
     if (prestigeGain < 1) return;
