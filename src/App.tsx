@@ -1139,6 +1139,12 @@ export default function App() {
   const [adminGiveUserTarget, setAdminGiveUserTarget] = useState('');
   const [adminGiveUserType, setAdminGiveUserType] = useState<'foc' | 'gem'>('gem');
   const [adminGiveUserAmount, setAdminGiveUserAmount] = useState('100');
+  const [adminDeductType, setAdminDeductType] = useState<'foc' | 'gem'>('foc');
+  const [adminDeductAmount, setAdminDeductAmount] = useState<string>('50000000');
+  const [adminDeductIncludeSelf, setAdminDeductIncludeSelf] = useState(false);
+  const [adminDeductUserTarget, setAdminDeductUserTarget] = useState('');
+  const [adminDeductUserType, setAdminDeductUserType] = useState<'foc' | 'gem'>('gem');
+  const [adminDeductUserAmount, setAdminDeductUserAmount] = useState('100');
 
   // ===== 🐱 BAKERY CAT STATE =====
   const [showCatModal, setShowCatModal] = useState(false);
@@ -4819,6 +4825,140 @@ export default function App() {
     }
   };
 
+  const handleAdminDeductAll = async (cur: 'foc' | 'gem', amount: number, includeSelf: boolean = false) => {
+    if (!isDevUser(tgUser?.id) || isAdminDistributing) return;
+    if (!amount || amount <= 0) {
+      addToast(
+        lang === 'uk' ? 'Помилка' : 'Ошибка',
+        lang === 'uk' ? 'Вкажіть коректну кількість' : 'Укажите корректное количество',
+        '⚠️'
+      );
+      return;
+    }
+    setIsAdminDistributing(true);
+    haptic.heavy();
+    try {
+      const res = await fetch(`${API_BASE}/api/reward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: tgUser?.id || ADMIN_ID,
+          action: 'deduct_all',
+          cur,
+          amount,
+          includeAdmin: includeSelf,
+        }),
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        haptic.warning();
+        addToast(
+          lang === 'uk' ? '⚠️ Списання виконано!' : '⚠️ Списание выполнено!',
+          lang === 'uk'
+            ? `Списано по -${cur === 'gem' ? `${amount} 💎` : `${formatNum(amount)} 🫓`} у ${data.count} гравців!`
+            : `Списано по -${cur === 'gem' ? `${amount} 💎` : `${formatNum(amount)} 🫓`} у ${data.count} игроков!`,
+          '⚠️'
+        );
+        if (includeSelf) {
+          setState((p) => {
+            const next = {
+              ...p,
+              focaccia: cur === 'foc' ? Math.max(0, p.focaccia - amount) : p.focaccia,
+              diamonds: cur === 'gem' ? Math.max(0, (p.diamonds || 0) - amount) : p.diamonds,
+            };
+            stateRef.current = next;
+            saveNow(next);
+            setTimeout(reportSync, 100);
+            return next;
+          });
+        }
+      } else {
+        addToast(
+          lang === 'uk' ? 'Помилка' : 'Ошибка',
+          data?.error || (lang === 'uk' ? 'Не вдалося списати' : 'Не удалось списать'),
+          '❌'
+        );
+      }
+    } catch (err: any) {
+      addToast(
+        lang === 'uk' ? 'Помилка мережі' : 'Ошибка сети',
+        err?.message || 'Network error',
+        '❌'
+      );
+    } finally {
+      setIsAdminDistributing(false);
+    }
+  };
+
+  const handleAdminDeductUser = async (target: string, cur: 'foc' | 'gem', amount: number) => {
+    if (!isDevUser(tgUser?.id) || isAdminDistributing) return;
+    if (!target.trim() || !amount || amount <= 0) {
+      addToast(
+        lang === 'uk' ? 'Помилка' : 'Ошибка',
+        lang === 'uk' ? 'Вкажіть гравця та коректну кількість' : 'Укажите игрока и корректное количество',
+        '⚠️'
+      );
+      return;
+    }
+    setIsAdminDistributing(true);
+    haptic.heavy();
+    try {
+      const res = await fetch(`${API_BASE}/api/reward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: tgUser?.id || ADMIN_ID,
+          action: 'deduct_user',
+          target: target.trim(),
+          cur,
+          amount,
+        }),
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        haptic.warning();
+        addToast(
+          lang === 'uk' ? '⚠️ Списано!' : '⚠️ Списано!',
+          lang === 'uk'
+            ? `Списано -${cur === 'gem' ? `${amount} 💎` : `${formatNum(amount)} 🫓`} у ${target}`
+            : `Списано -${cur === 'gem' ? `${amount} 💎` : `${formatNum(amount)} 🫓`} у ${target}`,
+          '⚠️'
+        );
+        const cleanTgt = target.trim().replace(/^@/, '').toLowerCase();
+        const myUname = (tgUser?.username || '').toLowerCase();
+        const isSelf = String(data.targetId) === String(tgUser?.id || ADMIN_ID) || (myUname && cleanTgt === myUname);
+        if (isSelf) {
+          setState((p) => {
+            const next = {
+              ...p,
+              focaccia: cur === 'foc' ? Math.max(0, p.focaccia - amount) : p.focaccia,
+              diamonds: cur === 'gem' ? Math.max(0, (p.diamonds || 0) - amount) : p.diamonds,
+            };
+            stateRef.current = next;
+            saveNow(next);
+            setTimeout(reportSync, 100);
+            return next;
+          });
+        }
+        setAdminDeductUserTarget('');
+      } else {
+        addToast(
+          lang === 'uk' ? 'Помилка' : 'Ошибка',
+          data?.error || (lang === 'uk' ? 'Гравця не знайдено' : 'Игрок не найден'),
+          '❌'
+        );
+      }
+    } catch (err: any) {
+      addToast(
+        lang === 'uk' ? 'Помилка мережі' : 'Ошибка сети',
+        err?.message || 'Network error',
+        '❌'
+      );
+    } finally {
+      setIsAdminDistributing(false);
+    }
+  };
+
   const handleAdminResetSkinsAll = async () => {
     if (!isDevUser(tgUser?.id) || isAdminDistributing) return;
     setIsAdminDistributing(true);
@@ -8070,6 +8210,139 @@ export default function App() {
                 </button>
               </div>
 
+              {/* Section 1.5: Mass Deduction (Забрати у ВСІХ гравців) */}
+              <div className="glass-card rounded-2xl p-3.5 border border-red-500/30 bg-red-950/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-black text-red-300">
+                    <span>⚠️</span>
+                    <span>{lang === 'uk' ? 'Забрати у ВСІХ гравців' : 'Забрать у ВСЕХ игроков'}</span>
+                  </div>
+                  <span className="text-[10px] text-red-400/80 font-mono">
+                    {adminDeductType === 'foc' ? '🫓 Фокачі' : '💎 Алмази'}
+                  </span>
+                </div>
+
+                {/* Currency selector toggle */}
+                <div className="grid grid-cols-2 gap-1.5 bg-black/40 p-1 rounded-xl border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => { setAdminDeductType('foc'); setAdminDeductAmount('50000000'); haptic.selection(); }}
+                    className={cn(
+                      'py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                      adminDeductType === 'foc'
+                        ? 'bg-gradient-to-r from-red-600 to-amber-600 text-white shadow-md shadow-red-500/20'
+                        : 'text-red-300/60 hover:text-red-200'
+                    )}
+                  >
+                    <span>🫓</span>
+                    <span>{lang === 'uk' ? 'Фокачі' : 'Фокаччи'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setAdminDeductType('gem'); setAdminDeductAmount('100'); haptic.selection(); }}
+                    className={cn(
+                      'py-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                      adminDeductType === 'gem'
+                        ? 'bg-gradient-to-r from-purple-600 to-red-600 text-white shadow-md shadow-purple-500/20'
+                        : 'text-purple-300/60 hover:text-purple-200'
+                    )}
+                  >
+                    <span>💎</span>
+                    <span>{lang === 'uk' ? 'Алмази' : 'Алмазы'}</span>
+                  </button>
+                </div>
+
+                {/* Amount presets */}
+                <div className="grid grid-cols-3 gap-1.5">
+                  {adminDeductType === 'foc' ? (
+                    <>
+                      {['10000000', '50000000', '100000000', '500000000', '1000000000', '5000000000'].map((amt) => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => { setAdminDeductAmount(amt); haptic.selection(); }}
+                          className={cn(
+                            'py-1.5 px-2 rounded-xl text-[11px] font-black border transition-all active:scale-95 cursor-pointer',
+                            adminDeductAmount === amt
+                              ? 'bg-red-500/30 border-red-400 text-red-200 shadow-sm'
+                              : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
+                          )}
+                        >
+                          -{formatNum(Number(amt))}
+                        </button>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      {['25', '50', '100', '250', '500', '1000'].map((amt) => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => { setAdminDeductAmount(amt); haptic.selection(); }}
+                          className={cn(
+                            'py-1.5 px-2 rounded-xl text-[11px] font-black border transition-all active:scale-95 cursor-pointer',
+                            adminDeductAmount === amt
+                              ? 'bg-red-500/30 border-red-400 text-red-200 shadow-sm'
+                              : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
+                          )}
+                        >
+                          -{amt} 💎
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+
+                {/* Custom amount input */}
+                <div>
+                  <label className="text-[10px] text-red-300/80 font-bold block mb-1">
+                    {lang === 'uk' ? 'Кількість для списання:' : 'Количество для списания:'}
+                  </label>
+                  <input
+                    type="number"
+                    value={adminDeductAmount}
+                    onChange={(e) => setAdminDeductAmount(e.target.value)}
+                    placeholder="1000000"
+                    className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-sm font-mono text-white placeholder-white/30 focus:border-red-400 outline-none"
+                  />
+                </div>
+
+                {/* Toggle include admin self */}
+                <label className="flex items-center gap-2 cursor-pointer select-none text-[11px] text-white/80 bg-black/30 p-2 rounded-xl border border-white/5">
+                  <input
+                    type="checkbox"
+                    checked={adminDeductIncludeSelf}
+                    onChange={(e) => setAdminDeductIncludeSelf(e.target.checked)}
+                    className="rounded accent-red-500 w-4 h-4 cursor-pointer"
+                  />
+                  <span>
+                    {lang === 'uk' ? 'Списати також і у мого акаунта (адміна)' : 'Списать также и у моего аккаунта (админа)'}
+                  </span>
+                </label>
+
+                {/* Execute deduct button */}
+                <button
+                  type="button"
+                  disabled={isAdminDistributing || !Number(adminDeductAmount)}
+                  onClick={() => handleAdminDeductAll(adminDeductType, Number(adminDeductAmount), adminDeductIncludeSelf)}
+                  className={cn(
+                    'w-full py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-98',
+                    isAdminDistributing
+                      ? 'bg-white/10 text-white/40 cursor-wait'
+                      : 'bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:brightness-110 text-white shadow-red-500/30 cursor-pointer'
+                  )}
+                >
+                  <span>{isAdminDistributing ? '⏳' : '⚠️'}</span>
+                  <span>
+                    {isAdminDistributing
+                      ? (lang === 'uk' ? 'Списую...' : 'Списываю...')
+                      : (lang === 'uk'
+                          ? `Забрати у ВСІХ по -${adminDeductType === 'gem' ? `${adminDeductAmount} 💎` : `${formatNum(Number(adminDeductAmount) || 0)} 🫓`}`
+                          : `Забрать у ВСЕХ по -${adminDeductType === 'gem' ? `${adminDeductAmount} 💎` : `${formatNum(Number(adminDeductAmount) || 0)} 🫓`}`)}
+                  </span>
+                </button>
+              </div>
+
               {/* Section 2: Quick Give to Self */}
               <div className="glass-card rounded-2xl p-3.5 border border-white/10 space-y-2.5">
                 <div className="text-xs font-black text-amber-200 flex items-center gap-1.5">
@@ -8194,6 +8467,96 @@ export default function App() {
                     {lang === 'uk'
                       ? `Нарахувати ${adminGiveUserType === 'gem' ? `+${adminGiveUserAmount} 💎` : `+${formatNum(Number(adminGiveUserAmount) || 0)} 🫓`}`
                       : `Начислить ${adminGiveUserType === 'gem' ? `+${adminGiveUserAmount} 💎` : `+${formatNum(Number(adminGiveUserAmount) || 0)} 🫓`}`}
+                  </span>
+                </button>
+              </div>
+
+              {/* Section 2.6: Deduct from specific player */}
+              <div className="glass-card rounded-2xl p-3.5 border border-red-500/30 bg-red-950/15 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-black text-red-300 flex items-center gap-1.5">
+                    <span>👤</span>
+                    <span>{lang === 'uk' ? 'Забрати у конкретного гравця' : 'Забрать у конкретного игрока'}</span>
+                  </div>
+                  <span className="text-[10px] text-red-400/80 font-mono">
+                    {adminDeductUserType === 'gem' ? '💎 Алмази' : '🫓 Фокачі'}
+                  </span>
+                </div>
+
+                {/* Target input */}
+                <div>
+                  <label className="text-[10px] text-red-300/80 font-bold block mb-1">
+                    {lang === 'uk' ? 'Гравець (@username або Telegram ID):' : 'Игрок (@username или Telegram ID):'}
+                  </label>
+                  <input
+                    type="text"
+                    value={adminDeductUserTarget}
+                    onChange={(e) => setAdminDeductUserTarget(e.target.value)}
+                    placeholder="@username або 1975429762"
+                    className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-white/30 focus:border-red-400 outline-none"
+                  />
+                </div>
+
+                {/* Currency & Amount row */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-red-300/80 font-bold block mb-1">
+                      {lang === 'uk' ? 'Валюта:' : 'Валюта:'}
+                    </label>
+                    <div className="grid grid-cols-2 gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => { setAdminDeductUserType('gem'); setAdminDeductUserAmount('100'); }}
+                        className={cn(
+                          'py-1.5 rounded-lg text-xs font-black transition flex items-center justify-center gap-1 cursor-pointer',
+                          adminDeductUserType === 'gem'
+                            ? 'bg-purple-600 text-white shadow'
+                            : 'text-purple-300/60 hover:text-purple-200'
+                        )}
+                      >
+                        <span>💎</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setAdminDeductUserType('foc'); setAdminDeductUserAmount('50000000'); }}
+                        className={cn(
+                          'py-1.5 rounded-lg text-xs font-black transition flex items-center justify-center gap-1 cursor-pointer',
+                          adminDeductUserType === 'foc'
+                            ? 'bg-red-500 text-white shadow'
+                            : 'text-red-300/60 hover:text-red-200'
+                        )}
+                      >
+                        <span>🫓</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-red-300/80 font-bold block mb-1">
+                      {lang === 'uk' ? 'Кількість:' : 'Количество:'}
+                    </label>
+                    <input
+                      type="number"
+                      value={adminDeductUserAmount}
+                      onChange={(e) => setAdminDeductUserAmount(e.target.value)}
+                      placeholder="100"
+                      className="w-full bg-black/60 border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white placeholder-white/30 focus:border-red-400 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Execute button */}
+                <button
+                  type="button"
+                  disabled={isAdminDistributing || !adminDeductUserTarget.trim() || !Number(adminDeductUserAmount)}
+                  onClick={() => handleAdminDeductUser(adminDeductUserTarget, adminDeductUserType, Number(adminDeductUserAmount))}
+                  className="w-full py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-2 bg-gradient-to-r from-red-600 via-rose-600 to-red-700 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed text-white shadow-md shadow-red-500/20 active:scale-98 transition cursor-pointer"
+                >
+                  <span>{isAdminDistributing ? '⏳' : '⚠️'}</span>
+                  <span>
+                    {lang === 'uk'
+                      ? `Списати ${adminDeductUserType === 'gem' ? `-${adminDeductUserAmount} 💎` : `-${formatNum(Number(adminDeductUserAmount) || 0)} 🫓`}`
+                      : `Списать ${adminDeductUserType === 'gem' ? `-${adminDeductUserAmount} 💎` : `-${formatNum(Number(adminDeductUserAmount) || 0)} 🫓`}`}
                   </span>
                 </button>
               </div>
