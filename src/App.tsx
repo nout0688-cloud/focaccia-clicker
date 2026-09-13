@@ -48,8 +48,13 @@ import {
 import goldenImg from './assets/golden.png';
 import monoGuideImg from './assets/mono-guide.jpg';
 import catImg from './assets/cat.png';
+import catChefImg from './assets/cat_chef.png';
 import catBonyaImg from './assets/cat_bonya.png';
+import catShockedImg from './assets/cat_shocked.png';
 import catBambassImg from './assets/cat_bambass.png';
+import catLordImg from './assets/cat_lord.png';
+import catCosmoImg from './assets/cat_cosmo.png';
+import catGoldImg from './assets/cat_gold.png';
 import catLickingImg from './assets/cat_licking.png';
 import catSleepingImg from './assets/cat_sleeping.png';
 import repairKitImg from './assets/repair_kit.png';
@@ -1758,8 +1763,13 @@ export default function App() {
   }, [state.cat?.skin]);
 
   const activeCatImg = useMemo(() => {
+    if (state.cat?.skin === 'chef') return catChefImg;
     if (state.cat?.skin === 'bonya') return catBonyaImg;
+    if (state.cat?.skin === 'shocked') return catShockedImg;
     if (state.cat?.skin === 'bambass') return catBambassImg;
+    if (state.cat?.skin === 'lord') return catLordImg;
+    if (state.cat?.skin === 'cosmo') return catCosmoImg;
+    if (state.cat?.skin === 'gold') return catGoldImg;
     if (catPose === 'sleeping') return catSleepingImg;
     if (catPose === 'licking') return catLickingImg;
     return catImg;
@@ -1784,8 +1794,13 @@ export default function App() {
 
 
   const getCatSkinImg = (skinId: string) => {
+    if (skinId === 'chef') return catChefImg;
     if (skinId === 'bonya') return catBonyaImg;
+    if (skinId === 'shocked') return catShockedImg;
     if (skinId === 'bambass') return catBambassImg;
+    if (skinId === 'lord') return catLordImg;
+    if (skinId === 'cosmo') return catCosmoImg;
+    if (skinId === 'gold') return catGoldImg;
     return catImg;
   };
 
@@ -7069,22 +7084,22 @@ export default function App() {
                       <span>{lang === 'uk' ? 'Гардероб кота' : 'Гардероб кота'}</span>
                     </h4>
                     <span className="text-[10px] text-amber-300/80 font-bold">
-                      {lang === 'uk' ? 'Скіни з 3 рівня за фокачі' : 'Скины с 3 уровня за фокаччи'}
+                      {lang === 'uk' ? 'Скіни від Lv.2 за фокачі' : 'Скины от Lv.2 за фокаччи'}
                     </span>
                   </div>
 
-                  {/* Lock notice if level < 3 */}
-                  {(state.cat.level || 1) < 3 && (
+                  {/* Lock notice if level < 2 */}
+                  {(state.cat.level || 1) < 2 && (
                     <div className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-500/40 flex items-center gap-2.5">
                       <span className="text-lg">🔒</span>
                       <div className="text-[11px] leading-tight text-stone-300">
                         <span className="font-bold text-amber-300">
-                          {lang === 'uk' ? 'Скіни заблоковано (потрібен Lv.3)' : 'Скины заблокированы (нужен Lv.3)'}
+                          {lang === 'uk' ? 'Скіни заблоковано (потрібен Lv.2)' : 'Скины заблокированы (нужен Lv.2)'}
                         </span>
                         <br />
                         {lang === 'uk'
-                          ? `Прокачайте кота до 3 рівня (зараз Lv.${state.cat.level}), щоб відкрити Боню та Бамбасса!`
-                          : `Прокачайте кота до 3 уровня (сейчас Lv.${state.cat.level}), чтобы открыть Боню и Бамбасса!`}
+                          ? `Прокачайте кота до 2 рівня (зараз Lv.${state.cat.level}), щоб відкривати нові скіни!`
+                          : `Прокачайте кота до 2 уровня (сейчас Lv.${state.cat.level}), чтобы открывать новые скины!`}
                       </div>
                     </div>
                   )}
