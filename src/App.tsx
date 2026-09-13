@@ -55,6 +55,7 @@ import catBonyaImg from './assets/cat_bonya.png';
 import catShockedImg from './assets/cat_shocked.png';
 import catBambassImg from './assets/cat_bambass.png';
 import catKotostImg from './assets/cat_kotost.png';
+import catNochkaImg from './assets/cat_nochka.png';
 import catLordImg from './assets/cat_lord.png';
 import catCosmoImg from './assets/cat_cosmo.png';
 import catGoldImg from './assets/cat_gold.png';
@@ -1779,6 +1780,7 @@ export default function App() {
     if (state.cat?.skin === 'shocked') return catShockedImg;
     if (state.cat?.skin === 'bambass') return catBambassImg;
     if (state.cat?.skin === 'kotost') return catKotostImg;
+    if (state.cat?.skin === 'nochka') return catNochkaImg;
     if (state.cat?.skin === 'lord') return catLordImg;
     if (state.cat?.skin === 'cosmo') return catCosmoImg;
     if (state.cat?.skin === 'gold') return catGoldImg;
@@ -1811,6 +1813,7 @@ export default function App() {
     if (skinId === 'shocked') return catShockedImg;
     if (skinId === 'bambass') return catBambassImg;
     if (skinId === 'kotost') return catKotostImg;
+    if (skinId === 'nochka') return catNochkaImg;
     if (skinId === 'lord') return catLordImg;
     if (skinId === 'cosmo') return catCosmoImg;
     if (skinId === 'gold') return catGoldImg;
