@@ -1232,7 +1232,11 @@ export default function App() {
       .then((data) => {
         if (typeof data?.karma === 'number') {
           setKarma(data.karma);
-          setState((p) => ({ ...p, karma: data.karma }));
+          if (stateRef.current.karma !== data.karma) {
+            stateRef.current.karma = data.karma;
+            setState((p) => ({ ...p, karma: data.karma }));
+            saveNow({ ...stateRef.current, karma: data.karma });
+          }
         }
         if (data?.rank) setMyRank(data.rank);
         if (data?.ranks) {
@@ -1332,7 +1336,14 @@ export default function App() {
               }
             }
             if (!uid || uid === 0 || uid === '0') return;
-            if (typeof data?.karma === 'number') setKarma(data.karma);
+            if (typeof data?.karma === 'number') {
+              setKarma(data.karma);
+              if (stateRef.current.karma !== data.karma) {
+                stateRef.current.karma = data.karma;
+                setState((p) => ({ ...p, karma: data.karma }));
+                saveNow({ ...stateRef.current, karma: data.karma });
+              }
+            }
 
             // 🔊 Звуковий тролінг (рофл від адміна)
             if (data?.roflSound) {
