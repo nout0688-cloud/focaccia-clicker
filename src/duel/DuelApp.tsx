@@ -180,7 +180,19 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   const settled = useRef(false);
   const [introPhase, setIntroPhase] = useState<'' | 'p1' | 'p2' | 'vs' | 'fade'>('');
   const introStartedFor = useRef('');
-  const [userSave, setUserSave] = useState<any>(null);
+  const getInitialSave = () => {
+    try {
+      const raw = window.localStorage.getItem(SAVE_KEY);
+      if (raw) return JSON.parse(raw);
+      const bRaw = window.localStorage.getItem('focaccia-balance');
+      if (bRaw) {
+        const b = JSON.parse(bRaw);
+        return { focaccia: Number(b.f) || 0, diamonds: Number(b.d) || 0 };
+      }
+    } catch {}
+    return null;
+  };
+  const [userSave, setUserSave] = useState<any>(getInitialSave);
   const [insufficientFunds, setInsufficientFunds] = useState<string | null>(null);
   const [, forceTick] = useState(0);
 
@@ -198,6 +210,36 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   const pendingRef = useRef(0);
   const inFlight = useRef(false);
   const offsetRef = useRef(0);
+
+  // Підтримка параметру target з профілю гравця
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const targetParam = searchParams.get('target');
+    if (targetParam && (!duelId || duelId === 'lobby')) {
+      fetch(`${API}?action=find_player&q=${encodeURIComponent(targetParam)}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data?.ok && data.player) {
+            setSelectedOpp(data.player);
+            setOppMode('search');
+          }
+        })
+        .catch(() => {});
+    }
+  }, [duelId]);
+
+  // Миттєва добровільна здача (forfeit)
+  const handleForfeitDuel = async () => {
+    if (!duelId || !meId) return;
+    haptic.heavy();
+    try {
+      await fetch(API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'forfeit', duelId, userId: meId }),
+      });
+    } catch { /* */ }
+  };
 
   useEffect(() => {
     tg?.ready();
@@ -488,12 +530,12 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
           if (data.error === 'not a player' && data.isOpen) return;
           setError(
             data.error === 'not a player'
-              ? 'Ты не участник этой дуэли'
+              ? 'Ти не є учасником цієї дуелі'
               : data.error === 'expired'
-              ? 'Время ожидания истекло (5 мин)'
+              ? 'Час очікування вичерпано (5 хв)'
               : data.error === 'not found'
-              ? 'Дуэль не найдена или завершена'
-              : `Ошибка: ${data.error}`
+              ? 'Дуель не знайдено або завершено'
+              : `Помилка: ${data.error}`
           );
           setStage('error');
           return;
@@ -594,6 +636,17 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
 
     const checkAndDeduct = async () => {
       let activeSave = userSave;
+      if (!activeSave) {
+        try {
+          const raw = window.localStorage.getItem(SAVE_KEY);
+          if (raw) activeSave = JSON.parse(raw);
+        } catch {}
+      }
+      if (!activeSave) {
+        // Чекаємо завантаження сейву
+        return;
+      }
+
       const gem = (snapRef.current?.stakeCur || stakeCur) === 'gem';
       let balance = gem ? Math.floor(Number(activeSave?.diamonds) || 0) : Math.floor(Number(activeSave?.focaccia) || 0);
 
@@ -606,7 +659,6 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
             const sVal = gem ? Math.floor(Number(sData.diamonds) || 0) : Math.floor(Number(sData.focaccia) || 0);
             if (sVal >= curStake) {
               balance = sVal;
-              if (!activeSave) activeSave = {};
               if (gem) activeSave.diamonds = sVal;
               else activeSave.focaccia = sVal;
               setUserSave({ ...activeSave });
@@ -628,7 +680,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
       }
 
       // Списання ставки з балансу
-      const nextSave = activeSave ? { ...activeSave } : {};
+      const nextSave = { ...activeSave };
       if (gem) nextSave.diamonds = Math.max(0, (Number(nextSave.diamonds) || 0) - curStake);
       else nextSave.focaccia = Math.max(0, (Number(nextSave.focaccia) || 0) - curStake);
       nextSave.lastSave = Date.now();
@@ -667,9 +719,14 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
         const curPaid = (st && st.myPaid && st.myPaid > 0) ? st.myPaid : (myPaid > 0 ? myPaid : (escrowDone.current ? curStake : 0));
         const gem = (st?.stakeCur || stakeCur) === 'gem';
 
-        // ДУЕЛЬ СКАСОВАНО АБО НЕДОСТАТНЬО КОШТІВ: ЖОДНИХ ВИПЛАТ БАНКУ!
+        // Якщо ескроу не списувався (наприклад, неявка суперника до старту бою) — нічого не нараховуємо і не списуємо
+        if (!escrowDone.current && curPaid <= 0) {
+          return;
+        }
+
+        // ДУЕЛЬ СКАСОВАНО / НЕДОСТАТНЬО КОШТІВ / НЕЯВКА: ЖОДНИХ ВИПЛАТ БАНКУ!
         // Тільки повернення власної списаної ставки (якщо вона була списана).
-        if (stage === 'cancelled' || reason === 'no_funds' || !winner || winner === 'null') {
+        if (stage === 'cancelled' || reason === 'no_funds' || reason === 'no_show' || !winner || winner === 'null') {
           if (curPaid > 0) {
             if (gem) s.diamonds = (s.diamonds || 0) + curPaid;
             else s.focaccia = (s.focaccia || 0) + curPaid;
@@ -774,7 +831,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   // ==========================================
   if (error) {
     return (
-      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6 text-center select-none">
+      <div className="h-[100dvh] bg-[#0d0a04] flex items-center justify-center p-6 text-center select-none safe-top safe-bottom">
         <div className="max-w-xs w-full">
           <div className="text-5xl mb-3">⚠️</div>
           <p className="text-amber-200 font-bold mb-4">{error}</p>
@@ -799,7 +856,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
 
   if (insufficientFunds) {
     return (
-      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6 select-none">
+      <div className="h-[100dvh] bg-[#0d0a04] flex items-center justify-center p-6 select-none safe-top safe-bottom">
         <div className="text-center w-full max-w-xs">
           <div className="text-6xl mb-3">💸</div>
           <h2 className="text-xl font-black text-red-400 mb-2">Недостатньо коштів!</h2>
@@ -822,7 +879,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
     const sym = openPreview.stakeCur === 'gem' ? '💎' : '🫓';
     const canAfford = openPreview.stake <= (openPreview.stakeCur === 'gem' ? myDiamonds : myFocaccia);
     return (
-      <div className="h-screen bg-[#0d0a04] text-amber-100 flex flex-col justify-between p-5 select-none overflow-y-auto">
+      <div className="h-[100dvh] bg-[#0d0a04] text-amber-100 flex flex-col justify-between p-5 select-none overflow-y-auto safe-top safe-bottom">
         <div className="flex items-center justify-between">
           <button onClick={resetToLobby} className="px-3 py-1.5 rounded-xl bg-stone-900 border border-stone-800 text-xs font-bold text-stone-400 flex items-center gap-1">
             <span>✕</span> <span>Лобі</span>
@@ -1257,7 +1314,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   // ==========================================
   if (stage === 'challenge' || stage === 'accepted') {
     return (
-      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6 text-center select-none">
+      <div className="h-[100dvh] bg-[#0d0a04] flex items-center justify-center p-6 text-center select-none safe-top safe-bottom">
         <div className="max-w-xs w-full space-y-4">
           <div className="text-6xl animate-bob">⏳</div>
 
@@ -1358,7 +1415,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
     const isNoFunds = reason === 'no_funds';
     const curPaid = myPaid > 0 ? myPaid : (escrowDone.current ? stake : 0);
     return (
-      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6 select-none">
+      <div className="h-[100dvh] bg-[#0d0a04] flex items-center justify-center p-6 select-none safe-top safe-bottom">
         <div className="text-center w-full max-w-xs">
           <div className="text-7xl mb-3">{isNoFunds ? '💸' : '❌'}</div>
           <h2 className="text-2xl font-black text-amber-200 mb-2">
@@ -1369,6 +1426,8 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
               ? 'У одного з гравців недостатньо коштів для ставки. Дуель скасовано, кошти не списано.'
               : reason === 'timeout'
               ? 'Час очікування вичерпано.'
+              : reason === 'no_show'
+              ? 'Суперник не з\'явився у дуелі. Виклик скасовано.'
               : 'Дуель було скасовано.'}
           </p>
           {curPaid > 0 && (
@@ -1407,7 +1466,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
       reason === 'time' ? '⏱ Час вийшов' :
       `⚡ Хто швидше — ${goal} фокач!`;
     return (
-      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6 select-none">
+      <div className="h-[100dvh] bg-[#0d0a04] flex items-center justify-center p-6 select-none safe-top safe-bottom">
         <div className="text-center w-full max-w-xs">
           <div className="text-7xl mb-3">{draw ? '🤝' : iWin ? '🏆' : '💔'}</div>
           <h1 className={cn('text-3xl font-black mb-2', draw ? 'text-amber-200' : iWin ? 'text-emerald-300' : 'text-red-300')}>
@@ -1470,7 +1529,7 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   // ==========================================
   if (stage === 'paused') {
     return (
-      <div className="h-screen bg-[#0d0a04] flex items-center justify-center p-6 select-none">
+      <div className="h-[100dvh] bg-[#0d0a04] flex items-center justify-center p-6 select-none safe-top safe-bottom">
         <div className="text-center">
           <div className="text-6xl mb-3 animate-bob">⏸</div>
           <h2 className="text-xl font-black text-amber-100 mb-2">Суперник вийшов!</h2>
@@ -1493,18 +1552,22 @@ export default function DuelApp({ duelId: initialDuelId }: { duelId: string }) {
   const isDanger = oppScore >= goal * 0.85 && oppScore > displayScore;
 
   return (
-    <div className="h-screen bg-[#0d0a04] text-amber-50 select-none overflow-hidden flex flex-col justify-between">
+    <div className="h-[100dvh] bg-[#0d0a04] text-amber-50 select-none overflow-hidden flex flex-col justify-between safe-top safe-bottom">
       {/* 1. TOP BAR: TIMER + STAKES + FORFEIT */}
       <div className="shrink-0 glass border-b border-amber-500/20 px-3 py-2 flex items-center justify-between gap-2">
         <button
           type="button"
-          onClick={() => {
-            if (stage === 'live' && !confirm('Ти точно хочеш здатися у цій дуелі? Твоя ставка згорить!')) return;
-            handleCancelDuel();
+          onClick={async () => {
+            if (stage === 'live' || stage === 'countdown' || stage === 'paused') {
+              if (!confirm('Ти точно хочеш здатися у цій дуелі? Твоя ставка згорить!')) return;
+              await handleForfeitDuel();
+            } else {
+              await handleCancelDuel();
+            }
           }}
           className="px-2.5 py-1 rounded-xl bg-stone-900 border border-stone-800 text-[11px] font-black text-amber-400 hover:text-amber-200 active:scale-95 transition-all cursor-pointer"
         >
-          {stage === 'live' ? '🏳️ Здатися' : '← Лобі'}
+          {stage === 'live' || stage === 'countdown' || stage === 'paused' ? '🏳️ Здатися' : '← Лобі'}
         </button>
 
         {/* Pot badge */}
