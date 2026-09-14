@@ -780,6 +780,50 @@ interface ActiveEvent {
 const SAVE_KEY = 'focaccia-clicker-v1';
 const MAX_ENERGY_BASE = 50;
 
+function getPermanentCosmetics(): {
+  ownedFrames: string[];
+  ownedNameColors: string[];
+  equippedFrame: string;
+  equippedNameColor: string;
+  showcase: string[];
+} {
+  const def = {
+    ownedFrames: ['frame_default'],
+    ownedNameColors: ['name_default'],
+    equippedFrame: 'frame_default',
+    equippedNameColor: 'name_default',
+    showcase: ['clicks', 'total', 'diamonds'],
+  };
+  try {
+    const raw = window.localStorage.getItem('focaccia_owned_cosmetics');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        ownedFrames: Array.from(new Set(['frame_default', ...(Array.isArray(parsed.ownedFrames) ? parsed.ownedFrames : [])])),
+        ownedNameColors: Array.from(new Set(['name_default', ...(Array.isArray(parsed.ownedNameColors) ? parsed.ownedNameColors : [])])),
+        equippedFrame: parsed.equippedFrame || 'frame_default',
+        equippedNameColor: parsed.equippedNameColor || 'name_default',
+        showcase: Array.isArray(parsed.showcase) && parsed.showcase.length > 0 ? parsed.showcase : def.showcase,
+      };
+    }
+  } catch {}
+  return def;
+}
+
+function savePermanentCosmetics(c: any) {
+  try {
+    if (!c) return;
+    const toSave = {
+      ownedFrames: Array.from(new Set(['frame_default', ...(Array.isArray(c.ownedFrames) ? c.ownedFrames : [])])),
+      ownedNameColors: Array.from(new Set(['name_default', ...(Array.isArray(c.ownedNameColors) ? c.ownedNameColors : [])])),
+      equippedFrame: c.equippedFrame || 'frame_default',
+      equippedNameColor: c.equippedNameColor || 'name_default',
+      showcase: Array.isArray(c.showcase) && c.showcase.length > 0 ? c.showcase : ['clicks', 'total', 'diamonds'],
+    };
+    window.localStorage.setItem('focaccia_owned_cosmetics', JSON.stringify(toSave));
+  } catch {}
+}
+
 const defaultState = (): SaveState => ({
   focaccia: 0,
   total: 0,
@@ -803,13 +847,7 @@ const defaultState = (): SaveState => ({
   lang: 'uk',
   lastReset: Date.now(),
   lastSave: Date.now(),
-  cosmetics: {
-    ownedFrames: ['frame_default'],
-    ownedNameColors: ['name_default'],
-    equippedFrame: 'frame_default',
-    equippedNameColor: 'name_default',
-    showcase: ['clicks', 'total', 'diamonds'],
-  },
+  cosmetics: getPermanentCosmetics(),
   skinsResetVersion: 2,
   lastSkinsReset: 0,
   skins: {
@@ -848,6 +886,7 @@ async function loadState(): Promise<SaveState> {
           try { window.localStorage.setItem(SAVE_KEY, raw); } catch {}
         } else if (snapRes?.ok && snapRes.leaderboardRecovery) {
           const rec = snapRes.leaderboardRecovery;
+          const permCosm = getPermanentCosmetics();
           const recovered: SaveState = {
             ...defaultState(),
             total: rec.total || 0,
@@ -856,6 +895,13 @@ async function loadState(): Promise<SaveState> {
             diamonds: rec.diamonds || 0,
             clicks: rec.clicks || 0,
             bossesDefeated: rec.bossesDefeated || 0,
+            cosmetics: {
+              ownedFrames: Array.from(new Set(['frame_default', ...(rec.ownedFrames || []), ...permCosm.ownedFrames])),
+              ownedNameColors: Array.from(new Set(['name_default', ...(rec.ownedColors || []), ...permCosm.ownedNameColors])),
+              equippedFrame: rec.frame || permCosm.equippedFrame || 'frame_default',
+              equippedNameColor: rec.color || permCosm.equippedNameColor || 'name_default',
+              showcase: rec.showcase || permCosm.showcase,
+            },
             lastSave: Date.now(),
             lastReset: Date.now(),
           };
@@ -886,13 +932,33 @@ async function loadState(): Promise<SaveState> {
       lastReset: Math.max(1788541921215, Number(parsed.lastReset) || Date.now()),
       skinsResetVersion: SKINS_RESET_VER,
       lastSkinsReset: Number(parsed.lastSkinsReset) || 0,
-      cosmetics: {
-        ...def.cosmetics!,
-        ...(parsed.cosmetics || {}),
-        ownedFrames: parsed.cosmetics?.ownedFrames?.length ? parsed.cosmetics.ownedFrames : def.cosmetics!.ownedFrames,
-        ownedNameColors: parsed.cosmetics?.ownedNameColors?.length ? parsed.cosmetics.ownedNameColors : def.cosmetics!.ownedNameColors,
-        showcase: parsed.cosmetics?.showcase?.length ? parsed.cosmetics.showcase : def.cosmetics!.showcase,
-      },
+      cosmetics: (() => {
+        const perm = getPermanentCosmetics();
+        const frames = Array.from(new Set([
+          'frame_default',
+          ...perm.ownedFrames,
+          ...(Array.isArray(parsed.cosmetics?.ownedFrames) ? parsed.cosmetics.ownedFrames : [])
+        ]));
+        const colors = Array.from(new Set([
+          'name_default',
+          ...perm.ownedNameColors,
+          ...(Array.isArray(parsed.cosmetics?.ownedNameColors) ? parsed.cosmetics.ownedNameColors : [])
+        ]));
+        const eqFrame = parsed.cosmetics?.equippedFrame || perm.equippedFrame || 'frame_default';
+        const eqColor = parsed.cosmetics?.equippedNameColor || perm.equippedNameColor || 'name_default';
+        const showcase = Array.isArray(parsed.cosmetics?.showcase) && parsed.cosmetics.showcase.length > 0
+          ? parsed.cosmetics.showcase
+          : perm.showcase;
+        const res = {
+          ownedFrames: frames,
+          ownedNameColors: colors,
+          equippedFrame: frames.includes(eqFrame) ? eqFrame : 'frame_default',
+          equippedNameColor: colors.includes(eqColor) ? eqColor : 'name_default',
+          showcase,
+        };
+        savePermanentCosmetics(res);
+        return res;
+      })(),
       skins: {
         owned: ownedSkins,
         equipped: equippedSkin,
@@ -1248,6 +1314,8 @@ export default function App() {
         showcase: cur.cosmetics?.showcase || ['clicks', 'total', 'diamonds'],
         frame: cur.cosmetics?.equippedFrame || 'frame_default',
         color: cur.cosmetics?.equippedNameColor || 'name_default',
+        ownedFrames: cur.cosmetics?.ownedFrames || ['frame_default'],
+        ownedColors: cur.cosmetics?.ownedNameColors || ['name_default'],
         avatar: tgUser.photo_url || (tgUser.username ? `https://t.me/i/userpic/320/${tgUser.username}.jpg` : ''),
         clientKarma: cur.karma ?? karma,
         offlineEvents: offEvents.length > 0 ? offEvents : undefined,
@@ -1292,14 +1360,17 @@ export default function App() {
 
   /* ---- Init ---- */
   useEffect(() => {
+    let mounted = true;
     if (tg) { tg.ready(); tg.expand(); }
     // Ref for the admin polling interval so it can be cleared on unmount
     let adminIv: ReturnType<typeof setInterval> | undefined;
+    let cleanupEvents: (() => void) | undefined;
 
     // Check maintenance status immediately on mount
     fetch(`${API_BASE}/api/reward?action=get_maintenance`)
       .then((r) => r.json())
       .then((data) => {
+        if (!mounted) return;
         if (typeof data?.maintenance === 'boolean') {
           setIsMaintenance(data.maintenance);
           if (data.maintenance && !isDevUser(tgUser?.id)) {
@@ -1310,10 +1381,12 @@ export default function App() {
         isInitialCheckDone.current = true;
       })
       .catch(() => {
+        if (!mounted) return;
         isInitialCheckDone.current = true;
       });
 
     loadState().then((s) => {
+      if (!mounted) return;
       const maxHours = s.vipUpgrades?.includes('vip_offline') ? 12 : 8;
       const lastSaveTime = Number(s.lastSave) || Date.now();
       const elapsed = Math.max(0, Math.min((Date.now() - lastSaveTime) / 1000, 60 * 60 * maxHours));
@@ -1739,10 +1812,9 @@ export default function App() {
       };
     });
 
-    let cleanupEvents: (() => void) | undefined;
-
     // Cleanup on component unmount
     return () => {
+      mounted = false;
       if (adminIv) clearInterval(adminIv);
       if (cleanupEvents) cleanupEvents();
     };
@@ -1932,7 +2004,7 @@ export default function App() {
   const addFloat = useCallback((x: number, y: number, text: string, color = 'text-amber-300') => {
     const id = ++floatId.current;
     const direction = Math.random() < 0.5 ? 'left' : 'right';
-    setFloats((f) => [...f, { id, x, y, text, color, direction }]);
+    setFloats((f) => [...f.slice(-25), { id, x, y, text, color, direction }]);
     setTimeout(() => setFloats((f) => f.filter((t) => t.id !== id)), 850);
   }, []);
 
@@ -1946,7 +2018,7 @@ export default function App() {
 
   const addToast = useCallback((title: string, text: string, emoji: string) => {
     const id = ++floatId.current;
-    setToasts((t) => [...t, { id, title, text, emoji }]);
+    setToasts((t) => [...t.slice(-4), { id, title, text, emoji }]);
     setTimeout(() => closeToast(id), 4000);
   }, [closeToast]);
 
@@ -5693,6 +5765,7 @@ export default function App() {
       diamonds: cur.diamonds - cost,
       cosmetics: nextCosmetics,
     };
+    savePermanentCosmetics(nextCosmetics);
     stateRef.current = next;
     setState(next);
     saveNow(next);
@@ -5731,6 +5804,7 @@ export default function App() {
       ...cur,
       cosmetics: nextCosmetics,
     };
+    savePermanentCosmetics(nextCosmetics);
     stateRef.current = next;
     setState(next);
     saveNow(next);
@@ -5752,12 +5826,14 @@ export default function App() {
     const nextShowcase = [...(curCosmetics.showcase || ['clicks', 'total', 'diamonds'])];
     nextShowcase[slotIdx] = metricId;
 
+    const nextCosm = {
+      ...curCosmetics,
+      showcase: nextShowcase,
+    };
+    savePermanentCosmetics(nextCosm);
     const next: SaveState = {
       ...cur,
-      cosmetics: {
-        ...curCosmetics,
-        showcase: nextShowcase,
-      },
+      cosmetics: nextCosm,
     };
     stateRef.current = next;
     setState(next);
@@ -5887,6 +5963,15 @@ export default function App() {
       confirmText: curT.confirmYes,
       onConfirm: () => {
         const cur = stateRef.current;
+        const perm = getPermanentCosmetics();
+        const preservedCosmetics = {
+          ownedFrames: Array.from(new Set(['frame_default', ...perm.ownedFrames, ...(cur.cosmetics?.ownedFrames || [])])),
+          ownedNameColors: Array.from(new Set(['name_default', ...perm.ownedNameColors, ...(cur.cosmetics?.ownedNameColors || [])])),
+          equippedFrame: cur.cosmetics?.equippedFrame || perm.equippedFrame || 'frame_default',
+          equippedNameColor: cur.cosmetics?.equippedNameColor || perm.equippedNameColor || 'name_default',
+          showcase: (cur.cosmetics?.showcase && cur.cosmetics.showcase.length > 0) ? cur.cosmetics.showcase : perm.showcase,
+        };
+        savePermanentCosmetics(preservedCosmetics);
         const next: SaveState = {
           ...defaultState(),
           clicks: cur.clicks,
@@ -5911,7 +5996,7 @@ export default function App() {
           skins: cur.skins,
           skinsResetVersion: cur.skinsResetVersion,
           lastSkinsReset: cur.lastSkinsReset,
-          cosmetics: cur.cosmetics,
+          cosmetics: preservedCosmetics,
           cat: cur.cat,
           repairKit: cur.repairKit,
         };
