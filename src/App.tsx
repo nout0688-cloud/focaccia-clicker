@@ -2654,9 +2654,9 @@ export default function App() {
     let timeout: ReturnType<typeof setTimeout>;
     let diamondHideTimeout: ReturnType<typeof setTimeout>;
     const schedule = () => {
-      // Rare Diamond Focaccia: spawns every 50-100 seconds
-      const baseDelay = 50000;
-      const randomExtra = 50000;
+      // Rare Diamond Focaccia: spawns every 85-145 seconds (moderately rarer)
+      const baseDelay = 85000;
+      const randomExtra = 60000;
       timeout = setTimeout(() => {
         setDiamondFocaccia({ x: 12 + Math.random() * 76, y: 18 + Math.random() * 50 });
         diamondHideTimeout = setTimeout(() => setDiamondFocaccia(null), 9000);
