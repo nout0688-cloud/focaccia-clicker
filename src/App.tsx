@@ -2156,70 +2156,41 @@ export default function App() {
   }, []);
 
   const getToastTheme = useCallback((emoji: string) => {
+    // ⚠️ Помилки, поломки та попередження (теплий камінь із рубіновим акцентом)
     if (['❌', '⚠️', '💔', '😱', '🏃'].includes(emoji)) {
       return {
         border: 'border-rose-500/40',
-        bg: 'from-rose-950/95 via-zinc-950/95 to-zinc-900/95',
-        glow: 'shadow-[0_8px_28px_rgba(244,63,94,0.3)]',
-        iconBg: 'bg-rose-500/15 border-rose-500/35 text-rose-300 shadow-rose-900/40',
+        bg: 'from-rose-950/40 via-stone-900/98 to-stone-950/98',
+        glow: 'shadow-[0_8px_24px_rgba(244,63,94,0.22)]',
+        iconBg: 'bg-rose-500/15 border-rose-500/35 text-rose-300 shadow-rose-950/40',
         tagText: 'text-rose-400',
         dot: 'bg-rose-400',
-        progress: 'from-rose-500 via-red-400 to-amber-500',
+        progress: 'from-rose-500 via-amber-500 to-yellow-400',
       };
     }
-    if (['💎', '❇️', '🌐', '❄️', '🧊', '⚡'].includes(emoji)) {
-      return {
-        border: 'border-cyan-400/40',
-        bg: 'from-cyan-950/95 via-zinc-950/95 to-slate-950/95',
-        glow: 'shadow-[0_8px_28px_rgba(6,182,212,0.3)]',
-        iconBg: 'bg-cyan-500/15 border-cyan-400/35 text-cyan-300 shadow-cyan-900/40',
-        tagText: 'text-cyan-400',
-        dot: 'bg-cyan-400',
-        progress: 'from-cyan-400 via-teal-300 to-emerald-400',
-      };
-    }
+
+    // 🏆 Досягнення, левелапи, ребітхи (яскраве королівське золото пекарні)
     if (['🏆', '👑', '⭐', '🌟', '🎉', '💫'].includes(emoji)) {
       return {
-        border: 'border-yellow-400/45',
-        bg: 'from-amber-950/95 via-zinc-950/95 to-yellow-950/95',
+        border: 'border-yellow-400/50',
+        bg: 'from-amber-950/60 via-stone-900/98 to-stone-950/98',
         glow: 'shadow-[0_8px_28px_rgba(234,179,8,0.3)]',
-        iconBg: 'bg-yellow-500/15 border-yellow-400/40 text-yellow-300 shadow-yellow-900/40',
-        tagText: 'text-yellow-400',
+        iconBg: 'bg-yellow-500/15 border-yellow-400/40 text-yellow-300 shadow-yellow-950/40',
+        tagText: 'text-yellow-400 font-black',
         dot: 'bg-yellow-400',
-        progress: 'from-yellow-400 via-amber-400 to-orange-400',
+        progress: 'from-amber-400 via-yellow-300 to-orange-400',
       };
     }
-    if (['🐱', '🐾', '💖', '❤️', '😻'].includes(emoji)) {
-      return {
-        border: 'border-pink-500/40',
-        bg: 'from-pink-950/95 via-zinc-950/95 to-zinc-900/95',
-        glow: 'shadow-[0_8px_28px_rgba(244,114,182,0.3)]',
-        iconBg: 'bg-pink-500/15 border-pink-400/35 text-pink-300 shadow-pink-900/40',
-        tagText: 'text-pink-400',
-        dot: 'bg-pink-400',
-        progress: 'from-pink-400 via-rose-300 to-amber-300',
-      };
-    }
-    if (['⚔️', '💥', '🛡️', '🔨', '🔥', '🗡️'].includes(emoji)) {
-      return {
-        border: 'border-orange-500/40',
-        bg: 'from-orange-950/95 via-zinc-950/95 to-zinc-900/95',
-        glow: 'shadow-[0_8px_28px_rgba(249,115,22,0.3)]',
-        iconBg: 'bg-orange-500/15 border-orange-400/35 text-orange-300 shadow-orange-900/40',
-        tagText: 'text-orange-400',
-        dot: 'bg-orange-400',
-        progress: 'from-orange-500 via-amber-400 to-yellow-400',
-      };
-    }
-    // Default: Warm bakery amber/golden
+
+    // 🫓 Фірмовий стиль пекарні Фокача для ВСІХ подій (теплий бурштин, золото, пекарський камінь)
     return {
       border: 'border-amber-500/40',
-      bg: 'from-amber-950/90 via-zinc-950/95 to-stone-900/95',
+      bg: 'from-amber-950/50 via-stone-900/98 to-stone-950/98',
       glow: 'shadow-[0_8px_28px_rgba(245,158,11,0.25)]',
-      iconBg: 'bg-amber-500/15 border-amber-400/35 text-amber-300 shadow-amber-900/40',
+      iconBg: 'bg-amber-500/15 border-amber-400/35 text-amber-300 shadow-amber-950/40',
       tagText: 'text-amber-400',
       dot: 'bg-amber-400',
-      progress: 'from-amber-400 via-yellow-400 to-amber-500',
+      progress: 'from-amber-500 via-yellow-400 to-amber-300',
     };
   }, []);
 
@@ -6847,7 +6818,7 @@ export default function App() {
               title={t.toastCloseTip}
             >
               {/* Subtle top glare highlight line */}
-              <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
+              <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-amber-300/25 to-transparent pointer-events-none" />
 
               <div className="p-3 sm:p-3.5 flex items-center gap-3">
                 {/* Glowing Emoji Icon Container */}
@@ -6868,7 +6839,7 @@ export default function App() {
                       {toastItem.title}
                     </span>
                   </div>
-                  <div className="text-xs font-semibold text-stone-100/95 leading-snug line-clamp-2">
+                  <div className="text-xs font-semibold text-amber-100/90 leading-snug line-clamp-2">
                     {toastItem.text}
                   </div>
                 </div>
@@ -6881,14 +6852,14 @@ export default function App() {
                     closeToast(toastItem.id);
                     haptic.light();
                   }}
-                  className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/15 text-stone-400 hover:text-white flex items-center justify-center text-xs font-bold transition shrink-0 ml-0.5 cursor-pointer"
+                  className="w-7 h-7 rounded-full bg-amber-500/10 hover:bg-amber-500/25 text-amber-300/80 hover:text-amber-100 flex items-center justify-center text-xs font-bold transition shrink-0 ml-0.5 cursor-pointer"
                 >
                   ✕
                 </button>
               </div>
 
               {/* Progress bar countdown line */}
-              <div className="h-[2.5px] w-full bg-white/10 overflow-hidden">
+              <div className="h-[2.5px] w-full bg-amber-950/60 overflow-hidden">
                 <div
                   className={cn(
                     'h-full bg-gradient-to-r animate-toast-progress',
