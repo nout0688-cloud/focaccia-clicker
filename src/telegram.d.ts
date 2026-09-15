@@ -8,6 +8,9 @@ interface TelegramWebApp {
   platform: string;
   colorScheme: 'light' | 'dark';
   themeParams: Record<string, string>;
+  isActive?: boolean;
+  onEvent?(eventType: string, eventHandler: () => void): void;
+  offEvent?(eventType: string, eventHandler: () => void): void;
   CloudStorage: {
     setItem(key: string, value: string, callback?: (err: string | null, success?: boolean) => void): void;
     getItem(key: string, callback: (err: string | null, value?: string) => void): void;

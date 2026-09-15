@@ -739,6 +739,50 @@ export function formatTradeLockDuration(ms: number, lang: 'uk' | 'ru' = 'uk'): s
   return lang === 'uk' ? `${Math.max(1, minutes)} хв.` : `${Math.max(1, minutes)} мин.`;
 }
 
+export function calculateOfflineProgress(
+  s: SaveState,
+  fromTs: number,
+  toTs: number
+): { cleanGain: number; cleanDay: number; cleanNight: number } | null {
+  if (!s || !fromTs || !toTs || toTs <= fromTs) return null;
+  const maxHours = s.vipUpgrades?.includes('vip_night') ? 24 : 12;
+  const cappedTo = Math.min(toTs, fromTs + 60 * 60 * maxHours * 1000);
+  const totalElapsed = (cappedTo - fromTs) / 1000;
+  if (totalElapsed <= 30) return null;
+
+  let base = 0;
+  for (const b of BUILDINGS) base += (s.buildings?.[b.id] || 0) * b.cps;
+  const dPolish = s.vipUpgrades?.includes('vip_polish') ? 1.25 : 1.0;
+  let dPercentTotal = 0;
+  for (const db of DIAMOND_BUILDINGS) {
+    const owned = s.diamondBuildings?.[db.id] || 0;
+    base += owned * db.baseCps * dPolish;
+    dPercentTotal += owned * db.percentBonus * dPolish;
+  }
+  let mult = 1;
+  for (const u of CLICK_UPGRADES) {
+    if (u.cpsMult && s.upgrades?.includes(u.id)) mult *= u.cpsMult;
+  }
+  if (s.vipUpgrades?.includes('vip_chef')) mult *= 1.3;
+  mult *= (1 + dPercentTotal);
+  const karmaMult = (s.karma ?? 100) < 50 ? 0.5 : 1;
+  const prestigeMul = 1 + (Number(s.prestige) || 0) * 0.07;
+  const DAY_RATE = 0.45;
+  const NIGHT_RATE = 0.10;
+  const { daySecs, nightSecs } = calcDayNightSecs(fromTs, cappedTo);
+  const gainDay = base * mult * prestigeMul * daySecs * DAY_RATE * karmaMult;
+  const gainNight = base * mult * prestigeMul * nightSecs * NIGHT_RATE * karmaMult;
+  const gain = gainDay + gainNight;
+  if (Number.isFinite(gain) && gain > 1) {
+    return {
+      cleanGain: Math.floor(gain),
+      cleanDay: Math.floor(gainDay),
+      cleanNight: Math.floor(gainNight),
+    };
+  }
+  return null;
+}
+
 interface FloatText {
   id: number;
   x: number;
@@ -1134,6 +1178,14 @@ export default function App() {
   const [emeraldFrenzy, setEmeraldFrenzy] = useState(0);
   const [offlineGain, setOfflineGain] = useState<number | null>(null);
   const [offlineBreakdown, setOfflineBreakdown] = useState<{ day: number; night: number } | null>(null);
+  const [isAppActive, setIsAppActive] = useState<boolean>(() => {
+    if (typeof document !== 'undefined') {
+      return document.visibilityState === 'visible';
+    }
+    return true;
+  });
+  const isAppActiveRef = useRef<boolean>(true);
+  const hiddenAtRef = useRef<number>(0);
   const [shake, setShake] = useState(false);
   const [confirmModal, setConfirmModal] = useState<ConfirmModal | null>(null);
   const [recharging, setRecharging] = useState(false);
@@ -1330,6 +1382,28 @@ export default function App() {
     storage.set('focaccia-balance', JSON.stringify({ f: toSave.focaccia, d: toSave.diamonds, rbt: toSave.lastRebirthTime || 0, ts: Date.now() }));
   }, []);
 
+  const applyOfflineProgress = useCallback(
+    (fromTs: number, toTs: number) => {
+      const cur = stateRef.current;
+      if (!cur) return;
+      const offGain = calculateOfflineProgress(cur, fromTs, toTs);
+      if (offGain && offGain.cleanGain > 1) {
+        const nextState: SaveState = {
+          ...cur,
+          focaccia: cur.focaccia + offGain.cleanGain,
+          total: cur.total + offGain.cleanGain,
+          lastSave: toTs,
+        };
+        stateRef.current = nextState;
+        setState(nextState);
+        saveNow(nextState);
+        setOfflineGain(offGain.cleanGain);
+        setOfflineBreakdown({ day: offGain.cleanDay, night: offGain.cleanNight });
+      }
+    },
+    [saveNow]
+  );
+
   const reportSync = useCallback(() => {
     if (!tgUser?.id) return Promise.resolve(null);
     const cur = stateRef.current;
@@ -1426,42 +1500,13 @@ export default function App() {
 
     loadState().then((s) => {
       if (!mounted) return;
-      const maxHours = 12;
       const lastSaveTime = Number(s.lastSave) || Date.now();
-      const cappedNow = Math.min(Date.now(), lastSaveTime + 60 * 60 * maxHours * 1000);
-      const totalElapsed = (cappedNow - lastSaveTime) / 1000;
-      if (totalElapsed > 30) {
-        let base = 0;
-        for (const b of BUILDINGS) base += (s.buildings[b.id] || 0) * b.cps;
-        const dPolish = s.vipUpgrades?.includes('vip_polish') ? 1.25 : 1.0;
-        let dPercentTotal = 0;
-        for (const db of DIAMOND_BUILDINGS) {
-          const owned = s.diamondBuildings?.[db.id] || 0;
-          base += owned * db.baseCps * dPolish;
-          dPercentTotal += owned * db.percentBonus * dPolish;
-        }
-        let mult = 1;
-        for (const u of CLICK_UPGRADES)
-          if (u.cpsMult && s.upgrades.includes(u.id)) mult *= u.cpsMult;
-        if (s.vipUpgrades?.includes('vip_chef')) mult *= 1.3;
-        mult *= (1 + dPercentTotal);
-        const karmaMult = (s.karma ?? 100) < 50 ? 0.5 : 1;
-        const prestigeMul = 1 + (Number(s.prestige) || 0) * 0.07;
-        const DAY_RATE = 0.45;
-        const NIGHT_RATE = 0.10;
-        const { daySecs, nightSecs } = calcDayNightSecs(lastSaveTime, cappedNow);
-        const gainDay = base * mult * prestigeMul * daySecs * DAY_RATE * karmaMult;
-        const gainNight = base * mult * prestigeMul * nightSecs * NIGHT_RATE * karmaMult;
-        const gain = gainDay + gainNight;
-        if (Number.isFinite(gain) && gain > 1) {
-          const cleanGain = Math.floor(gain);
-          const cleanDay = Math.floor(gainDay);
-          const cleanNight = Math.floor(gainNight);
-          s.focaccia += cleanGain;
-          s.total += cleanGain;
-          setOfflineGain(cleanGain);
-          setOfflineBreakdown({ day: cleanDay, night: cleanNight });
-        }
+      const offGain = calculateOfflineProgress(s, lastSaveTime, Date.now());
+      if (offGain) {
+        s.focaccia += offGain.cleanGain;
+        s.total += offGain.cleanGain;
+        setOfflineGain(offGain.cleanGain);
+        setOfflineBreakdown({ day: offGain.cleanDay, night: offGain.cleanNight });
       }
       setState(s);
       setKarma(s.karma ?? 100);
@@ -2700,19 +2745,119 @@ export default function App() {
 
   useEffect(() => {
     if (loading) return;
-    const onHide = () => {
-      if (document.visibilityState === 'hidden') {
-        saveNow();
-        reportSync();
-      }
-    };
-    const onExit = () => {
+
+    const handleDeactivated = () => {
+      if (!isAppActiveRef.current) return;
+      isAppActiveRef.current = false;
+      setIsAppActive(false);
+      const now = Date.now();
+      hiddenAtRef.current = now;
+
+      // 1. Immediately save current state to localStorage and sync
       saveNow();
       reportSync();
+
+      // 2. Clear any active spawned special cookies so they don't linger on screen
+      setGolden(null);
+      setDiamondFocaccia(null);
+      setEmeraldFocaccia(null);
+
+      // 3. Clear active pest
+      setPest(null);
+
+      // 4. Return cat safely home
+      resetCatHome();
+
+      // 5. Mute/suspend Web Audio context if running
+      if (globalAudioCtx && globalAudioCtx.state === 'running') {
+        globalAudioCtx.suspend().catch(() => {});
+      }
     };
-    document.addEventListener('visibilitychange', onHide);
-    window.addEventListener('beforeunload', onExit);
-    window.addEventListener('pagehide', onExit);
+
+    const handleActivated = () => {
+      if (isAppActiveRef.current) return;
+      isAppActiveRef.current = true;
+      setIsAppActive(true);
+
+      // Resume Web Audio context if suspended
+      if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+        globalAudioCtx.resume().catch(() => {});
+      }
+
+      const now = Date.now();
+      const hiddenTs = hiddenAtRef.current || Number(stateRef.current.lastSave) || 0;
+      hiddenAtRef.current = 0;
+
+      if (hiddenTs > 0 && now > hiddenTs) {
+        const elapsedSecs = (now - hiddenTs) / 1000;
+
+        // Decay temporary frenzies and active event by real elapsed time
+        if (elapsedSecs > 0) {
+          const elapsedInt = Math.floor(elapsedSecs);
+          setFrenzy((f) => Math.max(0, f - elapsedInt));
+          setDiamondFrenzy((f) => Math.max(0, f - elapsedInt));
+          setEmeraldFrenzy((f) => Math.max(0, f - elapsedInt));
+          setActiveEvent((e) =>
+            e ? (e.timeLeft <= elapsedInt ? null : { ...e, timeLeft: e.timeLeft - elapsedInt }) : null
+          );
+
+          // Restore energy based on elapsed time away
+          setState((p) => {
+            let cap = MAX_ENERGY_BASE + p.prestige * 5;
+            if (p.vipUpgrades?.includes('vip_energy')) cap += 25;
+            if (p.energy < cap) {
+              const regenAmount = Math.floor(elapsedSecs * energyRegenSpeed);
+              const nextEnergy = Math.min(cap, p.energy + regenAmount);
+              if (nextEnergy >= cap) setRecharging(false);
+              return { ...p, energy: nextEnergy };
+            }
+            return p;
+          });
+        }
+
+        // Check offline progress if away for 30 seconds or more
+        if (elapsedSecs >= 30) {
+          applyOfflineProgress(hiddenTs, now);
+        } else if (elapsedSecs > 1) {
+          // Brief pause (<30s) — credit active CPS directly without full modal
+          const shortGain = Math.floor((cpsRef.current || 0) * elapsedSecs);
+          if (shortGain > 0) {
+            setState((p) => {
+              const next = {
+                ...p,
+                focaccia: p.focaccia + shortGain,
+                total: p.total + shortGain,
+                lastSave: now,
+              };
+              stateRef.current = next;
+              saveNow(next);
+              return next;
+            });
+          }
+        }
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        handleDeactivated();
+      } else if (document.visibilityState === 'visible') {
+        handleActivated();
+      }
+    };
+
+    const tgWebApp = window.Telegram?.WebApp;
+    if (tgWebApp?.onEvent) {
+      try {
+        tgWebApp.onEvent('deactivated', handleDeactivated);
+        tgWebApp.onEvent('activated', handleActivated);
+      } catch { /* silent fail */ }
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('beforeunload', handleDeactivated);
+    window.addEventListener('pagehide', handleDeactivated);
+    window.addEventListener('pageshow', handleActivated);
 
     let iv: ReturnType<typeof setInterval> | undefined;
     if (tgUser?.id) {
@@ -2722,24 +2867,32 @@ export default function App() {
 
     return () => {
       if (iv) clearInterval(iv);
-      document.removeEventListener('visibilitychange', onHide);
-      window.removeEventListener('beforeunload', onExit);
-      window.removeEventListener('pagehide', onExit);
+      if (tgWebApp?.offEvent) {
+        try {
+          tgWebApp.offEvent('deactivated', handleDeactivated);
+          tgWebApp.offEvent('activated', handleActivated);
+        } catch { /* silent fail */ }
+      }
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('beforeunload', handleDeactivated);
+      window.removeEventListener('pagehide', handleDeactivated);
+      window.removeEventListener('pageshow', handleActivated);
     };
-  }, [loading, tgUser, reportSync, saveNow]);
+  }, [loading, tgUser, reportSync, saveNow, applyOfflineProgress, resetCatHome, energyRegenSpeed]);
 
   /* ---- Game tick ---- */
   useEffect(() => {
-    if (loading) return;
+    if (loading || !isAppActive) return;
     const iv = setInterval(() => {
       const gain = cpsRef.current / 10;
       if (gain > 0) setState((p) => ({ ...p, focaccia: p.focaccia + gain, total: p.total + gain }));
     }, 100);
     return () => clearInterval(iv);
-  }, [loading]);
+  }, [loading, isAppActive]);
 
   /* ---- Combo decay ---- */
   useEffect(() => {
+    if (!isAppActive) return;
     const iv = setInterval(() => {
       const hasComboUp = stateRef.current.vipUpgrades?.includes('vip_combo');
       const decayDelay = hasComboUp ? 2200 : 1200;
@@ -2747,7 +2900,7 @@ export default function App() {
       if (Date.now() - lastClick.current > decayDelay) setCombo((c) => (c > 0 ? Math.max(0, c - decayAmount) : 0));
     }, 200);
     return () => clearInterval(iv);
-  }, []);
+  }, [isAppActive]);
 
   /* ---- Energy regen ---- */
   useEffect(() => {
@@ -2755,7 +2908,7 @@ export default function App() {
   }, [loading, state.energy, recharging]);
 
   useEffect(() => {
-    if (!recharging) return;
+    if (!recharging || !isAppActive) return;
     const interval = Math.max(50, Math.floor(1000 / energyRegenSpeed));
     const iv = setInterval(() => {
       setState((p) => {
@@ -2767,7 +2920,7 @@ export default function App() {
       });
     }, interval);
     return () => clearInterval(iv);
-  }, [recharging, energyRegenSpeed]);
+  }, [recharging, isAppActive, energyRegenSpeed]);
 
   /* ---- Frenzy ---- */
   useEffect(() => {
@@ -2792,6 +2945,7 @@ export default function App() {
 
   /* ---- Golden Focaccia ---- */
   useEffect(() => {
+    if (!isAppActive) return;
     let timeout: ReturnType<typeof setTimeout>;
     let goldenHideTimeout: ReturnType<typeof setTimeout>;
     const schedule = () => {
@@ -2799,6 +2953,7 @@ export default function App() {
       const baseDelay = hasGoldenUpgrade ? 25000 : 50000;
       const randomExtra = hasGoldenUpgrade ? 30000 : 55000;
       timeout = setTimeout(() => {
+        if (!isAppActiveRef.current) return;
         setGolden({ x: 10 + Math.random() * 80, y: 15 + Math.random() * 55 });
         goldenHideTimeout = setTimeout(() => setGolden(null), 9000);
         schedule();
@@ -2809,10 +2964,11 @@ export default function App() {
       clearTimeout(timeout);
       clearTimeout(goldenHideTimeout);
     };
-  }, []);
+  }, [isAppActive]);
 
   /* ---- Diamond Focaccia ---- */
   useEffect(() => {
+    if (!isAppActive) return;
     let timeout: ReturnType<typeof setTimeout>;
     let diamondHideTimeout: ReturnType<typeof setTimeout>;
     const schedule = () => {
@@ -2820,6 +2976,7 @@ export default function App() {
       const baseDelay = 85000;
       const randomExtra = 60000;
       timeout = setTimeout(() => {
+        if (!isAppActiveRef.current) return;
         setDiamondFocaccia({ x: 12 + Math.random() * 76, y: 18 + Math.random() * 50 });
         diamondHideTimeout = setTimeout(() => setDiamondFocaccia(null), 9000);
         schedule();
@@ -2830,10 +2987,11 @@ export default function App() {
       clearTimeout(timeout);
       clearTimeout(diamondHideTimeout);
     };
-  }, []);
+  }, [isAppActive]);
 
   /* ---- Emerald Focaccia (Ultra-Rare!) ---- */
   useEffect(() => {
+    if (!isAppActive) return;
     let timeout: ReturnType<typeof setTimeout>;
     let emeraldHideTimeout: ReturnType<typeof setTimeout>;
     const schedule = () => {
@@ -2841,6 +2999,7 @@ export default function App() {
       const baseDelay = 150000;
       const randomExtra = 150000;
       timeout = setTimeout(() => {
+        if (!isAppActiveRef.current) return;
         setEmeraldFocaccia({ x: 14 + Math.random() * 72, y: 20 + Math.random() * 45 });
         emeraldHideTimeout = setTimeout(() => setEmeraldFocaccia(null), 9000);
         schedule();
@@ -2851,11 +3010,11 @@ export default function App() {
       clearTimeout(timeout);
       clearTimeout(emeraldHideTimeout);
     };
-  }, []);
+  }, [isAppActive]);
 
   /* ---- Active Event countdown ---- */
   useEffect(() => {
-    if (!activeEvent) return;
+    if (!activeEvent || !isAppActive) return;
     const iv = setInterval(() => {
       setActiveEvent((e) => {
         if (!e) return null;
@@ -2868,8 +3027,9 @@ export default function App() {
 
   /* ---- Random Events / Taxes (every 90s) ---- */
   useEffect(() => {
-    if (loading) return;
+    if (loading || !isAppActive) return;
     const iv = setInterval(() => {
+      if (!isAppActiveRef.current) return;
       const roll = Math.random();
       const cur = stateRef.current;
       if (cur.total < 1000) return;
@@ -2903,17 +3063,18 @@ export default function App() {
       }
     }, 90000);
     return () => clearInterval(iv);
-  }, [loading, addToast]);
+  }, [loading, isAppActive, addToast]);
 
   /* ---- Pest spawner & nibble (moderated frequency: ~1.25 to 2 minutes) ---- */
   useEffect(() => {
-    if (loading) return;
+    if (loading || !isAppActive) return;
     let timerId: NodeJS.Timeout;
 
     const scheduleNextPest = () => {
       // Natural interval between 75s and 120s
       const delay = 75000 + Math.random() * 45000;
       timerId = setTimeout(() => {
+        if (!isAppActiveRef.current) return;
         if (!pest && stateRef.current.total >= 500) {
           const curT = TRANSLATIONS[langRef.current];
           const pType = PEST_TYPES[Math.floor(Math.random() * PEST_TYPES.length)];
@@ -2935,11 +3096,11 @@ export default function App() {
 
     scheduleNextPest();
     return () => clearTimeout(timerId);
-  }, [loading, pest, addToast]);
+  }, [loading, isAppActive, pest, addToast]);
 
   // Pest auto-escape and focaccia stealing
   useEffect(() => {
-    if (!pest) return;
+    if (!pest || !isAppActive) return;
     const escapeTimer = setTimeout(() => {
       setPest(null);
       const curT = TRANSLATIONS[langRef.current];
@@ -2947,6 +3108,7 @@ export default function App() {
     }, 14000);
 
     const stealInterval = setInterval(() => {
+      if (!isAppActiveRef.current) return;
       setState((p) => {
         if (p.focaccia <= 10) return p;
         const hasTrap = p.vipUpgrades?.includes('vip_trap');
@@ -2959,12 +3121,13 @@ export default function App() {
       clearTimeout(escapeTimer);
       clearInterval(stealInterval);
     };
-  }, [pest, addToast]);
+  }, [pest, isAppActive, addToast]);
 
   // Pest crawl — wanders around the screen, flipping to face its direction
   useEffect(() => {
-    if (!pest) return;
+    if (!pest || !isAppActive) return;
     const iv = setInterval(() => {
+      if (!isAppActiveRef.current) return;
       setPest((p) => {
         if (!p) return null;
         const dx = (Math.random() - 0.5) * 26;
@@ -2978,12 +3141,13 @@ export default function App() {
       });
     }, 1200);
     return () => clearInterval(iv);
-  }, [pest?.id]);
+  }, [pest?.id, isAppActive]);
 
   /* ---- Boss battle spawner ---- */
   useEffect(() => {
-    if (loading) return;
+    if (loading || !isAppActive) return;
     const iv = setInterval(() => {
+      if (!isAppActiveRef.current) return;
       if (boss || stateRef.current.total < 3000) return;
       // Filter available bosses based on progression
       const total = stateRef.current.total;
@@ -3011,15 +3175,16 @@ export default function App() {
       haptic.heavy();
     }, 180000);
     return () => clearInterval(iv);
-  }, [loading, boss, addToast]);
+  }, [loading, isAppActive, boss, addToast]);
 
   // Boss timer — deadline-based: the countdown follows wall-clock time, so it
   // keeps working even if the webview throttles or freezes background timers.
   useEffect(() => {
-    if (!boss) return;
+    if (!boss || !isAppActive) return;
     const deadline = Date.now() + boss.timeLeft * 1000;
     let fled = false;
     const iv = setInterval(() => {
+      if (!isAppActiveRef.current) return;
       const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
       if (!fled) setBoss((b) => (b ? { ...b, timeLeft: left } : b));
       if (left <= 0 && !fled) {
@@ -3038,12 +3203,13 @@ export default function App() {
       }
     }, 250);
     return () => clearInterval(iv);
-  }, [boss?.id, addToast]);
+  }, [boss?.id, isAppActive, addToast]);
 
   /* ---- Building maintenance (wear & tear) ---- */
   useEffect(() => {
-    if (loading) return;
+    if (loading || !isAppActive) return;
     const iv = setInterval(() => {
+      if (!isAppActiveRef.current) return;
       if (brokenBuilding) return;
       const owned = BUILDINGS.filter((b) => (stateRef.current.buildings[b.id] || 0) > 0);
       if (owned.length === 0) return;
@@ -3098,7 +3264,7 @@ export default function App() {
       setBrokenBuilding(target.id);
       if (rk?.unlocked && (rk.charges || 0) <= 0 && rk.autoRepairEnabled !== false) {
         addToast(
-          langRef.current === 'uk' ? '⚠️ Закінчилися ремонти в ремкомплекті!' : '⚠️ Закончились ремонты в ремкомплекте!',
+          langRef.current === 'uk' ? '⚠️ Закінчилися ремонти в ремкомплекті!' : '⚠️ Закончились ремонти в ремкомплекте!',
           langRef.current === 'uk'
             ? `Будівля "${bText.name}" зламалася! Поповніть запаси ремонтів біля кота.`
             : `Постройка "${bText.name}" сломалась! Пополните запасы ремонтов возле кота.`,
@@ -3110,25 +3276,25 @@ export default function App() {
       haptic.error();
     }, 140000);
     return () => clearInterval(iv);
-  }, [loading, brokenBuilding, addToast]);
+  }, [loading, isAppActive, brokenBuilding, addToast, saveNow]);
 
   /* ---- Autosave ---- */
   useEffect(() => {
-    if (loading) return;
+    if (loading || !isAppActive) return;
     const iv = setInterval(() => {
       saveNow();
     }, 2000);
     return () => clearInterval(iv);
-  }, [loading, saveNow]);
+  }, [loading, isAppActive, saveNow]);
 
   /* ---- Server Backup Snapshot (every 2.5 min) ---- */
   useEffect(() => {
-    if (loading || !tgUser?.id) return;
+    if (loading || !tgUser?.id || !isAppActive) return;
     const iv = setInterval(() => {
       uploadServerSnapshot();
     }, 150000);
     return () => clearInterval(iv);
-  }, [loading, uploadServerSnapshot]);
+  }, [loading, isAppActive, uploadServerSnapshot]);
 
   /* ---- Achievements ---- */
   useEffect(() => {
@@ -3967,7 +4133,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (!state.cat?.unlocked) return;
+    if (!state.cat?.unlocked || !isAppActive) return;
 
     const isRain = activeEvent?.emoji === '🌧️';
     if (isRain) {
@@ -4133,7 +4299,7 @@ export default function App() {
         return () => clearAllCatTimers();
       }
     }
-  }, [pest?.id, golden, diamondFocaccia, emeraldFocaccia, activeEvent?.emoji, state.cat?.unlocked, state.cat?.level, catInfo.runDurationMs, page, catSkinInfo, lang, clearAllCatTimers, resetCatHome]);
+  }, [pest?.id, golden, diamondFocaccia, emeraldFocaccia, activeEvent?.emoji, state.cat?.unlocked, state.cat?.level, catInfo.runDurationMs, page, catSkinInfo, lang, isAppActive, clearAllCatTimers, resetCatHome]);
 
   const petCat = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
