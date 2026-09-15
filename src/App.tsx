@@ -713,6 +713,7 @@ interface SaveState {
   };
   settledTrades?: string[];
   lastRebirthTime?: number;
+  starterPackBought?: boolean;
 }
 
 export const REBIRTH_TRADE_LOCK_MS = 5 * 24 * 60 * 60 * 1000; // 5 days
@@ -890,6 +891,7 @@ const defaultState = (): SaveState => ({
   },
   settledTrades: [],
   lastRebirthTime: 0,
+  starterPackBought: false,
 });
 
 async function loadState(): Promise<SaveState> {
@@ -946,6 +948,14 @@ async function loadState(): Promise<SaveState> {
     const equippedSkin = hasResetSkins && parsed.skins?.equipped && ownedSkins.includes(parsed.skins.equipped)
       ? parsed.skins.equipped
       : 'skin_classic';
+
+    const isStarterBought = Boolean(
+      parsed.starterPackBought ||
+      (typeof window !== 'undefined' && window.localStorage?.getItem('focaccia_starter_pack_bought') === '1')
+    );
+    if (isStarterBought && typeof window !== 'undefined') {
+      try { window.localStorage.setItem('focaccia_starter_pack_bought', '1'); } catch {}
+    }
 
     return {
       ...def,
@@ -1007,6 +1017,7 @@ async function loadState(): Promise<SaveState> {
         }
         return list;
       })(),
+      starterPackBought: isStarterBought,
     };
   } catch { return defaultState(); }
 }
@@ -1478,6 +1489,15 @@ export default function App() {
                 stateRef.current.karma = data.karma;
                 setState((p) => ({ ...p, karma: data.karma }));
                 saveNow({ ...stateRef.current, karma: data.karma });
+              }
+            }
+
+            if (data?.starterBought) {
+              try { localStorage.setItem('focaccia_starter_pack_bought', '1'); } catch {}
+              if (!stateRef.current.starterPackBought) {
+                stateRef.current.starterPackBought = true;
+                setState((p) => ({ ...p, starterPackBought: true }));
+                saveNow({ ...stateRef.current, starterPackBought: true });
               }
             }
 
@@ -5381,6 +5401,21 @@ export default function App() {
 
   const addToCart = (pkgId: string) => {
     haptic.selection();
+    const isStarterAlreadyBought = Boolean(
+      state.starterPackBought ||
+      (typeof window !== 'undefined' && window.localStorage?.getItem('focaccia_starter_pack_bought') === '1') ||
+      savedOrders.some((o) => o.isStarter && o.status === 'completed')
+    );
+    if (pkgId === 'starter_pack' && isStarterAlreadyBought) {
+      addToast(
+        lang === 'uk' ? 'ℹ️ Стартовий набір' : 'ℹ️ Стартовый набор',
+        lang === 'uk' ? 'Стартовий набір уже придбано (ліміт: 1 раз)' : 'Стартовый набор уже куплен (лимит: 1 раз)',
+        '⚡'
+      );
+      haptic.error();
+      return;
+    }
+
     setCart((prev) => {
       const existing = prev.find((item) => item.packageId === pkgId);
       if (pkgId === 'starter_pack') {
@@ -5466,6 +5501,21 @@ export default function App() {
   }, [cart]);
 
   const handleBuyMono = async (pkgId: string, customVal?: number) => {
+    const isStarterAlreadyBought = Boolean(
+      state.starterPackBought ||
+      (typeof window !== 'undefined' && window.localStorage?.getItem('focaccia_starter_pack_bought') === '1') ||
+      savedOrders.some((o) => o.isStarter && o.status === 'completed')
+    );
+    if (pkgId === 'starter_pack' && isStarterAlreadyBought) {
+      addToast(
+        lang === 'uk' ? 'ℹ️ Стартовий набір' : 'ℹ️ Стартовый набор',
+        lang === 'uk' ? 'Стартовий набір уже придбано (ліміт: 1 раз)' : 'Стартовый набор уже куплен (лимит: 1 раз)',
+        '⚡'
+      );
+      haptic.error();
+      return;
+    }
+
     const curUserId = tgUser?.id || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id;
     const curUsername = tgUser?.username || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.username || '';
     if (!curUserId) {
@@ -5536,6 +5586,22 @@ export default function App() {
 
   const handleCheckoutCart = async () => {
     if (cart.length === 0) return;
+    const isStarterAlreadyBought = Boolean(
+      state.starterPackBought ||
+      (typeof window !== 'undefined' && window.localStorage?.getItem('focaccia_starter_pack_bought') === '1') ||
+      savedOrders.some((o) => o.isStarter && o.status === 'completed')
+    );
+    if (cart.some((it) => it.packageId === 'starter_pack') && isStarterAlreadyBought) {
+      addToast(
+        lang === 'uk' ? '⚠️ Помилка' : '⚠️ Ошибка',
+        lang === 'uk' ? 'Стартовий набір уже придбано. Видаліть його з кошика.' : 'Стартовый набор уже куплен. Удалите его из корзины.',
+        '❌'
+      );
+      setCart((prev) => prev.filter((it) => it.packageId !== 'starter_pack'));
+      haptic.error();
+      return;
+    }
+
     const curUserId = tgUser?.id || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id;
     const curUsername = tgUser?.username || (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.username || '';
     if (!curUserId) {
@@ -5619,6 +5685,8 @@ export default function App() {
     setState((p) => {
       let next = { ...p };
       if (order.isStarter) {
+        next.starterPackBought = true;
+        try { localStorage.setItem('focaccia_starter_pack_bought', '1'); } catch {}
         const curVip = p.vipUpgrades || [];
         if (!curVip.includes('vip_hammer')) {
           next = { ...next, vipUpgrades: [...curVip, 'vip_hammer'] };
@@ -6031,6 +6099,7 @@ export default function App() {
           cosmetics: preservedCosmetics,
           cat: cur.cat,
           repairKit: cur.repairKit,
+          starterPackBought: cur.starterPackBought,
         };
         stateRef.current = next;
         setState(next);
@@ -6769,26 +6838,53 @@ export default function App() {
                 {(() => {
                   const starterPkg = DONATE_PACKAGES.find((p) => p.id === 'starter_pack');
                   if (!starterPkg) return null;
+                  const isBought = Boolean(
+                    state.starterPackBought ||
+                    (typeof window !== 'undefined' && window.localStorage?.getItem('focaccia_starter_pack_bought') === '1') ||
+                    savedOrders.some((o) => o.isStarter && o.status === 'completed')
+                  );
                   const isBuying = buyingPackageId === starterPkg.id;
                   const inCartItem = cart.find((it) => it.packageId === starterPkg.id);
                   const title = lang === 'uk' ? starterPkg.titleUk : starterPkg.titleRu;
 
                   return (
-                    <div className="relative rounded-2xl p-4 store-card-starter transition-all">
+                    <div className={cn(
+                      "relative rounded-2xl p-4 store-card-starter transition-all",
+                      isBought && "opacity-80 border border-emerald-500/30 shadow-none"
+                    )}>
                       {/* Top Badges */}
                       <div className="flex items-center justify-between gap-2 mb-3">
-                        <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-black uppercase tracking-wider">
-                          ⚡ Стартовий набір
-                        </span>
-                        <span className="px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-black uppercase tracking-wider">
-                          ЗНИЖКА -70%
-                        </span>
+                        {isBought ? (
+                          <>
+                            <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black uppercase tracking-wider flex items-center gap-1">
+                              <span>✓</span>
+                              <span>{lang === 'uk' ? 'Придбано' : 'Куплено'}</span>
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/50 border border-white/10 text-[10px] font-bold uppercase tracking-wider">
+                              {lang === 'uk' ? 'Ліміт: 1 раз' : 'Лимит: 1 раз'}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-black uppercase tracking-wider">
+                              ⚡ Стартовий набір
+                            </span>
+                            <span className="px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] font-black uppercase tracking-wider">
+                              ЗНИЖКА -70%
+                            </span>
+                          </>
+                        )}
                       </div>
 
                       {/* Main Info */}
                       <div className="flex items-center gap-3.5 mb-3.5">
-                        <div className="w-12 h-12 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-2xl shrink-0">
-                          ⚡
+                        <div className={cn(
+                          "w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0",
+                          isBought
+                            ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-300"
+                            : "bg-amber-500/15 border border-amber-500/30"
+                        )}>
+                          {isBought ? '✅' : '⚡'}
                         </div>
                         <div className="min-w-0 flex-1">
                           <h4 className="text-sm font-black text-white">
@@ -6803,6 +6899,12 @@ export default function App() {
                               <span>🪵</span>
                               <span>Бойова скалка (x2 шкоди босам)</span>
                             </div>
+                            {isBought && (
+                              <div className="flex items-center gap-1 text-emerald-400 font-bold text-[10px] pt-0.5">
+                                <span>✓</span>
+                                <span>{lang === 'uk' ? 'Набір активовано на цьому акаунті' : 'Набор активирован на этом аккаунте'}</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -6810,16 +6912,35 @@ export default function App() {
                       {/* Action Footer */}
                       <div className="flex items-center justify-between pt-3 border-t border-white/10 gap-3">
                         <div className="flex items-baseline gap-2">
-                          <div className="text-xl font-black text-amber-400 font-mono">
+                          <div className={cn(
+                            "font-mono",
+                            isBought ? "text-base font-bold text-white/40 line-through" : "text-xl font-black text-amber-400"
+                          )}>
                             {starterPkg.priceUah} ₴
                           </div>
-                          <div className="text-xs text-white/40 line-through font-mono">
-                            60 ₴
-                          </div>
+                          {!isBought && (
+                            <div className="text-xs text-white/40 line-through font-mono">
+                              60 ₴
+                            </div>
+                          )}
+                          {isBought && (
+                            <div className="text-xs text-emerald-400 font-bold">
+                              {lang === 'uk' ? 'Отримано' : 'Получено'}
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-1.5">
-                          {inCartItem ? (
+                          {isBought ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="px-4 py-2 rounded-xl text-xs font-black bg-white/5 border border-emerald-500/20 text-emerald-300/80 flex items-center gap-1.5 cursor-not-allowed select-none"
+                            >
+                              <span>✓</span>
+                              <span>{lang === 'uk' ? 'Вже придбано' : 'Уже куплено'}</span>
+                            </button>
+                          ) : inCartItem ? (
                             <div className="flex items-center gap-1.5 bg-zinc-900 rounded-xl px-2.5 py-1.5 border border-amber-500/40">
                               <span className="text-xs font-bold text-amber-300">
                                 ✓ {lang === 'uk' ? 'У кошику' : 'В корзине'}
@@ -6833,25 +6954,26 @@ export default function App() {
                               </button>
                             </div>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => addToCart(starterPkg.id)}
-                              className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 flex items-center justify-center text-sm active:scale-95 transition cursor-pointer"
-                              title="Додати в кошик"
-                            >
-                              🛒
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => addToCart(starterPkg.id)}
+                                className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 flex items-center justify-center text-sm active:scale-95 transition cursor-pointer"
+                                title="Додати в кошик"
+                              >
+                                🛒
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleBuyMono(starterPkg.id)}
+                                disabled={!!buyingPackageId}
+                                className="store-btn-gold px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
+                              >
+                                <span>⚡</span>
+                                <span>{isBuying ? '...' : (lang === 'uk' ? 'Купити зараз' : 'Купить сейчас')}</span>
+                              </button>
+                            </>
                           )}
-
-                          <button
-                            type="button"
-                            onClick={() => handleBuyMono(starterPkg.id)}
-                            disabled={!!buyingPackageId}
-                            className="store-btn-gold px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
-                          >
-                            <span>⚡</span>
-                            <span>{isBuying ? '...' : (lang === 'uk' ? 'Купити зараз' : 'Купить сейчас')}</span>
-                          </button>
                         </div>
                       </div>
                     </div>
