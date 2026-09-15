@@ -1999,9 +1999,9 @@ export default function App() {
   const comboMult = 1 + Math.min(combo, 100) * 0.02;
   const cpsRef = useRef(cps);
   cpsRef.current = cps * frenzyMult * diamondMult * emeraldMult;
-  const prestigeGain = Number.isFinite(state.total) && state.total > 0 ? Math.floor(Math.cbrt(state.total / 1e6)) : 0;
-  const nextRebirthTarget = Math.pow(Math.max(1, prestigeGain + 1), 3) * 1e6;
-  const prevRebirthTarget = prestigeGain > 0 ? Math.pow(prestigeGain, 3) * 1e6 : 0;
+  const prestigeGain = Number.isFinite(state.total) && state.total >= 1e7 ? Math.floor(Math.pow(state.total / 1e7, 0.2)) : 0;
+  const nextRebirthTarget = Math.pow(Math.max(1, prestigeGain + 1), 5) * 1e7;
+  const prevRebirthTarget = prestigeGain > 0 ? Math.pow(prestigeGain, 5) * 1e7 : 0;
   const rebirthProgress = Math.min(
     100,
     Math.max(0, ((state.total - prevRebirthTarget) / (nextRebirthTarget - prevRebirthTarget)) * 100)
@@ -5989,7 +5989,7 @@ export default function App() {
     const curT = TRANSLATIONS[langRef.current];
     setConfirmModal({
       title: curT.modalRebirthTitle, emoji: '🔄',
-      text: formatTemplate(curT.modalRebirthDesc, prestigeGain, prestigeGain * 10, prestigeGain * 5),
+      text: formatTemplate(curT.modalRebirthDesc, prestigeGain, prestigeGain * 7, prestigeGain * 5),
       confirmText: curT.confirmYes,
       onConfirm: () => {
         const cur = stateRef.current;
@@ -6035,7 +6035,7 @@ export default function App() {
         saveNow(next);
         reportSync();
         uploadServerSnapshot(next);
-        addToast(curT.toastRebirthDone, formatTemplate(curT.toastRebirthDoneDesc, (cur.prestige + prestigeGain) * 10), '🔄');
+        addToast(curT.toastRebirthDone, formatTemplate(curT.toastRebirthDoneDesc, (cur.prestige + prestigeGain) * 7), '🔄');
         doFlash('golden');
         burstConfetti(['🔄', '💎', '✨', '⭐', '🫓']);
         haptic.success();
@@ -12849,7 +12849,7 @@ export default function App() {
 
               <div className="text-[10px] text-fuchsia-300/60 leading-relaxed">
                 {prestigeGain < 1 ? (
-                  <span dangerouslySetInnerHTML={{ __html: formatTemplate(t.rebirthTipLocked, formatNum(Math.max(0, 1e6 - state.total))) }} />
+                  <span dangerouslySetInnerHTML={{ __html: formatTemplate(t.rebirthTipLocked, formatNum(Math.max(0, 1e7 - state.total))) }} />
                 ) : (
                   <span dangerouslySetInnerHTML={{ __html: formatTemplate(t.rebirthTipReady, prestigeGain, lang === 'uk' ? (prestigeGain > 1 ? 'ів' : '') : (prestigeGain > 1 ? 'ов' : '')) }} />
                 )}
@@ -12867,7 +12867,7 @@ export default function App() {
               >
                 {prestigeGain >= 1
                   ? formatTemplate(t.rebirthBtnActive, prestigeGain)
-                  : formatTemplate(t.rebirthBtnLocked, formatNum(Math.max(0, 1e6 - state.total)))}
+                  : formatTemplate(t.rebirthBtnLocked, formatNum(Math.max(0, 1e7 - state.total)))}
               </button>
             </div>
 
