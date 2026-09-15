@@ -1251,12 +1251,16 @@ export default function App() {
 
   // ===== 🐱 BAKERY CAT STATE =====
   const [showCatModal, setShowCatModal] = useState(false);
+  const [catModalTab, setCatModalTab] = useState<'main' | 'wardrobe'>('main');
+  const [previewCatSkin, setPreviewCatSkin] = useState<string | null>(null);
   const [catState, setCatState] = useState<'idle' | 'chasing' | 'pouncing' | 'returning' | 'hiding'>('idle');
   const [catPose, setCatPose] = useState<'idle' | 'licking' | 'sleeping'>('idle');
   const [catPos, setCatPos] = useState<{ x: number; y: number }>({ x: 82, y: 76 });
   const [catBubble, setCatBubble] = useState<string | null>(null);
   const [catFacing, setCatFacing] = useState<1 | -1>(1);
   const [catPetHearts, setCatPetHearts] = useState<{ id: number; x: number; y: number }[]>([]);
+  const catSeqRef = useRef(0);
+  const catTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   /* Hold-to-buy (затискання для швидкої покупки з прискоренням) */
   const [holdingBuyId, setHoldingBuyId] = useState<string | null>(null);
@@ -1931,19 +1935,20 @@ export default function App() {
   }, [state.cat?.skin]);
 
   const activeCatImg = useMemo(() => {
-    if (state.cat?.skin === 'chef') return catChefImg;
-    if (state.cat?.skin === 'bonya') return catBonyaImg;
-    if (state.cat?.skin === 'shocked') return catShockedImg;
-    if (state.cat?.skin === 'bambass') return catBambassImg;
-    if (state.cat?.skin === 'kotost') return catKotostImg;
-    if (state.cat?.skin === 'nochka') return catNochkaImg;
-    if (state.cat?.skin === 'lord') return catLordImg;
-    if (state.cat?.skin === 'cosmo') return catCosmoImg;
-    if (state.cat?.skin === 'gold') return catGoldImg;
-    if (catPose === 'sleeping') return catSleepingImg;
-    if (catPose === 'licking') return catLickingImg;
+    const s = previewCatSkin || state.cat?.skin;
+    if (s === 'chef') return catChefImg;
+    if (s === 'bonya') return catBonyaImg;
+    if (s === 'shocked') return catShockedImg;
+    if (s === 'bambass') return catBambassImg;
+    if (s === 'kotost') return catKotostImg;
+    if (s === 'nochka') return catNochkaImg;
+    if (s === 'lord') return catLordImg;
+    if (s === 'cosmo') return catCosmoImg;
+    if (s === 'gold') return catGoldImg;
+    if (!previewCatSkin && catPose === 'sleeping') return catSleepingImg;
+    if (!previewCatSkin && catPose === 'licking') return catLickingImg;
     return catImg;
-  }, [state.cat?.skin, catPose]);
+  }, [state.cat?.skin, catPose, previewCatSkin]);
   // Cat poses and sleep schedule (Sleeps after 21:00 or before 07:00; licks paws / idles during daytime)
   useEffect(() => {
     if (!state.cat?.unlocked) return;
@@ -1962,6 +1967,42 @@ export default function App() {
     return () => clearInterval(iv);
   }, [state.cat?.unlocked, catState]);
 
+  const clearAllCatTimers = useCallback(() => {
+    catTimersRef.current.forEach((t) => clearTimeout(t));
+    catTimersRef.current = [];
+  }, []);
+
+  const resetCatHome = useCallback(() => {
+    clearAllCatTimers();
+    catSeqRef.current++;
+    setCatState('idle');
+    setCatPos({ x: 82, y: 76 });
+    setCatFacing(1);
+    setCatBubble(null);
+  }, [clearAllCatTimers]);
+
+  // 🛡️ MEGA-FIX WATCHDOG: Prevents cat from ever freezing in chasing/pouncing/returning
+  useEffect(() => {
+    if (!state.cat?.unlocked) return;
+    if (catState === 'idle' || catState === 'hiding') return;
+
+    // Normal chase duration is at most runDurationMs + 1600ms.
+    // If cat doesn't return to idle within runDurationMs + 2500ms, watchdog forcibly rescues it home!
+    const maxAllowedTime = Math.max(3000, (catInfo.runDurationMs || 1500) + 2500);
+    const watchdogTimer = setTimeout(() => {
+      console.warn('[CatWatchdog] Rescuing frozen cat from state:', catState);
+      resetCatHome();
+    }, maxAllowedTime);
+
+    return () => clearTimeout(watchdogTimer);
+  }, [catState, catInfo.runDurationMs, resetCatHome, state.cat?.unlocked]);
+
+  // Safety: reset cat home if player leaves the clicker tab while the cat was hunting
+  useEffect(() => {
+    if (page !== 'clicker' && (catState === 'chasing' || catState === 'returning' || catState === 'pouncing')) {
+      resetCatHome();
+    }
+  }, [page, catState, resetCatHome]);
 
   const getCatSkinImg = (skinId: string) => {
     if (skinId === 'chef') return catChefImg;
@@ -3863,6 +3904,7 @@ export default function App() {
     const isRain = activeEvent?.emoji === '🌧️';
     if (isRain) {
       if (catState !== 'hiding') {
+        clearAllCatTimers();
         setCatState('hiding');
         setCatBubble(lang === 'uk' ? catSkinInfo.rainBubbleUk : catSkinInfo.rainBubbleRu);
       }
@@ -3885,7 +3927,17 @@ export default function App() {
       : golden
       ? { ...golden, type: 'golden' as const }
       : null;
+
+    // 🚨 Target loss recovery: If the target disappeared while chasing/pouncing, immediately return home!
+    if (!targetSpecial && !pest && (catState === 'chasing' || catState === 'pouncing')) {
+      resetCatHome();
+      return;
+    }
+
     if (targetSpecial && isCatLv5 && (catState === 'idle' || catState === 'returning')) {
+      clearAllCatTimers();
+      const mySeq = ++catSeqRef.current;
+
       if (page === 'clicker') {
         setCatPose('idle');
         setCatState('chasing');
@@ -3902,6 +3954,7 @@ export default function App() {
         setCatPos({ x: targetSpecial.x, y: targetSpecial.y });
 
         const reachTimer = setTimeout(() => {
+          if (catSeqRef.current !== mySeq) return;
           setCatState('pouncing');
           setCatBubble(
             targetSpecial.type === 'emerald'
@@ -3919,6 +3972,7 @@ export default function App() {
           }
 
           const returnTimer = setTimeout(() => {
+            if (catSeqRef.current !== mySeq) return;
             setCatState('returning');
             setCatFacing(82 > targetSpecial.x ? -1 : 1);
             setCatBubble(
@@ -3931,22 +3985,21 @@ export default function App() {
             setCatPos({ x: 82, y: 76 });
 
             const idleTimer = setTimeout(() => {
-              setCatState('idle');
-              setCatFacing(1);
-              setCatBubble(null);
-            }, 1000);
-
-            return () => clearTimeout(idleTimer);
-          }, 500);
-
-          return () => clearTimeout(returnTimer);
+              if (catSeqRef.current !== mySeq) return;
+              resetCatHome();
+            }, 600);
+            catTimersRef.current.push(idleTimer);
+          }, 450);
+          catTimersRef.current.push(returnTimer);
         }, runDuration);
+        catTimersRef.current.push(reachTimer);
 
-        return () => clearTimeout(reachTimer);
+        return () => clearAllCatTimers();
       } else {
-        // Player is on other tab — Murchik still catches focaccia!
+        // Player is on other tab — Murchik still catches focaccia in background!
         setCatPose('idle');
         const bgReachTimer = setTimeout(() => {
+          if (catSeqRef.current !== mySeq) return;
           if (targetSpecial.type === 'emerald') {
             catchEmerald(true);
           } else if (targetSpecial.type === 'diamond') {
@@ -3954,15 +4007,19 @@ export default function App() {
           } else {
             catchGolden(true);
           }
+          resetCatHome();
         }, Math.min(1800, catInfo.runDurationMs + 400));
+        catTimersRef.current.push(bgReachTimer);
 
-        return () => clearTimeout(bgReachTimer);
+        return () => clearAllCatTimers();
       }
     }
 
     if (pest && (catState === 'idle' || catState === 'returning')) {
+      clearAllCatTimers();
+      const mySeq = ++catSeqRef.current;
+
       if (page === 'clicker') {
-        // Повна візуальна анімація полювання на екрані клікера
         setCatPose('idle');
         setCatState('chasing');
         setCatBubble(lang === 'uk' ? catSkinInfo.chaseBubbleUk : catSkinInfo.chaseBubbleRu);
@@ -3972,45 +4029,59 @@ export default function App() {
         setCatPos({ x: pest.x, y: pest.y });
 
         const reachTimer = setTimeout(() => {
+          if (catSeqRef.current !== mySeq) return;
           setCatState('pouncing');
           setCatBubble(catSkinInfo.pounceBubble);
           handlePestCatchByCat(false);
 
           const returnTimer = setTimeout(() => {
+            if (catSeqRef.current !== mySeq) return;
             setCatState('returning');
             setCatFacing(82 > pest.x ? -1 : 1);
             setCatBubble(lang === 'uk' ? '😸 Мурр!' : '😸 Мурр!');
             setCatPos({ x: 82, y: 76 });
 
             const idleTimer = setTimeout(() => {
-              setCatState('idle');
-              setCatFacing(1);
-              setCatBubble(null);
-            }, 1200);
-
-            return () => clearTimeout(idleTimer);
-          }, 500);
-
-          return () => clearTimeout(returnTimer);
+              if (catSeqRef.current !== mySeq) return;
+              resetCatHome();
+            }, 600);
+            catTimersRef.current.push(idleTimer);
+          }, 450);
+          catTimersRef.current.push(returnTimer);
         }, runDuration);
+        catTimersRef.current.push(reachTimer);
 
-        return () => clearTimeout(reachTimer);
+        return () => clearAllCatTimers();
       } else {
-        // Гравець на іншій вкладці (наприклад, «Інше», «Магазин», «Казино» тощо) —
-        // кіт все одно вартує пекарню і самостійно ловить букашку!
+        // Player is on other tab — cat catches bug in background!
         setCatPose('idle');
         const bgReachTimer = setTimeout(() => {
+          if (catSeqRef.current !== mySeq) return;
           handlePestCatchByCat(true);
+          resetCatHome();
         }, Math.min(2200, catInfo.runDurationMs + 400));
+        catTimersRef.current.push(bgReachTimer);
 
-        return () => clearTimeout(bgReachTimer);
+        return () => clearAllCatTimers();
       }
     }
-  }, [pest?.id, golden, diamondFocaccia, emeraldFocaccia, activeEvent?.emoji, state.cat?.unlocked, state.cat?.level, catInfo.runDurationMs, page, catSkinInfo, lang]);
+  }, [pest?.id, golden, diamondFocaccia, emeraldFocaccia, activeEvent?.emoji, state.cat?.unlocked, state.cat?.level, catInfo.runDurationMs, page, catSkinInfo, lang, clearAllCatTimers, resetCatHome]);
 
   const petCat = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     haptic.medium();
+
+    // 🐾 Mega-Fix: If cat was stuck in any running or pouncing state, clicking it immediately rescues it!
+    if (catState !== 'idle' && catState !== 'hiding') {
+      resetCatHome();
+      addToast(
+        lang === 'uk' ? '🐱 Мурчик вдома!' : '🐱 Мурчик дома!',
+        lang === 'uk' ? 'Кіт повернувся на своє затишне місце біля печі.' : 'Кот вернулся на своё уютное место возле печи.',
+        '🐾'
+      );
+      return;
+    }
+
     const id = Date.now();
     setCatPetHearts((prev) => [...prev, { id, x: (Math.random() - 0.5) * 40, y: -20 - Math.random() * 30 }]);
     setTimeout(() => {
@@ -6299,8 +6370,8 @@ export default function App() {
                 catState === 'idle' && 'animate-cat-idle'
               )}
               style={{
-                left: catState === 'idle' ? 'auto' : `${catPos.x}%`,
-                top: catState === 'idle' ? 'auto' : `${catPos.y}%`,
+                left: catState === 'idle' ? 'auto' : `${Math.max(6, Math.min(88, catPos.x))}%`,
+                top: catState === 'idle' ? 'auto' : `${Math.max(10, Math.min(82, catPos.y))}%`,
                 right: catState === 'idle' ? '14px' : 'auto',
                 bottom: catState === 'idle' ? '76px' : 'auto',
                 transitionDuration: catState === 'chasing' ? `${catInfo.runDurationMs}ms` : undefined,
@@ -7710,307 +7781,436 @@ export default function App() {
 
       {/* ===== 🐱 BAKERY CAT MODAL ===== */}
       {showCatModal && (
-        <div className="fixed inset-0 z-[80] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
-          <div className="relative w-full max-w-sm bg-[#14120e] border-t sm:border border-amber-500/40 rounded-t-3xl sm:rounded-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-[80] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
+          <div className="relative w-full max-w-md bg-[#0e1015] border-t sm:border border-amber-500/30 rounded-t-3xl sm:rounded-3xl max-h-[92vh] flex flex-col shadow-[0_12px_45px_rgba(0,0,0,0.85)] overflow-hidden">
             {/* Header */}
-            <div className="px-4 py-3 border-b border-white/10 bg-zinc-950/80 flex items-center justify-between z-10">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-xl shadow">
-                  🐱
+            <div className="px-4 py-3 border-b border-white/10 bg-zinc-950/90 flex items-center justify-between z-10 shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-400/40 p-1 flex items-center justify-center shrink-0 shadow-inner">
+                  <img src={activeCatImg} alt="Cat" className="w-full h-full object-contain" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-black text-white flex items-center gap-1.5">
-                    <span>{state.cat?.unlocked ? `${lang === 'uk' ? catSkinInfo.nameUk : catSkinInfo.nameRu} • ${lang === 'uk' ? catInfo.nameUk : catInfo.nameRu}` : (lang === 'uk' ? 'Кіт-Мисливець Мурчик' : 'Кот-Охотник Мурчик')}</span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-black text-white truncate">
+                      {state.cat?.unlocked ? (lang === 'uk' ? catSkinInfo.nameUk : catSkinInfo.nameRu) : (lang === 'uk' ? 'Кіт-Мисливець Мурчик' : 'Кот-Охотник Мурчик')}
+                    </h3>
                     {state.cat?.unlocked && (
-                      <span className="px-1.5 py-0.2 rounded-md bg-amber-500/20 border border-amber-400/40 text-[10px] text-amber-300 font-bold">
-                        Lv.{state.cat.level}
+                      <span className="px-1.5 py-0.2 rounded-md bg-amber-500/20 border border-amber-400/50 text-[10px] text-amber-300 font-black shrink-0">
+                        Lv.{state.cat.level}{state.cat.level >= 5 ? ' ★' : ''}
                       </span>
                     )}
-                  </h3>
-                  <p className="text-[11px] text-amber-400/80 font-medium">
-                    {state.cat?.unlocked ? (lang === 'uk' ? `${catSkinInfo.breedUk} — ${catSkinInfo.descUk}` : `${catSkinInfo.breedRu} — ${catSkinInfo.descRu}`) : (lang === 'uk' ? 'Вірний захисник вашої пекарні' : 'Верный защитник вашей пекарни')}
+                  </div>
+                  <p className="text-[11px] text-amber-300/80 font-medium truncate">
+                    {state.cat?.unlocked ? (lang === 'uk' ? catSkinInfo.breedUk : catSkinInfo.breedRu) : (lang === 'uk' ? 'Вірний захисник вашої пекарні' : 'Верный защитник вашей пекарни')}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setShowCatModal(false)}
-                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-sm font-bold border border-white/10 transition cursor-pointer"
+                onClick={() => {
+                  setShowCatModal(false);
+                  setPreviewCatSkin(null);
+                }}
+                className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white flex items-center justify-center text-sm font-bold border border-white/10 transition cursor-pointer shrink-0 ml-2"
               >
                 ✕
               </button>
             </div>
 
-            {/* Content */}
+            {/* Segmented Tab Bar (shown if unlocked) */}
+            {state.cat?.unlocked && (
+              <div className="px-4 pt-3 pb-2 bg-zinc-950/60 border-b border-white/5 flex gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCatModalTab('main');
+                    setPreviewCatSkin(null);
+                    haptic.selection();
+                  }}
+                  className={cn(
+                    'flex-1 py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5',
+                    catModalTab === 'main'
+                      ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 shadow-md shadow-amber-500/25'
+                      : 'bg-white/5 text-stone-400 hover:text-white hover:bg-white/10'
+                  )}
+                >
+                  <span>🐾</span>
+                  <span>{lang === 'uk' ? 'Мій кіт' : 'Мой кот'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCatModalTab('wardrobe');
+                    haptic.selection();
+                  }}
+                  className={cn(
+                    'flex-1 py-2 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5',
+                    catModalTab === 'wardrobe'
+                      ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 shadow-md shadow-amber-500/25'
+                      : 'bg-white/5 text-stone-400 hover:text-white hover:bg-white/10'
+                  )}
+                >
+                  <span>🎭</span>
+                  <span>{lang === 'uk' ? 'Гардероб' : 'Гардероб'}</span>
+                  <span className={cn(
+                    "px-1.5 py-0.2 rounded-full text-[10px] font-black",
+                    catModalTab === 'wardrobe' ? "bg-black/20 text-stone-900" : "bg-white/10 text-amber-300"
+                  )}>
+                    {(state.cat?.ownedSkins || ['murchik']).length}/{CAT_SKINS.length}
+                  </span>
+                </button>
+              </div>
+            )}
+
+            {/* Content Body */}
             <div className="p-4 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
-              {/* Cat Showcase Card */}
-              <div className="relative p-4 rounded-2xl bg-gradient-to-b from-amber-950/40 to-stone-900 border border-amber-500/30 flex flex-col items-center text-center overflow-hidden">
-                <div className="w-32 h-32 rounded-2xl overflow-hidden border-2 border-amber-400/60 shadow-[0_0_30px_rgba(245,158,11,0.25)] relative mb-2 bg-gradient-to-b from-amber-500/10 to-black/40 p-2 flex items-center justify-center">
-                  <img src={activeCatImg} alt="" className="w-full h-full object-contain" />
-                  {state.cat?.unlocked && (
-                    <div className="absolute top-1.5 right-1.5 px-2 py-0.5 rounded-full bg-black/80 border border-amber-400/60 text-[10px] text-amber-300 font-black">
-                      Lv.{state.cat.level}
-                    </div>
-                  )}
-                </div>
+              {catModalTab === 'main' || !state.cat?.unlocked ? (
+                <>
+                  {/* Hero Showcase Card */}
+                  <div className="relative p-4 rounded-2xl bg-gradient-to-b from-amber-950/35 via-zinc-900/60 to-zinc-950/80 border border-amber-500/30 flex flex-col items-center text-center overflow-hidden shadow-inner">
+                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-amber-500/15 via-transparent to-transparent pointer-events-none" />
 
-                {state.cat?.unlocked ? (
-                  <div className="w-full space-y-2">
-                    <button
-                      type="button"
-                      onClick={petCat}
-                      className="w-full py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 font-bold text-xs transition active:scale-95 cursor-pointer flex items-center justify-center gap-2"
-                    >
-                      <span>💖</span>
-                      <span>{lang === 'uk' ? `Погладити (${catSkinInfo.nameUk})` : `Погладить (${catSkinInfo.nameRu})`}</span>
-                    </button>
-                    <div className="text-[11px] text-stone-400">
-                      {lang === 'uk' ? 'Впіймано шкідників:' : 'Поймано вредителей:'} <strong className="text-amber-300">{state.cat.pestsCaught || 0} 🪲</strong>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-xs text-amber-200/90 max-w-xs">
-                    {lang === 'uk'
-                      ? 'Мурчик автоматично ловитиме будь-яких жуків на екрані, рятуватиме фокачі від крадіжки та приноситиме діаманти!'
-                      : 'Мурчик будет автоматически ловить любых жуков на экране, спасать фокаччи от кражи и приносить алмазы!'}
-                  </div>
-                )}
-              </div>
-
-              {/* 🎭 Cat Skins Wardrobe Section */}
-              {state.cat?.unlocked && (
-                <div className="space-y-2.5 p-3 rounded-2xl bg-black/40 border border-amber-500/25">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <span>🎭</span>
-                      <span>{lang === 'uk' ? 'Гардероб кота' : 'Гардероб кота'}</span>
-                    </h4>
-                    <span className="text-[10px] text-amber-300/80 font-bold">
-                      {lang === 'uk' ? 'Скіни від Lv.2 за фокачі' : 'Скины от Lv.2 за фокаччи'}
-                    </span>
-                  </div>
-
-                  {/* Lock notice if level < 2 */}
-                  {(state.cat.level || 1) < 2 && (
-                    <div className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-500/40 flex items-center gap-2.5">
-                      <span className="text-lg">🔒</span>
-                      <div className="text-[11px] leading-tight text-stone-300">
-                        <span className="font-bold text-amber-300">
-                          {lang === 'uk' ? 'Скіни заблоковано (потрібен Lv.2)' : 'Скины заблокированы (нужен Lv.2)'}
-                        </span>
-                        <br />
-                        {lang === 'uk'
-                          ? `Прокачайте кота до 2 рівня (зараз Lv.${state.cat.level}), щоб відкривати нові скіни!`
-                          : `Прокачайте кота до 2 уровня (сейчас Lv.${state.cat.level}), чтобы открывать новые скины!`}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Skins list */}
-                  <div className="grid grid-cols-1 gap-2">
-                    {CAT_SKINS.map((skin) => {
-                      const isEquipped = (state.cat?.skin || 'murchik') === skin.id;
-                      const isOwned = (state.cat?.ownedSkins || ['murchik']).includes(skin.id);
-                      const isLevelLocked = (state.cat?.level || 1) < skin.minLevel;
-                      const canAfford = state.focaccia >= skin.priceFocaccia;
-                      const skinImg = getCatSkinImg(skin.id);
-
-                      return (
-                        <div
-                          key={skin.id}
-                          onClick={() => {
-                            if (isLevelLocked) return;
-                            if (!isOwned) {
-                              buyCatSkin(skin.id);
-                            } else if (!isEquipped) {
-                              equipCatSkin(skin.id);
-                            }
-                          }}
-                          className={cn(
-                            'p-2.5 rounded-xl border transition flex items-center gap-3 relative overflow-hidden',
-                            isEquipped
-                              ? 'bg-gradient-to-r from-amber-500/25 via-amber-950/40 to-stone-900 border-amber-400 shadow-md ring-1 ring-amber-400/50'
-                              : isLevelLocked
-                              ? 'bg-stone-900/30 border-white/5 opacity-70'
-                              : isOwned
-                              ? 'bg-stone-900/70 border-white/10 hover:border-amber-500/40 cursor-pointer active:scale-[0.98]'
-                              : 'bg-stone-900/80 border-amber-500/20 hover:border-amber-500/50 cursor-pointer active:scale-[0.98]'
-                          )}
-                        >
-                          {/* Skin Avatar */}
-                          <div className="relative w-13 h-13 rounded-xl bg-black/60 border border-white/10 p-1 flex items-center justify-center shrink-0">
-                            <img
-                              src={skinImg}
-                              alt={skin.nameUk}
-                              className={cn('w-full h-full object-contain', isLevelLocked && 'grayscale opacity-50')}
-                            />
-                            {isLevelLocked && (
-                              <div className="absolute inset-0 bg-black/65 rounded-xl flex items-center justify-center text-xs font-black text-amber-300">
-                                🔒
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Skin Info */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-black text-xs text-white">
-                                {lang === 'uk' ? skin.nameUk : skin.nameRu}
-                              </span>
-                              <span className="px-1.5 py-0.2 rounded-md bg-stone-800 text-[9px] text-amber-200/90 font-bold border border-white/10 truncate">
-                                {lang === 'uk' ? skin.breedUk : skin.breedRu}
-                              </span>
-                              {skin.minLevel > 1 && (
-                                <span className={cn(
-                                  "text-[9px] font-bold ml-auto shrink-0",
-                                  isLevelLocked ? "text-rose-400" : "text-emerald-400"
-                                )}>
-                                  {isLevelLocked ? `🔒 Lv.${skin.minLevel}` : `Lv.${skin.minLevel} ✓`}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[10px] text-stone-300 mt-0.5 leading-tight line-clamp-2">
-                              {lang === 'uk' ? skin.descUk : skin.descRu}
-                            </p>
-                            {!isOwned && skin.priceFocaccia > 0 && (
-                              <div className="text-[10px] font-bold text-amber-300 mt-1 flex items-center gap-1">
-                                <span className="text-stone-400">{lang === 'uk' ? 'Ціна:' : 'Цена:'}</span>
-                                <span className={canAfford ? 'text-amber-200' : 'text-rose-400'}>
-                                  {formatNum(skin.priceFocaccia)} 🫓
-                                </span>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Action button */}
-                          <div className="shrink-0">
-                            {isEquipped ? (
-                              <span className="px-2.5 py-1 rounded-xl bg-amber-500 text-stone-950 font-black text-[10px] flex items-center gap-1 shadow">
-                                <span>✓</span>
-                                <span>{lang === 'uk' ? 'Обрано' : 'Выбран'}</span>
-                              </span>
-                            ) : isOwned ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  equipCatSkin(skin.id);
-                                }}
-                                className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/40 border border-amber-400/60 text-amber-200 font-black text-[10px] transition active:scale-95 cursor-pointer shadow"
-                              >
-                                {lang === 'uk' ? 'Вдягти' : 'Надеть'}
-                              </button>
-                            ) : isLevelLocked ? (
-                              <span className="px-2 py-1 rounded-xl bg-stone-800 border border-white/10 text-stone-400 font-bold text-[10px] flex items-center gap-1">
-                                <span>🔒</span>
-                                <span>Lv.{skin.minLevel}</span>
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  buyCatSkin(skin.id);
-                                }}
-                                disabled={!canAfford}
-                                className={cn(
-                                  'px-3 py-1.5 rounded-xl font-black text-[10px] transition active:scale-95 cursor-pointer shadow flex items-center gap-1',
-                                  canAfford
-                                    ? 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-stone-950 shadow-amber-500/20'
-                                    : 'bg-stone-800 text-stone-500 border border-white/5 cursor-not-allowed'
-                                )}
-                              >
-                                <span>{lang === 'uk' ? 'Купити' : 'Купить'}</span>
-                              </button>
-                            )}
-                          </div>
+                    <div className="w-28 h-28 sm:w-32 sm:h-32 relative flex items-center justify-center mb-1">
+                      <img
+                        src={activeCatImg}
+                        alt="Cat Hero"
+                        className="w-full h-full object-contain filter drop-shadow-[0_8px_20px_rgba(245,158,11,0.35)]"
+                      />
+                      {state.cat?.unlocked && (
+                        <div className="absolute top-0 right-0 px-2 py-0.5 rounded-full bg-black/85 border border-amber-400/60 text-[10px] text-amber-300 font-black shadow">
+                          Lv.{state.cat.level}
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                      )}
+                    </div>
 
-              {/* Stats & Perk list */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-black text-amber-400 uppercase tracking-wider">
-                  {state.cat?.unlocked ? (lang === 'uk' ? 'Поточні здібності:' : 'Текущие способности:') : (lang === 'uk' ? 'Що вміє кіт:' : 'Что умеет кот:')}
-                </h4>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div className="p-2.5 rounded-xl bg-stone-900/80 border border-white/5 space-y-0.5">
-                    <div className="text-stone-400">{lang === 'uk' ? '⚡ Швидкість реакції' : '⚡ Скорость реакции'}</div>
-                    <div className="font-bold text-amber-200">{state.cat?.unlocked ? `${catInfo.runDurationMs / 1000} сек` : '3.5 сек'}</div>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-stone-900/80 border border-white/5 space-y-0.5">
-                    <div className="text-stone-400">{lang === 'uk' ? '💰 Бонус фокач' : '💰 Бонус фокачч'}</div>
-                    <div className="font-bold text-amber-200">{state.cat?.unlocked ? `+${Math.round((catInfo.catchBonusMult - 1) * 100)}%` : 'Базовий'}</div>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-stone-900/80 border border-white/5 space-y-0.5">
-                    <div className="text-stone-400">{lang === 'uk' ? '💎 Шанс на діамант' : '💎 Шанс на алмаз'}</div>
-                    <div className="font-bold text-cyan-300">{state.cat?.unlocked ? `${Math.round(catInfo.diamondChance * 100)}%` : '8%'}</div>
-                  </div>
-                  <div className="p-2.5 rounded-xl bg-stone-900/80 border border-white/5 space-y-0.5">
-                    <div className="text-stone-400">{lang === 'uk' ? '🥐 Пасивний CPS' : '🥐 Пассивный CPS'}</div>
-                    <div className="font-bold text-emerald-400">{state.cat?.unlocked ? `+${Math.round(catInfo.cpsBonus * 100)}%` : '+2%'}</div>
-                  </div>
-                </div>
-              </div>
+                    <div className="font-bold text-xs text-white">
+                      {state.cat?.unlocked ? (lang === 'uk' ? catInfo.titleUk : catInfo.titleRu) : (lang === 'uk' ? 'Маленький охоронець пекарні' : 'Маленький охранник пекарни')}
+                    </div>
 
-              {/* Rain Note */}
-              <div className="p-2.5 rounded-xl bg-blue-950/30 border border-blue-500/25 flex items-center gap-2 text-[11px] text-blue-200/80">
-                <span className="text-lg">🌧️</span>
-                <span>{lang === 'uk' ? 'Під час дощу Мурчик боїться води та кумедно ховається за екран!' : 'Во время дождя Мурчик боится воды и забавно прячется за экран!'}</span>
-              </div>
-
-              {/* Action: Adopt or Upgrade */}
-              <div>
-                {!state.cat?.unlocked ? (
-                  <button
-                    type="button"
-                    onClick={adoptCat}
-                    disabled={state.diamonds < CAT_UNLOCK_COST_DIAMONDS}
-                    className={cn(
-                      'w-full py-3.5 rounded-2xl font-black text-sm transition active:scale-95 cursor-pointer shadow-lg flex items-center justify-center gap-2',
-                      state.diamonds >= CAT_UNLOCK_COST_DIAMONDS
-                        ? 'bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-stone-950 hover:brightness-110 shadow-amber-500/30'
-                        : 'bg-stone-800 text-stone-500 cursor-not-allowed border border-white/5'
-                    )}
-                  >
-                    <span>🐱</span>
-                    <span>{lang === 'uk' ? `Завести Мурчика (${CAT_UNLOCK_COST_DIAMONDS} 💎)` : `Завести Мурчика (${CAT_UNLOCK_COST_DIAMONDS} 💎)`}</span>
-                  </button>
-                ) : state.cat.level < CAT_LEVELS.length ? (
-                  (() => {
-                    const nextInfo = CAT_LEVELS[state.cat.level];
-                    const canAfford = state.diamonds >= nextInfo.upgradeCostDiamonds;
-                    return (
-                      <div className="space-y-2">
-                        <div className="text-[11px] text-stone-300">
-                          {lang === 'uk' ? 'Наступний рівень:' : 'Следующий уровень:'} <strong className="text-amber-300">{lang === 'uk' ? nextInfo.nameUk : nextInfo.nameRu}</strong> ({lang === 'uk' ? nextInfo.descUk : nextInfo.descRu})
-                        </div>
+                    {state.cat?.unlocked ? (
+                      <div className="w-full mt-3 flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={upgradeCat}
-                          disabled={!canAfford}
-                          className={cn(
-                            'w-full py-3.5 rounded-2xl font-black text-sm transition active:scale-95 cursor-pointer shadow-lg flex items-center justify-center gap-2',
-                            canAfford
-                              ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white hover:brightness-110 shadow-emerald-500/30'
-                              : 'bg-stone-800 text-stone-500 cursor-not-allowed border border-white/5'
-                          )}
+                          onClick={petCat}
+                          className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-500/20 to-amber-500/20 hover:from-rose-500/30 hover:to-amber-500/30 border border-amber-400/40 text-amber-200 font-black text-xs transition active:scale-95 cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
                         >
-                          <span>⬆️</span>
-                          <span>{lang === 'uk' ? `Прокачати до Рівня ${state.cat.level + 1} (${nextInfo.upgradeCostDiamonds} 💎)` : `Улучшить до Уровня ${state.cat.level + 1} (${nextInfo.upgradeCostDiamonds} 💎)`}</span>
+                          <span>💖</span>
+                          <span>{lang === 'uk' ? `Погладити (${catSkinInfo.nameUk})` : `Погладить (${catSkinInfo.nameRu})`}</span>
                         </button>
+                        <div className="px-3 py-2.5 rounded-xl bg-black/50 border border-white/10 text-xs font-bold text-stone-300 flex items-center gap-1.5 shrink-0" title={lang === 'uk' ? 'Впіймано шкідників' : 'Поймано вредителей'}>
+                          <span>🪲</span>
+                          <span className="text-amber-300 font-black">{state.cat.pestsCaught || 0}</span>
+                        </div>
                       </div>
-                    );
-                  })()
-                ) : (
-                  <div className="w-full py-3 rounded-2xl bg-amber-500/15 border border-amber-400/40 text-amber-300 font-black text-xs text-center">
-                    👑 {lang === 'uk' ? 'МАКСИМАЛЬНИЙ РІВЕНЬ — КІТ-ЛЕГЕНДА' : 'МАКСИМАЛЬНЫЙ УРОВЕНЬ — КОТ-ЛЕГЕНДА'}
+                    ) : (
+                      <p className="text-xs text-amber-200/90 mt-2 max-w-xs leading-relaxed">
+                        {lang === 'uk'
+                          ? 'Мурчик автоматично ловитиме будь-яких жуків на екрані, захищатиме фокачі від крадіжки та приноситиме діаманти!'
+                          : 'Мурчик будет автоматически ловить любых жуков на экране, спасать фокаччи от кражи и приносить алмазы!'}
+                      </p>
+                    )}
                   </div>
-                )}
-              </div>
+
+                  {/* 4 Modern Stat Cards */}
+                  <div className="space-y-1.5">
+                    <h4 className="text-[11px] font-black text-amber-400/90 uppercase tracking-wider px-0.5">
+                      {state.cat?.unlocked ? (lang === 'uk' ? 'Характеристики кота' : 'Характеристики кота') : (lang === 'uk' ? 'Що вміє кіт' : 'Что умеет кот')}
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                      <div className="p-2.5 rounded-xl bg-zinc-900/80 border border-white/5 flex flex-col justify-between">
+                        <div className="text-stone-400 text-[10px]">{lang === 'uk' ? '⚡ Швидкість бігу' : '⚡ Скорость бега'}</div>
+                        <div className="font-black text-amber-200 text-sm mt-0.5">
+                          {state.cat?.unlocked ? `${(catInfo.runDurationMs / 1000).toFixed(1)}с` : '3.5с'}
+                        </div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-zinc-900/80 border border-white/5 flex flex-col justify-between">
+                        <div className="text-stone-400 text-[10px]">{lang === 'uk' ? '💰 Бонус фокач' : '💰 Бонус фокачч'}</div>
+                        <div className="font-black text-amber-200 text-sm mt-0.5">
+                          {state.cat?.unlocked ? `+${Math.round((catInfo.catchBonusMult - 1) * 100)}%` : 'Базовий'}
+                        </div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-zinc-900/80 border border-white/5 flex flex-col justify-between">
+                        <div className="text-stone-400 text-[10px]">{lang === 'uk' ? '💎 Шанс на діамант' : '💎 Шанс на алмаз'}</div>
+                        <div className="font-black text-cyan-300 text-sm mt-0.5">
+                          {state.cat?.unlocked ? `${Math.round(catInfo.diamondChance * 100)}%` : '8%'}
+                        </div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-zinc-900/80 border border-white/5 flex flex-col justify-between">
+                        <div className="text-stone-400 text-[10px]">{lang === 'uk' ? '🥐 Пасивний CPS' : '🥐 Пассивный CPS'}</div>
+                        <div className="font-black text-emerald-400 text-sm mt-0.5">
+                          {state.cat?.unlocked ? `+${Math.round(catInfo.cpsBonus * 100)}%` : '+2%'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Level Ability / Next Level Card */}
+                  {state.cat?.unlocked && (
+                    state.cat.level >= CAT_LEVELS.length ? (
+                      <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-yellow-500/10 to-amber-500/15 border border-amber-400/40 relative overflow-hidden shadow-md">
+                        <div className="flex items-start gap-3">
+                          <span className="text-2xl mt-0.5">👑</span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-black text-amber-300">
+                              {lang === 'uk' ? 'МАКСИМАЛЬНИЙ РІВЕНЬ — КІТ-ЛЕГЕНДА' : 'МАКСИМАЛЬНЫЙ УРОВЕНЬ — КОТ-ЛЕГЕНДА'}
+                            </div>
+                            <p className="text-[11px] text-stone-200 mt-1 leading-snug">
+                              {lang === 'uk'
+                                ? '🌟 Автоматично підбирає Золоті, 💎 Алмазні (x15) та ❇️ Смарагдові (x20) фокачі навіть у фоні!'
+                                : '🌟 Автоматически подбирает Золотые, 💎 Алмазные (x15) и ❇️ Изумрудные (x20) фокаччи даже в фоне!'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      (() => {
+                        const nextInfo = CAT_LEVELS[state.cat.level];
+                        const canAfford = state.diamonds >= nextInfo.upgradeCostDiamonds;
+                        return (
+                          <div className="p-3.5 rounded-2xl bg-zinc-900/90 border border-white/10 space-y-2.5 shadow-md">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-black text-amber-300 flex items-center gap-1.5">
+                                <span>⭐</span>
+                                <span>{lang === 'uk' ? 'Наступний рівень:' : 'Следующий уровень:'} {lang === 'uk' ? nextInfo.nameUk : nextInfo.nameRu}</span>
+                              </span>
+                              <span className="px-1.5 py-0.2 rounded-md bg-amber-500/20 text-amber-300 text-[10px] font-bold">
+                                Lv.{state.cat.level + 1}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-stone-300 leading-snug">
+                              {lang === 'uk' ? nextInfo.descUk : nextInfo.descRu}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={upgradeCat}
+                              disabled={!canAfford}
+                              className={cn(
+                                'w-full py-3 rounded-xl font-black text-xs transition active:scale-95 cursor-pointer shadow-lg flex items-center justify-center gap-2',
+                                canAfford
+                                  ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 text-white hover:brightness-110 shadow-emerald-500/25'
+                                  : 'bg-stone-800 text-stone-500 cursor-not-allowed border border-white/5'
+                              )}
+                            >
+                              <span>⬆️</span>
+                              <span>{lang === 'uk' ? `Прокачати за ${nextInfo.upgradeCostDiamonds} 💎` : `Улучшить за ${nextInfo.upgradeCostDiamonds} 💎`}</span>
+                            </button>
+                          </div>
+                        );
+                      })()
+                    )
+                  )}
+
+                  {/* Rain Note */}
+                  <div className="p-2.5 rounded-xl bg-blue-950/30 border border-blue-500/25 flex items-center gap-2.5 text-[11px] text-blue-200/85">
+                    <span className="text-lg shrink-0">🌧️</span>
+                    <span>{lang === 'uk' ? 'Під час дощу Мурчик боїться води та кумедно ховається за екран!' : 'Во время дождя Мурчик боится воды и забавно прячется за экран!'}</span>
+                  </div>
+
+                  {/* Adopt Button (if not unlocked) */}
+                  {!state.cat?.unlocked && (
+                    <button
+                      type="button"
+                      onClick={adoptCat}
+                      disabled={state.diamonds < CAT_UNLOCK_COST_DIAMONDS}
+                      className={cn(
+                        'w-full py-3.5 rounded-2xl font-black text-sm transition active:scale-95 cursor-pointer shadow-lg flex items-center justify-center gap-2',
+                        state.diamonds >= CAT_UNLOCK_COST_DIAMONDS
+                          ? 'bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-stone-950 hover:brightness-110 shadow-amber-500/30'
+                          : 'bg-stone-800 text-stone-500 cursor-not-allowed border border-white/5'
+                      )}
+                    >
+                      <span>🐱</span>
+                      <span>{lang === 'uk' ? `Завести Мурчика (${CAT_UNLOCK_COST_DIAMONDS} 💎)` : `Завести Мурчика (${CAT_UNLOCK_COST_DIAMONDS} 💎)`}</span>
+                    </button>
+                  )}
+                </>
+              ) : (
+                /* ===== WARDROBE TAB ===== */
+                <div className="space-y-4">
+                  {/* Level Check */}
+                  {(state.cat?.level || 1) < 2 ? (
+                    <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/30 flex items-start gap-3">
+                      <span className="text-2xl">🔒</span>
+                      <div className="text-xs text-stone-300 space-y-1">
+                        <div className="font-black text-amber-300">
+                          {lang === 'uk' ? 'Гардероб заблоковано (потрібен Lv.2)' : 'Гардероб заблокирован (нужен Lv.2)'}
+                        </div>
+                        <p className="leading-snug">
+                          {lang === 'uk'
+                            ? `Прокачайте кота до 2-го рівня (зараз Lv.${state.cat?.level || 1}), щоб отримати доступ до вибору та покупки унікальних скінів!`
+                            : `Прокачайте кота до 2-го уровня (сейчас Lv.${state.cat?.level || 1}), чтобы получить доступ к выбору и покупке уникальных скинов!`}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    (() => {
+                      const selectedSkinId = previewCatSkin || state.cat?.skin || 'murchik';
+                      const selectedSkin = getCatSkin(selectedSkinId);
+                      const isEquipped = (state.cat?.skin || 'murchik') === selectedSkin.id;
+                      const isOwned = (state.cat?.ownedSkins || ['murchik']).includes(selectedSkin.id);
+                      const isLevelLocked = (state.cat?.level || 1) < selectedSkin.minLevel;
+                      const canAfford = state.focaccia >= selectedSkin.priceFocaccia;
+                      const selectedImg = getCatSkinImg(selectedSkin.id);
+
+                      return (
+                        <>
+                          {/* Live Preview Hero Card */}
+                          <div className="p-3.5 rounded-2xl bg-gradient-to-b from-zinc-900 to-black/80 border border-amber-500/30 space-y-3 shadow-lg">
+                            <div className="flex items-center gap-3">
+                              <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-400/40 p-1 flex items-center justify-center shrink-0 shadow-inner">
+                                <img src={selectedImg} alt={selectedSkin.nameUk} className="w-full h-full object-contain" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <h4 className="text-sm font-black text-white truncate">
+                                    {lang === 'uk' ? selectedSkin.nameUk : selectedSkin.nameRu}
+                                  </h4>
+                                  <span className="px-1.5 py-0.2 rounded-md bg-stone-800 border border-white/10 text-[9px] text-amber-300 font-bold">
+                                    {lang === 'uk' ? selectedSkin.breedUk : selectedSkin.breedRu}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-stone-300 mt-1 line-clamp-2 leading-tight">
+                                  {lang === 'uk' ? selectedSkin.descUk : selectedSkin.descRu}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Action Button for Selected Skin */}
+                            <div>
+                              {isEquipped ? (
+                                <div className="w-full py-2.5 rounded-xl bg-amber-500/20 border border-amber-400/50 text-amber-300 font-black text-xs text-center flex items-center justify-center gap-1.5 shadow">
+                                  <span>✓</span>
+                                  <span>{lang === 'uk' ? 'Зараз одягнено' : 'Сейчас надето'}</span>
+                                </div>
+                              ) : isOwned ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    equipCatSkin(selectedSkin.id);
+                                    setPreviewCatSkin(null);
+                                  }}
+                                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:brightness-110 text-stone-950 font-black text-xs transition active:scale-95 cursor-pointer shadow flex items-center justify-center gap-1.5"
+                                >
+                                  <span>✨</span>
+                                  <span>{lang === 'uk' ? `Одягти «${selectedSkin.nameUk}»` : `Надеть «${selectedSkin.nameRu}»`}</span>
+                                </button>
+                              ) : isLevelLocked ? (
+                                <div className="w-full py-2.5 rounded-xl bg-stone-900 border border-white/10 text-stone-400 font-bold text-xs text-center flex items-center justify-center gap-1.5">
+                                  <span>🔒</span>
+                                  <span>{lang === 'uk' ? `Потрібен Lv.${selectedSkin.minLevel} кота` : `Нужен Lv.${selectedSkin.minLevel} кота`}</span>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    buyCatSkin(selectedSkin.id);
+                                    setPreviewCatSkin(null);
+                                  }}
+                                  disabled={!canAfford}
+                                  className={cn(
+                                    'w-full py-2.5 rounded-xl font-black text-xs transition active:scale-95 cursor-pointer shadow flex items-center justify-center gap-1.5',
+                                    canAfford
+                                      ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:brightness-110 text-white shadow-emerald-500/20'
+                                      : 'bg-stone-800 text-stone-500 cursor-not-allowed border border-white/5'
+                                  )}
+                                >
+                                  <span>🛍️</span>
+                                  <span>
+                                    {lang === 'uk'
+                                      ? `Купити за ${formatNum(selectedSkin.priceFocaccia)} 🫓`
+                                      : `Купить за ${formatNum(selectedSkin.priceFocaccia)} 🫓`}
+                                  </span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Skins Grid */}
+                          <div className="space-y-2">
+                            <div className="text-[11px] font-black text-amber-400/90 uppercase tracking-wider px-0.5">
+                              {lang === 'uk' ? 'Каталог скінів:' : 'Каталог скинов:'}
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              {CAT_SKINS.map((skin) => {
+                                const isCurEquipped = (state.cat?.skin || 'murchik') === skin.id;
+                                const isCurOwned = (state.cat?.ownedSkins || ['murchik']).includes(skin.id);
+                                const isCurLocked = (state.cat?.level || 1) < skin.minLevel;
+                                const isCurSelected = selectedSkinId === skin.id;
+                                const skinImg = getCatSkinImg(skin.id);
+
+                                return (
+                                  <div
+                                    key={skin.id}
+                                    onClick={() => {
+                                      setPreviewCatSkin(skin.id);
+                                      haptic.selection();
+                                    }}
+                                    className={cn(
+                                      'p-2.5 rounded-2xl border transition flex flex-col items-center text-center cursor-pointer relative overflow-hidden group active:scale-[0.97]',
+                                      isCurSelected
+                                        ? 'bg-gradient-to-b from-amber-500/20 to-zinc-900 border-amber-400 shadow-md ring-2 ring-amber-400/60'
+                                        : isCurEquipped
+                                        ? 'bg-zinc-900/90 border-amber-500/50 shadow'
+                                        : isCurLocked
+                                        ? 'bg-zinc-950/50 border-white/5 opacity-60'
+                                        : 'bg-zinc-900/60 border-white/10 hover:border-amber-500/30'
+                                    )}
+                                  >
+                                    {/* Skin Avatar */}
+                                    <div className="relative w-14 h-14 rounded-xl bg-black/50 border border-white/10 p-1 flex items-center justify-center shrink-0 mb-1.5">
+                                      <img
+                                        src={skinImg}
+                                        alt={skin.nameUk}
+                                        className={cn('w-full h-full object-contain', isCurLocked && 'grayscale opacity-50')}
+                                      />
+                                      {isCurLocked && (
+                                        <div className="absolute inset-0 bg-black/60 rounded-xl flex items-center justify-center text-xs font-black text-amber-300">
+                                          🔒
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Name & Breed */}
+                                    <div className="w-full">
+                                      <div className="font-black text-xs text-white truncate">
+                                        {lang === 'uk' ? skin.nameUk : skin.nameRu}
+                                      </div>
+                                      <div className="text-[9px] text-stone-400 truncate mt-0.5">
+                                        {lang === 'uk' ? skin.breedUk : skin.breedRu}
+                                      </div>
+                                    </div>
+
+                                    {/* Bottom Status Pill */}
+                                    <div className="mt-2 w-full">
+                                      {isCurEquipped ? (
+                                        <span className="w-full py-0.5 rounded-lg bg-amber-500 text-stone-950 font-black text-[9px] block shadow">
+                                          ✓ {lang === 'uk' ? 'Одягнено' : 'Надето'}
+                                        </span>
+                                      ) : isCurOwned ? (
+                                        <span className="w-full py-0.5 rounded-lg bg-white/10 text-amber-200 font-bold text-[9px] block">
+                                          {lang === 'uk' ? 'Придбано' : 'Куплено'}
+                                        </span>
+                                      ) : isCurLocked ? (
+                                        <span className="w-full py-0.5 rounded-lg bg-stone-950 text-stone-400 font-bold text-[9px] block border border-white/5">
+                                          Lv.{skin.minLevel} 🔒
+                                        </span>
+                                      ) : (
+                                        <span className="w-full py-0.5 rounded-lg bg-amber-500/20 text-amber-300 font-black text-[9px] block border border-amber-400/30">
+                                          {formatNum(skin.priceFocaccia)} 🫓
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
