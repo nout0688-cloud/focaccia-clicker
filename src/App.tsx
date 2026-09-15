@@ -637,6 +637,26 @@ function clearOfflineAcEvents() {
   try { window.localStorage.removeItem('focaccia_ac_offline_events'); } catch { /* ignore */ }
 }
 
+/** Повертає скільки секунд між fromTs і toTs припало на день (8–22) і ніч (22–8) */
+function calcDayNightSecs(fromTs: number, toTs: number): { daySecs: number; nightSecs: number } {
+  let daySecs = 0;
+  let nightSecs = 0;
+  let cursor = fromTs;
+  while (cursor < toTs) {
+    const d = new Date(cursor);
+    const hour = d.getHours();
+    const isDay = hour >= 8 && hour < 22;
+    const nextHour = new Date(d);
+    nextHour.setHours(hour + 1, 0, 0, 0);
+    const blockEnd = Math.min(nextHour.getTime(), toTs);
+    const secs = (blockEnd - cursor) / 1000;
+    if (isDay) daySecs += secs;
+    else nightSecs += secs;
+    cursor = blockEnd;
+  }
+  return { daySecs, nightSecs };
+}
+
 /* ---- Types ---- */
 interface SaveState {
   focaccia: number;
@@ -1099,6 +1119,7 @@ export default function App() {
   const [diamondFrenzy, setDiamondFrenzy] = useState(0);
   const [emeraldFrenzy, setEmeraldFrenzy] = useState(0);
   const [offlineGain, setOfflineGain] = useState<number | null>(null);
+  const [offlineBreakdown, setOfflineBreakdown] = useState<{ day: number; night: number } | null>(null);
   const [shake, setShake] = useState(false);
   const [confirmModal, setConfirmModal] = useState<ConfirmModal | null>(null);
   const [recharging, setRecharging] = useState(false);
@@ -1387,10 +1408,11 @@ export default function App() {
 
     loadState().then((s) => {
       if (!mounted) return;
-      const maxHours = s.vipUpgrades?.includes('vip_offline') ? 12 : 8;
+      const maxHours = 12;
       const lastSaveTime = Number(s.lastSave) || Date.now();
-      const elapsed = Math.max(0, Math.min((Date.now() - lastSaveTime) / 1000, 60 * 60 * maxHours));
-      if (elapsed > 30) {
+      const cappedNow = Math.min(Date.now(), lastSaveTime + 60 * 60 * maxHours * 1000);
+      const totalElapsed = (cappedNow - lastSaveTime) / 1000;
+      if (totalElapsed > 30) {
         let base = 0;
         for (const b of BUILDINGS) base += (s.buildings[b.id] || 0) * b.cps;
         const dPolish = s.vipUpgrades?.includes('vip_polish') ? 1.25 : 1.0;
@@ -1405,14 +1427,22 @@ export default function App() {
           if (u.cpsMult && s.upgrades.includes(u.id)) mult *= u.cpsMult;
         if (s.vipUpgrades?.includes('vip_chef')) mult *= 1.3;
         mult *= (1 + dPercentTotal);
-        const karmaMult = (s.karma ?? 100) < 50 ? 0.5 : 1; // погана карма — офлайн-дохід −50%
-        const offlineRate = s.vipUpgrades?.includes('vip_offline') ? 0.75 : 0.5;
-        const gain = base * mult * (1 + (Number(s.prestige) || 0) * 0.1) * elapsed * offlineRate * karmaMult;
+        const karmaMult = (s.karma ?? 100) < 50 ? 0.5 : 1;
+        const prestigeMul = 1 + (Number(s.prestige) || 0) * 0.07;
+        const DAY_RATE = 0.45;
+        const NIGHT_RATE = 0.10;
+        const { daySecs, nightSecs } = calcDayNightSecs(lastSaveTime, cappedNow);
+        const gainDay = base * mult * prestigeMul * daySecs * DAY_RATE * karmaMult;
+        const gainNight = base * mult * prestigeMul * nightSecs * NIGHT_RATE * karmaMult;
+        const gain = gainDay + gainNight;
         if (Number.isFinite(gain) && gain > 1) {
           const cleanGain = Math.floor(gain);
+          const cleanDay = Math.floor(gainDay);
+          const cleanNight = Math.floor(gainNight);
           s.focaccia += cleanGain;
           s.total += cleanGain;
           setOfflineGain(cleanGain);
+          setOfflineBreakdown({ day: cleanDay, night: cleanNight });
         }
       }
       setState(s);
@@ -6466,13 +6496,30 @@ export default function App() {
 
       {/* Offline modal */}
       {offlineGain !== null && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6" onClick={() => setOfflineGain(null)}>
-          <div className="glass border border-amber-500/40 rounded-3xl p-7 text-center max-w-xs w-full shadow-[0_0_60px_rgba(251,191,36,0.15)]" style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6" onClick={() => { setOfflineGain(null); setOfflineBreakdown(null); }}>
+          <div className="glass border border-amber-500/40 rounded-3xl p-7 text-center max-w-xs w-full shadow-[0_0_60px_rgba(251,191,36,0.15)]" style={{ animation: 'modal-enter 0.3s cubic-bezier(0.34,1.56,0.64,1)' }} onClick={(e) => e.stopPropagation()}>
             <div className="text-6xl mb-3">😴</div>
             <h2 className="text-xl font-black mb-1 text-amber-100">{t.offlineTitle}</h2>
             <p className="text-amber-300/70 mb-3 text-sm">{t.offlineSub}</p>
+            {offlineBreakdown && (offlineBreakdown.day > 0 || offlineBreakdown.night > 0) && (
+              <div className="mb-3 space-y-1">
+                {offlineBreakdown.day > 0 && (
+                  <div className="flex items-center justify-between text-sm px-2">
+                    <span className="text-amber-300/80">☀️ {lang === 'uk' ? 'Вдень' : 'Днём'}</span>
+                    <span className="text-amber-200 font-bold">+{formatNum(offlineBreakdown.day)} 🫓</span>
+                  </div>
+                )}
+                {offlineBreakdown.night > 0 && (
+                  <div className="flex items-center justify-between text-sm px-2">
+                    <span className="text-indigo-300/80">🌙 {lang === 'uk' ? 'Вночі' : 'Ночью'}</span>
+                    <span className="text-indigo-200 font-bold">+{formatNum(offlineBreakdown.night)} 🫓</span>
+                  </div>
+                )}
+                <div className="border-t border-amber-500/20 mx-2 pt-1" />
+              </div>
+            )}
             <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 to-orange-300 mb-6">+{formatNum(offlineGain)} 🫓</div>
-            <button className="bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl w-full transition active:scale-95 shadow-lg shadow-amber-500/25" onClick={() => { setOfflineGain(null); doFlash('golden'); burstConfetti(['🫓', '🥐', '⭐', '✨']); }}>{t.claimBtn}</button>
+            <button className="bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-bold py-3 rounded-2xl w-full transition active:scale-95 shadow-lg shadow-amber-500/25" onClick={() => { setOfflineGain(null); setOfflineBreakdown(null); doFlash('golden'); burstConfetti(['🫓', '🥐', '⭐', '✨']); }}>{t.claimBtn}</button>
           </div>
         </div>
       )}
