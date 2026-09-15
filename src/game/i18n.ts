@@ -81,6 +81,22 @@ export const BUILDINGS_I18N: Record<string, Record<Lang, LocalizedItem>> = {
     uk: { name: 'Бог фокачі', desc: 'Все є фокача' },
     ru: { name: 'Бог фокаччи', desc: 'Всё есть фокачча' },
   },
+  matrix: {
+    uk: { name: 'Сингулярність фокач', desc: 'ШІ вираховує досконалий смак скоринки' },
+    ru: { name: 'Сингулярность фокачч', desc: 'ИИ рассчитывает идеальный вкус корочки' },
+  },
+  galaxy: {
+    uk: { name: 'Галактична піч', desc: 'Тепло зірок випікає цілі квадранти фокач' },
+    ru: { name: 'Галактическая печь', desc: 'Жар звёзд выпекает целые квадранты фокачч' },
+  },
+  chronos: {
+    uk: { name: 'Часовий конвеєр', desc: 'Доставляє гарячі фокачі прямо з майбутнього' },
+    ru: { name: 'Временной конвейер', desc: 'Доставляет горячие фокаччи прямо из будущего' },
+  },
+  bigbang: {
+    uk: { name: 'Великий вибух смаку', desc: 'Народження нового смакового виміру' },
+    ru: { name: 'Большой взрыв вкуса', desc: 'Рождение нового вкусового измерения' },
+  },
 };
 
 export const CLICK_UPGRADES_I18N: Record<string, Record<Lang, LocalizedItem>> = {
@@ -329,6 +345,14 @@ export const ACHIEVEMENTS_I18N: Record<string, Record<Lang, LocalizedItem>> = {
     uk: { name: 'Діамантовий зодчий', desc: 'Побудуй першу діамантову будівлю' },
     ru: { name: 'Алмазный зодчий', desc: 'Построй первое алмазное здание' },
   },
+  a21: {
+    uk: { name: 'Володар часу', desc: 'Побудуй часовий конвеєр' },
+    ru: { name: 'Повелитель времени', desc: 'Построй временной конвейер' },
+  },
+  a22: {
+    uk: { name: 'Творець всесвіту', desc: 'Створи великий вибух смаку' },
+    ru: { name: 'Создатель вселенной', desc: 'Создай большой взрыв вкуса' },
+  },
 };
 
 export const BOSSES_I18N: Record<string, Record<Lang, string>> = {
@@ -383,6 +407,11 @@ export const TRANSLATIONS = {
     tabUpgrades: 'Апгрейди',
     tabVip: 'ВІП',
     tabAchievements: 'Досягн.',
+    eraAll: 'Всі',
+    eraStarter: 'Двір',
+    eraIndustry: 'Індустрія',
+    eraCosmos: 'Космос',
+    eraMultiverse: 'Всесвіт',
     diamondBuildingsBannerTitle: 'Діамантові будівлі',
     diamondBuildingsBannerDesc: 'Постійний дохід та % бонуси до всього CPS',
     goTo: 'Перейти ➔',
@@ -718,6 +747,11 @@ export const TRANSLATIONS = {
     tabUpgrades: 'Апгрейды',
     tabVip: 'ВИП',
     tabAchievements: 'Достиж.',
+    eraAll: 'Все',
+    eraStarter: 'Двор',
+    eraIndustry: 'Индустрия',
+    eraCosmos: 'Космос',
+    eraMultiverse: 'Вселенная',
     diamondBuildingsBannerTitle: 'Алмазные здания',
     diamondBuildingsBannerDesc: 'Постоянный доход и % бонусы ко всему CPS',
     goTo: 'Перейти ➔',

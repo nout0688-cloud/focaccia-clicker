@@ -1,3 +1,5 @@
+export type BuildingEra = 'starter' | 'industry' | 'cosmos' | 'multiverse';
+
 export interface Building {
   id: string;
   name: string;
@@ -6,6 +8,7 @@ export interface Building {
   baseCost: number;
   cps: number; // focaccia per second per unit
   requireRebirth?: number;
+  era: BuildingEra;
 }
 
 export interface ClickUpgrade {
@@ -45,16 +48,27 @@ export interface AchState {
 }
 
 export const BUILDINGS: Building[] = [
-  { id: 'hand', name: 'Друга рука', emoji: '✋', desc: 'Їсти можна двома руками', baseCost: 15, cps: 0.1, requireRebirth: 0 },
-  { id: 'grandma', name: 'Бабуся', emoji: '👵', desc: 'Пече фокачі з любов’ю', baseCost: 100, cps: 1, requireRebirth: 0 },
-  { id: 'oven', name: 'Піч', emoji: '🔥', desc: 'Дров’яна піч на подвір’ї', baseCost: 1100, cps: 8, requireRebirth: 0 },
-  { id: 'kiosk', name: 'Кіоск', emoji: '🏪', desc: 'Зелений кіоск біля зупинки', baseCost: 12000, cps: 47, requireRebirth: 0 },
-  { id: 'bakery', name: 'Пекарня', emoji: '🥖', desc: 'Справжня фокачерія', baseCost: 130000, cps: 260, requireRebirth: 0 },
-  { id: 'factory', name: 'Завод', emoji: '🏭', desc: 'Промислове виробництво фокач', baseCost: 1400000, cps: 1400, requireRebirth: 1 },
-  { id: 'italy', name: 'Філія в Італії', emoji: '🇮🇹', desc: 'Прямо з Лігурії', baseCost: 20000000, cps: 7800, requireRebirth: 2 },
-  { id: 'rocket', name: 'Космо-пекарня', emoji: '🚀', desc: 'Фокачі на орбіті', baseCost: 330000000, cps: 44000, requireRebirth: 3 },
-  { id: 'portal', name: 'Портал фокач', emoji: '🌀', desc: 'Фокачі з паралельних всесвітів', baseCost: 5100000000, cps: 260000, requireRebirth: 4 },
-  { id: 'god', name: 'Бог фокачі', emoji: '👑', desc: 'Все є фокача', baseCost: 75000000000, cps: 1600000, requireRebirth: 5 },
+  // 🏡 Двір (starter)
+  { id: 'hand', name: 'Друга рука', emoji: '✋', desc: 'Їсти можна двома руками', baseCost: 15, cps: 0.1, requireRebirth: 0, era: 'starter' },
+  { id: 'grandma', name: 'Бабуся', emoji: '👵', desc: 'Пече фокачі з любов’ю', baseCost: 100, cps: 1, requireRebirth: 0, era: 'starter' },
+  { id: 'oven', name: 'Піч', emoji: '🔥', desc: 'Дров’яна піч на подвір’ї', baseCost: 1100, cps: 8, requireRebirth: 0, era: 'starter' },
+  { id: 'kiosk', name: 'Кіоск', emoji: '🏪', desc: 'Зелений кіоск біля зупинки', baseCost: 12000, cps: 47, requireRebirth: 0, era: 'starter' },
+
+  // 🏭 Індустрія (industry)
+  { id: 'bakery', name: 'Пекарня', emoji: '🥖', desc: 'Справжня фокачерія', baseCost: 130000, cps: 260, requireRebirth: 0, era: 'industry' },
+  { id: 'factory', name: 'Завод', emoji: '🏭', desc: 'Промислове виробництво фокач', baseCost: 1400000, cps: 1400, requireRebirth: 1, era: 'industry' },
+  { id: 'italy', name: 'Філія в Італії', emoji: '🇮🇹', desc: 'Прямо з Лігурії', baseCost: 20000000, cps: 7800, requireRebirth: 2, era: 'industry' },
+
+  // 🚀 Космос (cosmos)
+  { id: 'rocket', name: 'Космо-пекарня', emoji: '🚀', desc: 'Фокачі на орбіті', baseCost: 330000000, cps: 44000, requireRebirth: 3, era: 'cosmos' },
+  { id: 'portal', name: 'Портал фокач', emoji: '🌀', desc: 'Фокачі з паралельних всесвітів', baseCost: 5100000000, cps: 260000, requireRebirth: 4, era: 'cosmos' },
+  { id: 'god', name: 'Бог фокачі', emoji: '👑', desc: 'Все є фокача', baseCost: 75000000000, cps: 1600000, requireRebirth: 5, era: 'cosmos' },
+
+  // 🌌 Мультивсесвіт (multiverse)
+  { id: 'matrix', name: 'Сингулярність фокач', emoji: '🖧', desc: 'ШІ вираховує досконалий смак скоринки', baseCost: 1200000000000, cps: 12000000, requireRebirth: 6, era: 'multiverse' },
+  { id: 'galaxy', name: 'Галактична піч', emoji: '🪐', desc: 'Тепло зірок випікає цілі квадранти фокач', baseCost: 25000000000000, cps: 95000000, requireRebirth: 7, era: 'multiverse' },
+  { id: 'chronos', name: 'Часовий конвеєр', emoji: '⏳', desc: 'Доставляє гарячі фокачі прямо з майбутнього', baseCost: 500000000000000, cps: 800000000, requireRebirth: 8, era: 'multiverse' },
+  { id: 'bigbang', name: 'Великий вибух смаку', emoji: '💥', desc: 'Народження нового смакового виміру', baseCost: 10000000000000000, cps: 7500000000, requireRebirth: 10, era: 'multiverse' },
 ];
 
 export const CLICK_UPGRADES: ClickUpgrade[] = [
@@ -213,6 +227,8 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'a18', name: 'Вбивця босів', emoji: '⚔️', desc: 'Переможи першого боса', check: (s) => (s.bossesDefeated || 0) >= 1 },
   { id: 'a19', name: 'Діамантовий магнат', emoji: '💎', desc: 'Збери 10 діамантів', check: (s) => (s.diamonds || 0) >= 10 },
   { id: 'a20', name: 'Діамантовий зодчий', emoji: '🏛️', desc: 'Побудуй першу діамантову будівлю', check: (s) => Object.values(s.diamondBuildings || {}).some((v) => v > 0) },
+  { id: 'a21', name: 'Володар часу', emoji: '⏳', desc: 'Побудуй часовий конвеєр', check: (s) => (s.buildings.chronos || 0) >= 1 },
+  { id: 'a22', name: 'Творець всесвіту', emoji: '💥', desc: 'Створи великий вибух смаку', check: (s) => (s.buildings.bigbang || 0) >= 1 },
 ];
 
 export const buildingCost = (b: Building, owned: number) => Math.floor(b.baseCost * Math.pow(1.27, owned));

@@ -12,6 +12,7 @@ import {
   formatNum,
   getBossDamage,
   type AchState,
+  type BuildingEra,
 } from './game/data';
 import {
   Lang,
@@ -1109,6 +1110,7 @@ export default function App() {
     haptic.light();
   };
   const [shopTab, setShopTab] = useState<ShopTab>('buildings');
+  const [buildingEra, setBuildingEra] = useState<'all' | BuildingEra>('all');
   const [vipSubTab, setVipSubTab] = useState<'buildings' | 'upgrades'>('upgrades');
   const [lastBoughtId, setLastBoughtId] = useState<string | null>(null);
   const [phrase, setPhrase] = useState(PHRASES_I18N.uk[0]);
@@ -11588,7 +11590,53 @@ export default function App() {
                     <span className="vip-sheen-cyan" />
                   </span>
                 </div>
-                {BUILDINGS.map((b, i) => {
+
+                {/* Era Selector Tabs */}
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 mb-1 px-0.5">
+                  {[
+                    { id: 'all' as const, label: t.eraAll, icon: '🌟' },
+                    { id: 'starter' as const, label: t.eraStarter, icon: '🏡' },
+                    { id: 'industry' as const, label: t.eraIndustry, icon: '🏭' },
+                    { id: 'cosmos' as const, label: t.eraCosmos, icon: '🚀' },
+                    { id: 'multiverse' as const, label: t.eraMultiverse, icon: '🌌' },
+                  ].map((e) => {
+                    const isSelected = buildingEra === e.id;
+                    const hasAffordable = e.id !== 'all' ? BUILDINGS.some((b) => {
+                      if (b.era !== e.id) return false;
+                      if ((b.requireRebirth || 0) > state.prestige) return false;
+                      const cost = buildingCost(b, state.buildings[b.id] || 0);
+                      return state.focaccia >= cost;
+                    }) : false;
+                    const hasBroken = e.id !== 'all' ? (
+                      brokenBuilding ? BUILDINGS.find((x) => x.id === brokenBuilding)?.era === e.id : false
+                    ) : false;
+
+                    return (
+                      <button
+                        key={e.id}
+                        type="button"
+                        onClick={() => { setBuildingEra(e.id); haptic.light(); }}
+                        className={cn(
+                          'relative px-2.5 py-1 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-1 select-none cursor-pointer',
+                          isSelected
+                            ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-amber-950 font-black shadow-md shadow-amber-500/25 scale-[1.02]'
+                            : 'glass border border-amber-500/20 text-amber-200/70 hover:text-amber-100 hover:border-amber-500/40 active:scale-95'
+                        )}
+                      >
+                        <span className="text-xs leading-none">{e.icon}</span>
+                        <span>{e.label}</span>
+                        {hasBroken && (
+                          <span className="w-2 h-2 rounded-full bg-red-500 animate-ping absolute -top-0.5 -right-0.5" />
+                        )}
+                        {hasAffordable && !hasBroken && (
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399] absolute -top-0.5 -right-0.5" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {BUILDINGS.filter((b) => buildingEra === 'all' || b.era === buildingEra).map((b, i) => {
                 const bText = getBuildingText(b.id, lang);
                 const owned = state.buildings[b.id] || 0;
                 const cost = buildingCost(b, owned);
@@ -11596,7 +11644,8 @@ export default function App() {
                 const isBroken = brokenBuilding === b.id;
                 const repairCost = getBuildingRepairCost(b, state.prestige);
                 const canRepair = state.focaccia >= repairCost;
-                const prevOwned = i === 0 || (state.buildings[BUILDINGS[i - 1].id] || 0) > 0;
+                const origIdx = BUILDINGS.findIndex((x) => x.id === b.id);
+                const prevOwned = origIdx === 0 || (state.buildings[BUILDINGS[origIdx - 1].id] || 0) > 0;
                 const visible = owned > 0 || prevOwned || state.total >= b.baseCost * 0.5;
                 const isRebirthLocked = (b.requireRebirth || 0) > state.prestige;
                 const isJustBought = lastBoughtId === b.id;
