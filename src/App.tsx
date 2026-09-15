@@ -13418,26 +13418,172 @@ export default function App() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                ['🫓', formatNum(state.total), t.statEaten],
-                ['💎', String(state.diamonds), t.statDiamonds],
-                ['🔄', String(state.prestige), t.statRebirths],
-                ['⚔️', String(state.bossesDefeated), t.statBosses],
-                ['🪲', String(state.pestsSquashed), t.statPests],
-                ['👆', state.clicks.toLocaleString(), t.statClicks],
-                ['⚡', `x${state.maxCombo}`, t.statCombo],
-                ['✨', String(state.goldenCaught), t.statGolden],
-                ['💠', String(state.diamondCaught || 0), t.statDiamondFocaccia],
-                ['❇️', String(state.emeraldCaught || 0), t.statEmeraldFocaccia],
-                ['🏗️', String(totalBuildings), t.statBuildings],
-              ].map(([emoji, value, label], i) => (
-                <div key={label} style={{ animationDelay: `${Math.min(i, 9) * 40}ms` }} className="glass-card rounded-xl p-2.5 text-center animate-card">
-                  <div className="text-base">{emoji}</div>
-                  <div className="font-black text-amber-200/80 text-sm tabular-nums">{value}</div>
-                  <div className="text-[9px] text-amber-500/40">{label}</div>
+            {/* 📊 СТАТИСТИКА ПЕКАРНІ (НОВИЙ ДИЗАЙН) */}
+            <div className="space-y-2.5">
+              {/* 1. Hero Highlights: 🫓 Всього випечено & 👆 Кліки */}
+              <div className="grid grid-cols-2 gap-2">
+                {/* Всього випечено */}
+                <div className="glass-card relative overflow-hidden rounded-2xl p-3 border border-amber-500/35 bg-gradient-to-br from-amber-950/50 via-stone-900/90 to-stone-950/90 shadow-lg shadow-black/40 flex flex-col justify-between animate-card">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-lg shadow-inner shrink-0">
+                      🫓
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/25 text-[9px] font-black text-amber-300 uppercase tracking-wider">
+                      TOTAL
+                    </span>
+                  </div>
+                  <div>
+                    <div className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-200 to-amber-300 tabular-nums truncate">
+                      {formatNum(state.total)}
+                    </div>
+                    <div className="text-[10px] font-bold text-amber-400/70 truncate">
+                      {t.statEaten}
+                    </div>
+                  </div>
                 </div>
-              ))}
+
+                {/* Всього кліків та комбо */}
+                <div className="glass-card relative overflow-hidden rounded-2xl p-3 border border-amber-500/35 bg-gradient-to-br from-amber-950/50 via-stone-900/90 to-stone-950/90 shadow-lg shadow-black/40 flex flex-col justify-between animate-card" style={{ animationDelay: '50ms' }}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-lg shadow-inner shrink-0">
+                      👆
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full bg-yellow-500/15 border border-yellow-400/30 text-[9px] font-black text-yellow-300 tabular-nums">
+                      ⚡ x{state.maxCombo}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="text-lg sm:text-xl font-black text-stone-100 tabular-nums truncate">
+                      {state.clicks.toLocaleString()}
+                    </div>
+                    <div className="text-[10px] font-bold text-amber-400/70 truncate">
+                      {t.statClicks} ({t.statCombo})
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Колекція рідкісних фокач (3 картки в 1 ряд - вітрина знахідок) */}
+              <div className="glass-card rounded-2xl p-2.5 sm:p-3 border border-amber-500/25 bg-gradient-to-b from-stone-900/90 via-stone-900/60 to-black/60 shadow-md">
+                <div className="text-[10px] uppercase font-black tracking-wider text-amber-400/80 mb-2 px-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <span>✨</span>
+                    <span>{t.statRareCollection}</span>
+                  </span>
+                  <span className="text-[9px] text-amber-400/50 font-normal">
+                    {state.goldenCaught + (state.diamondCaught || 0) + (state.emeraldCaught || 0)} {lang === 'uk' ? 'всього' : 'всего'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2 text-center">
+                  {/* Золоті */}
+                  <div className="bg-stone-950/80 rounded-xl p-2 sm:p-2.5 border border-yellow-500/25 hover:border-yellow-400/50 transition">
+                    <div className="w-7 h-7 mx-auto rounded-lg bg-yellow-500/15 border border-yellow-400/30 flex items-center justify-center text-sm mb-1 shadow-sm">
+                      ✨
+                    </div>
+                    <div className="font-black text-yellow-300 text-xs sm:text-sm tabular-nums">
+                      {state.goldenCaught}
+                    </div>
+                    <div className="text-[9px] text-yellow-400/70 font-medium truncate mt-0.5">{t.statGolden}</div>
+                  </div>
+
+                  {/* Алмазні */}
+                  <div className="bg-stone-950/80 rounded-xl p-2 sm:p-2.5 border border-cyan-500/25 hover:border-cyan-400/50 transition">
+                    <div className="w-7 h-7 mx-auto rounded-lg bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-sm mb-1 shadow-sm">
+                      💎
+                    </div>
+                    <div className="font-black text-cyan-200 text-xs sm:text-sm tabular-nums">
+                      {state.diamondCaught || 0}
+                    </div>
+                    <div className="text-[9px] text-cyan-300/70 font-medium truncate mt-0.5">{t.statDiamondFocaccia}</div>
+                  </div>
+
+                  {/* Смарагдові */}
+                  <div className="bg-stone-950/80 rounded-xl p-2 sm:p-2.5 border border-emerald-500/25 hover:border-emerald-400/50 transition">
+                    <div className="w-7 h-7 mx-auto rounded-lg bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-sm mb-1 shadow-sm">
+                      ❇️
+                    </div>
+                    <div className="font-black text-emerald-300 text-xs sm:text-sm tabular-nums">
+                      {state.emeraldCaught || 0}
+                    </div>
+                    <div className="text-[9px] text-emerald-400/70 font-medium truncate mt-0.5">{t.statEmeraldFocaccia}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Імперія та досягнення (Сітка 3x2: 6 карток, 100% заповнення) */}
+              <div className="glass-card rounded-2xl p-2.5 sm:p-3 border border-amber-500/25 bg-gradient-to-b from-stone-900/90 via-stone-900/60 to-black/60 shadow-md">
+                <div className="text-[10px] uppercase font-black tracking-wider text-amber-400/80 mb-2 px-1 flex items-center gap-1.5">
+                  <span>🏛️</span>
+                  <span>{t.statEmpire}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                  {/* Будівель */}
+                  <div className="bg-stone-950/80 rounded-xl p-2 sm:p-2.5 border border-amber-500/20 text-center">
+                    <div className="w-7 h-7 mx-auto rounded-lg bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-sm mb-1">
+                      🏗️
+                    </div>
+                    <div className="font-black text-amber-200 text-xs sm:text-sm tabular-nums">
+                      {totalBuildings}
+                    </div>
+                    <div className="text-[9px] text-amber-400/70 font-medium truncate mt-0.5">{t.statBuildings}</div>
+                  </div>
+
+                  {/* Босів */}
+                  <div className="bg-stone-950/80 rounded-xl p-2 sm:p-2.5 border border-orange-500/20 text-center">
+                    <div className="w-7 h-7 mx-auto rounded-lg bg-orange-500/15 border border-orange-400/30 flex items-center justify-center text-sm mb-1">
+                      ⚔️
+                    </div>
+                    <div className="font-black text-orange-200 text-xs sm:text-sm tabular-nums">
+                      {state.bossesDefeated}
+                    </div>
+                    <div className="text-[9px] text-orange-400/70 font-medium truncate mt-0.5">{t.statBosses}</div>
+                  </div>
+
+                  {/* Шкідників */}
+                  <div className="bg-stone-950/80 rounded-xl p-2 sm:p-2.5 border border-lime-500/20 text-center">
+                    <div className="w-7 h-7 mx-auto rounded-lg bg-lime-500/15 border border-lime-400/30 flex items-center justify-center text-sm mb-1">
+                      🪲
+                    </div>
+                    <div className="font-black text-lime-200 text-xs sm:text-sm tabular-nums">
+                      {state.pestsSquashed}
+                    </div>
+                    <div className="text-[9px] text-lime-400/70 font-medium truncate mt-0.5">{t.statPests}</div>
+                  </div>
+
+                  {/* Діамантів */}
+                  <div className="bg-stone-950/80 rounded-xl p-2 sm:p-2.5 border border-cyan-500/20 text-center">
+                    <div className="w-7 h-7 mx-auto rounded-lg bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-sm mb-1">
+                      💎
+                    </div>
+                    <div className="font-black text-cyan-200 text-xs sm:text-sm tabular-nums">
+                      {formatNum(state.diamonds)}
+                    </div>
+                    <div className="text-[9px] text-cyan-300/70 font-medium truncate mt-0.5">{t.statDiamonds}</div>
+                  </div>
+
+                  {/* Ребіртхів */}
+                  <div className="bg-stone-950/80 rounded-xl p-2 sm:p-2.5 border border-fuchsia-500/20 text-center">
+                    <div className="w-7 h-7 mx-auto rounded-lg bg-fuchsia-500/15 border border-fuchsia-400/30 flex items-center justify-center text-sm mb-1">
+                      🔄
+                    </div>
+                    <div className="font-black text-fuchsia-200 text-xs sm:text-sm tabular-nums">
+                      {state.prestige}
+                    </div>
+                    <div className="text-[9px] text-fuchsia-400/70 font-medium truncate mt-0.5">{t.statRebirths}</div>
+                  </div>
+
+                  {/* Досягнень */}
+                  <div className="bg-stone-950/80 rounded-xl p-2 sm:p-2.5 border border-yellow-500/20 text-center">
+                    <div className="w-7 h-7 mx-auto rounded-lg bg-yellow-500/15 border border-yellow-400/30 flex items-center justify-center text-sm mb-1">
+                      🏆
+                    </div>
+                    <div className="font-black text-yellow-200 text-xs sm:text-sm tabular-nums">
+                      {state.achievements.length}/{ACHIEVEMENTS.length}
+                    </div>
+                    <div className="text-[9px] text-yellow-400/70 font-medium truncate mt-0.5">{t.statAchievements}</div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="glass-card rounded-2xl p-4 border-fuchsia-500/30 animate-rebirth-card space-y-3">
