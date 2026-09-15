@@ -23,14 +23,18 @@ async function api(method, body) {
   return res.json();
 }
 
+const knownUsers = new Set();
+
 async function handleUpdate(update) {
   const msg = update.message;
-  if (!msg?.text) return;
+  const text = (msg?.text || msg?.caption || '').trim();
+  if (!text) return;
 
   const chatId = msg.chat.id;
   const name = msg.from?.first_name || 'друже';
+  knownUsers.add(chatId);
 
-  if (msg.text === '/start') {
+  if (text === '/start') {
     await api('sendMessage', {
       chat_id: chatId,
       text:
@@ -58,6 +62,50 @@ async function handleUpdate(update) {
       },
     });
     console.log(`✅ /start від ${name} (${chatId})`);
+    return;
+  }
+
+  // /broadcast <текст>
+  if (text.startsWith('/broadcast ') || text.startsWith('/розсилка ')) {
+    const broadcastText = text.replace(/^\/(broadcast|розсилка)\s+/i, '').trim();
+    if (!broadcastText) {
+      await api('sendMessage', { chat_id: chatId, text: '❌ Вкажи текст: /broadcast <текст>' });
+      return;
+    }
+
+    await api('sendMessage', { chat_id: chatId, text: `⏳ Розпочато розсилку для ${knownUsers.size} користувачів...` });
+    let sent = 0, failed = 0;
+    for (const uid of knownUsers) {
+      try {
+        let res = await api('sendMessage', {
+          chat_id: uid,
+          text: `📢 *Оголошення:*\n\n${broadcastText}`,
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[{ text: '🫓 Грати у Фокача Клікер!', web_app: { url: WEBAPP_URL } }]],
+          },
+        });
+        if (!res?.ok) {
+          res = await api('sendMessage', {
+            chat_id: uid,
+            text: `📢 Оголошення:\n\n${broadcastText}`,
+            reply_markup: {
+              inline_keyboard: [[{ text: '🫓 Грати у Фокача Клікер!', web_app: { url: WEBAPP_URL } }]],
+            },
+          });
+        }
+        if (res?.ok) sent++; else failed++;
+      } catch (e) {
+        failed++;
+      }
+      await new Promise((r) => setTimeout(r, 40));
+    }
+
+    await api('sendMessage', {
+      chat_id: chatId,
+      text: `✅ Розсилку завершено!\n📨 Доставлено: ${sent}\n❌ Помилок: ${failed}`,
+    });
+    return;
   }
 }
 
