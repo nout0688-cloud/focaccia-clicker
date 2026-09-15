@@ -1884,7 +1884,7 @@ export default function App() {
   }, [showPublicPreview, profileModalOpen, viewingProfile, showcasePickerSlot]);
 
   /* ---- Derived ---- */
-  const prestigeMult = 1 + state.prestige * 0.1;
+  const prestigeMult = 1 + state.prestige * 0.07;
 
   const activeSkin: SkinItem = useMemo(() => {
     const id = state.skins?.equipped || 'skin_classic';
@@ -1993,9 +1993,9 @@ export default function App() {
     return base * mult * prestigeMult;
   }, [state.buildings, state.diamondBuildings, state.upgrades, state.vipUpgrades, brokenBuilding, activeEvent, prestigeMult, activeSkin?.cpsMult, activeSkinLevelMult, state.cat?.unlocked, catInfo?.cpsBonus]);
 
-  const frenzyMult = (frenzy > 0 ? (state.vipUpgrades?.includes('vip_frenzy') ? 8 : 7) : 1) * (frenzy > 0 && activeSkin?.id === 'skin_demon' ? (1 + 0.5 * activeSkinLevelMult) : 1);
-  const diamondMult = diamondFrenzy > 0 ? 15 : 1;
-  const emeraldMult = emeraldFrenzy > 0 ? 20 : 1;
+  const frenzyMult = (frenzy > 0 ? (state.vipUpgrades?.includes('vip_frenzy') ? 7 : 6) : 1) * (frenzy > 0 && activeSkin?.id === 'skin_demon' ? (1 + 0.5 * activeSkinLevelMult) : 1);
+  const diamondMult = diamondFrenzy > 0 ? 10 : 1;
+  const emeraldMult = emeraldFrenzy > 0 ? 15 : 1;
   const comboMult = 1 + Math.min(combo, 100) * 0.02;
   const cpsRef = useRef(cps);
   cpsRef.current = cps * frenzyMult * diamondMult * emeraldMult;
@@ -2764,7 +2764,7 @@ export default function App() {
         haptic.error();
       } else {
         // Grandma surprise gift
-        const bonus = Math.max(100, Math.floor((cpsRef.current || 10) * 90));
+        const bonus = Math.max(100, Math.floor((cpsRef.current || 10) * 30));
         setState((p) => ({ ...p, focaccia: p.focaccia + bonus, total: p.total + bonus }));
         addToast(curT.toastGrandmaGift, formatTemplate(curT.toastGrandmaGiftDesc, formatNum(bonus)), '🥐');
         haptic.success();
@@ -3743,8 +3743,8 @@ export default function App() {
     const curT = TRANSLATIONS[langRef.current];
     if (roll < 0.45) {
       const hasFrenzyUp = stateRef.current.vipUpgrades?.includes('vip_frenzy');
-      const dur = hasFrenzyUp ? 25 : 20;
-      const mult = hasFrenzyUp ? 8 : 7;
+      const dur = hasFrenzyUp ? 20 : 15;
+      const mult = hasFrenzyUp ? 7 : 6;
       setFrenzy(dur);
       addToast(
         byCat
@@ -3791,13 +3791,13 @@ export default function App() {
     haptic.heavy();
     doFlash('diamond');
     burstConfetti(['💎', '✨', '💠', '🔷', '⭐']);
-    setDiamondFrenzy(20);
+    setDiamondFrenzy(15);
     const curT = TRANSLATIONS[langRef.current];
     addToast(
       byCat
         ? (langRef.current === 'uk' ? `🐾 ${catSkinInfo.nameUk} спіймав Алмазну фокачу!` : `🐾 ${catSkinInfo.nameRu} поймал Алмазную фокаччу!`)
         : curT.toastDiamondFrenzy,
-      formatTemplate(curT.toastDiamondFrenzyDesc, 15, 20),
+      formatTemplate(curT.toastDiamondFrenzyDesc, 10, 15),
       '💎'
     );
     const cur = stateRef.current;
@@ -3815,13 +3815,13 @@ export default function App() {
     haptic.heavy();
     doFlash('emerald');
     burstConfetti(['💚', '❇️', '✨', '🍀', '💎']);
-    setEmeraldFrenzy(20);
+    setEmeraldFrenzy(15);
     const curT = TRANSLATIONS[langRef.current];
     addToast(
       byCat
         ? (langRef.current === 'uk' ? `🐾 ${catSkinInfo.nameUk} спіймав Смарагдову фокачу!` : `🐾 ${catSkinInfo.nameRu} поймал Изумрудную фокаччу!`)
         : curT.toastEmeraldFrenzy,
-      formatTemplate(curT.toastEmeraldFrenzyDesc, 20, 20),
+      formatTemplate(curT.toastEmeraldFrenzyDesc, 15, 15),
       '❇️'
     );
     const cur = stateRef.current;
@@ -11223,12 +11223,12 @@ export default function App() {
                 onClick={() => goPage('settings')}
                 className="flex items-center gap-1 bg-fuchsia-500/15 hover:bg-fuchsia-500/25 active:scale-95 transition-all border border-fuchsia-500/30 px-2 py-0.5 rounded-lg text-xs font-black text-fuchsia-300 shadow-[0_0_8px_rgba(217,70,239,0.15)] whitespace-nowrap cursor-pointer"
                 title={lang === 'uk' 
-                  ? `🔄 Ребіртх: ${state.prestige.toLocaleString()} (+${(state.prestige * 10).toLocaleString()}%)` 
-                  : `🔄 Ребиртх: ${state.prestige.toLocaleString()} (+${(state.prestige * 10).toLocaleString()}%)`}
+                  ? `🔄 Ребіртх: ${state.prestige.toLocaleString()} (+${(state.prestige * 7).toLocaleString()}%)` 
+                  : `🔄 Ребиртх: ${state.prestige.toLocaleString()} (+${(state.prestige * 7).toLocaleString()}%)`}
               >
                 <span>🔄</span>
                 <span className="tabular-nums font-mono">{formatNum(state.prestige)}</span>
-                <span className="text-[10px] font-bold text-fuchsia-300/80">+{formatNum(state.prestige * 10)}%</span>
+                <span className="text-[10px] font-bold text-fuchsia-300/80">+{formatNum(state.prestige * 7)}%</span>
               </button>
             )}
           </div>
@@ -12813,7 +12813,7 @@ export default function App() {
                 <span className="text-xl">🔄</span>
                 <div>
                   <div className="font-black text-fuchsia-200 text-sm">{formatTemplate(t.rebirthLevel, state.prestige)}</div>
-                  <div className="text-[10px] text-fuchsia-400/70">{formatTemplate(t.rebirthBonus, state.prestige * 10, state.prestige * 5)}</div>
+                  <div className="text-[10px] text-fuchsia-400/70">{formatTemplate(t.rebirthBonus, state.prestige * 7, state.prestige * 5)}</div>
                 </div>
                 {prestigeGain >= 1 && (
                   <span className="ml-auto px-2 py-0.5 rounded-full bg-fuchsia-500/20 border border-fuchsia-500/40 text-fuchsia-300 text-[10px] font-black animate-pulse">

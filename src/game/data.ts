@@ -188,7 +188,7 @@ export const VIP_UPGRADES: VipUpgrade[] = [
   { id: 'vip_chef', name: 'Зірка Мішлен', emoji: '👑', desc: '+30% до загального CPS назавжди', cost: 35 },
   { id: 'vip_combo', name: 'Майстер комбо', emoji: '🌪️', desc: 'Комбо тримається 2.2с (було 1.2с) і спадає повільніше', cost: 35 },
   { id: 'vip_magnet', name: 'Діамантовий магніт', emoji: '🧲', desc: '+50% шанс вибити 💎 зі шкідників, боси дають +1 💎', cost: 45 },
-  { id: 'vip_frenzy', name: 'Гіпер-френзі', emoji: '🔥', desc: 'Френзі триває 25с (замість 20с) та дає x8 замість x7', cost: 50 },
+  { id: 'vip_frenzy', name: 'Гіпер-френзі', emoji: '🔥', desc: 'Френзі триває 20с (замість 15с) та дає x7 замість x6', cost: 50 },
   { id: 'vip_polish', name: 'Діамантове огранювання', emoji: '💎', desc: '+25% до ефективності всіх діамантових будівель', cost: 75 },
 ];
 
@@ -215,7 +215,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'a20', name: 'Діамантовий зодчий', emoji: '🏛️', desc: 'Побудуй першу діамантову будівлю', check: (s) => Object.values(s.diamondBuildings || {}).some((v) => v > 0) },
 ];
 
-export const buildingCost = (b: Building, owned: number) => Math.floor(b.baseCost * Math.pow(1.25, owned));
+export const buildingCost = (b: Building, owned: number) => Math.floor(b.baseCost * Math.pow(1.27, owned));
 
 export const getBuildingRepairCost = (b: Building, prestige: number = 0): number => {
   const rebirthMult = 1 + Math.max(0, prestige) * 0.2; // +20% за кожен рівень ребіртху
