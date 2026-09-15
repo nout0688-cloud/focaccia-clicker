@@ -7,6 +7,7 @@ import {
   VIP_UPGRADES,
   buildingCost,
   getBuildingRepairCost,
+  getRepairRebirthMult,
   diamondBuildingCost,
   formatCps,
   formatNum,
@@ -4216,7 +4217,7 @@ export default function App() {
   ];
 
   const getRepairPackageFocacciaCost = (pkg: RepairPackage, prestige = stateRef.current?.prestige ?? state.prestige) => {
-    const rebirthMult = 1 + Math.max(0, prestige) * 0.2;
+    const rebirthMult = getRepairRebirthMult(prestige);
     return Math.floor(pkg.costFocaccia * rebirthMult);
   };
 
@@ -8180,7 +8181,7 @@ export default function App() {
                           <div className="flex items-center gap-1.5">
                             {state.prestige > 0 && (
                               <span className="text-[9px] font-bold text-fuchsia-300 bg-fuchsia-950/80 border border-fuchsia-500/40 px-1 py-0.2 rounded">
-                                +{state.prestige * 20}%
+                                x{formatNum(getRepairRebirthMult(state.prestige))}
                               </span>
                             )}
                             <span className="text-xs font-mono font-bold text-red-200">
@@ -8217,7 +8218,7 @@ export default function App() {
                       <div className="flex items-center gap-1.5">
                         {state.prestige > 0 && (
                           <span className="text-[9px] text-fuchsia-300 font-bold bg-fuchsia-950/70 border border-fuchsia-500/30 px-1.5 py-0.5 rounded-md">
-                            🔄 +{state.prestige * 20}%
+                            🔄 x{formatNum(getRepairRebirthMult(state.prestige))}
                           </span>
                         )}
                         <span className="text-[10px] text-orange-300/80 font-medium">

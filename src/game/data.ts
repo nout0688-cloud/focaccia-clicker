@@ -244,9 +244,21 @@ export const ACHIEVEMENTS: Achievement[] = [
 
 export const buildingCost = (b: Building, owned: number) => Math.floor(b.baseCost * Math.pow(1.27, owned));
 
+export const getRepairRebirthMult = (prestige: number = 0): number => {
+  const p = Math.max(0, prestige);
+  if (p === 0) return 1;
+  return 1 + p * 2.0 + Math.pow(p, 2.4) * 0.08;
+};
+
 export const getBuildingRepairCost = (b: Building, prestige: number = 0): number => {
-  const rebirthMult = 1 + Math.max(0, prestige) * 0.2; // +20% за кожен рівень ребіртху
-  return Math.floor(Math.max(1000, b.baseCost * 5) * rebirthMult);
+  const p = Math.max(0, prestige);
+  const baseCost0 = Math.max(500, b.baseCost * 3);
+  if (p === 0) return baseCost0;
+
+  const pMult = getRepairRebirthMult(p);
+  const buildingFactor = Math.max(1, Math.log10(Math.max(10, b.baseCost)));
+  const scaled = baseCost0 + (35000000 * pMult * (buildingFactor / 10));
+  return Math.floor(scaled);
 };
 
 export function formatNum(n: number): string {
