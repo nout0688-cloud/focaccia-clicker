@@ -7,11 +7,11 @@
 .animate-float { animation: float-up 0.8s ease-out forwards; }
 
 @keyframes toast-in {
-  0% { opacity: 0; transform: translateX(100px) scale(0.8); }
-  50% { transform: translateX(-8px) scale(1.02); }
-  100% { opacity: 1; transform: translateX(0) scale(1); }
+  0% { opacity: 0; transform: translateY(-20px) scale(0.92); }
+  60% { opacity: 1; transform: translateY(3px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
-.animate-toast { animation: toast-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+.animate-toast { animation: toast-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; will-change: transform, opacity; }
 
 @keyframes bob {
   0%,100% { transform: translateY(0); }
@@ -334,12 +334,20 @@
 .animate-wobble-once { animation: wobble-once 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
 
 @keyframes toast-out {
-  0% { opacity: 1; transform: translateX(0) scale(1); max-height: 120px; }
-  100% { opacity: 0; transform: translateX(90px) scale(0.85); max-height: 0; }
+  0% { opacity: 1; transform: translateY(0) scale(1); max-height: 120px; margin-bottom: 8px; }
+  100% { opacity: 0; transform: translateY(-16px) scale(0.92); max-height: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
 }
 .toast-exit {
   overflow: hidden;
-  animation: toast-out 0.28s ease-in forwards;
+  animation: toast-out 0.25s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes toast-progress {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+.animate-toast-progress {
+  animation: toast-progress 4s linear forwards;
 }
 
 @keyframes energy-full {

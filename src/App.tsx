@@ -2110,6 +2110,74 @@ export default function App() {
     }, 300);
   }, []);
 
+  const getToastTheme = useCallback((emoji: string) => {
+    if (['❌', '⚠️', '💔', '😱', '🏃'].includes(emoji)) {
+      return {
+        border: 'border-rose-500/40',
+        bg: 'from-rose-950/95 via-zinc-950/95 to-zinc-900/95',
+        glow: 'shadow-[0_8px_28px_rgba(244,63,94,0.3)]',
+        iconBg: 'bg-rose-500/15 border-rose-500/35 text-rose-300 shadow-rose-900/40',
+        tagText: 'text-rose-400',
+        dot: 'bg-rose-400',
+        progress: 'from-rose-500 via-red-400 to-amber-500',
+      };
+    }
+    if (['💎', '❇️', '🌐', '❄️', '🧊', '⚡'].includes(emoji)) {
+      return {
+        border: 'border-cyan-400/40',
+        bg: 'from-cyan-950/95 via-zinc-950/95 to-slate-950/95',
+        glow: 'shadow-[0_8px_28px_rgba(6,182,212,0.3)]',
+        iconBg: 'bg-cyan-500/15 border-cyan-400/35 text-cyan-300 shadow-cyan-900/40',
+        tagText: 'text-cyan-400',
+        dot: 'bg-cyan-400',
+        progress: 'from-cyan-400 via-teal-300 to-emerald-400',
+      };
+    }
+    if (['🏆', '👑', '⭐', '🌟', '🎉', '💫'].includes(emoji)) {
+      return {
+        border: 'border-yellow-400/45',
+        bg: 'from-amber-950/95 via-zinc-950/95 to-yellow-950/95',
+        glow: 'shadow-[0_8px_28px_rgba(234,179,8,0.3)]',
+        iconBg: 'bg-yellow-500/15 border-yellow-400/40 text-yellow-300 shadow-yellow-900/40',
+        tagText: 'text-yellow-400',
+        dot: 'bg-yellow-400',
+        progress: 'from-yellow-400 via-amber-400 to-orange-400',
+      };
+    }
+    if (['🐱', '🐾', '💖', '❤️', '😻'].includes(emoji)) {
+      return {
+        border: 'border-pink-500/40',
+        bg: 'from-pink-950/95 via-zinc-950/95 to-zinc-900/95',
+        glow: 'shadow-[0_8px_28px_rgba(244,114,182,0.3)]',
+        iconBg: 'bg-pink-500/15 border-pink-400/35 text-pink-300 shadow-pink-900/40',
+        tagText: 'text-pink-400',
+        dot: 'bg-pink-400',
+        progress: 'from-pink-400 via-rose-300 to-amber-300',
+      };
+    }
+    if (['⚔️', '💥', '🛡️', '🔨', '🔥', '🗡️'].includes(emoji)) {
+      return {
+        border: 'border-orange-500/40',
+        bg: 'from-orange-950/95 via-zinc-950/95 to-zinc-900/95',
+        glow: 'shadow-[0_8px_28px_rgba(249,115,22,0.3)]',
+        iconBg: 'bg-orange-500/15 border-orange-400/35 text-orange-300 shadow-orange-900/40',
+        tagText: 'text-orange-400',
+        dot: 'bg-orange-400',
+        progress: 'from-orange-500 via-amber-400 to-yellow-400',
+      };
+    }
+    // Default: Warm bakery amber/golden
+    return {
+      border: 'border-amber-500/40',
+      bg: 'from-amber-950/90 via-zinc-950/95 to-stone-900/95',
+      glow: 'shadow-[0_8px_28px_rgba(245,158,11,0.25)]',
+      iconBg: 'bg-amber-500/15 border-amber-400/35 text-amber-300 shadow-amber-900/40',
+      tagText: 'text-amber-400',
+      dot: 'bg-amber-400',
+      progress: 'from-amber-400 via-yellow-400 to-amber-500',
+    };
+  }, []);
+
   const addToast = useCallback((title: string, text: string, emoji: string) => {
     const id = ++floatId.current;
     setToasts((t) => [...t.slice(-4), { id, title, text, emoji }]);
@@ -6591,26 +6659,80 @@ export default function App() {
         </div>
       )}
 
-      {/* Toasts */}
-      <div className="fixed top-2 left-2 right-2 z-50 flex flex-col gap-2 pointer-events-auto">
-        {toasts.map((toastItem) => (
-          <div
-            key={toastItem.id}
-            onClick={() => { closeToast(toastItem.id); haptic.light(); }}
-            className={cn(
-              'animate-toast glass rounded-2xl p-3 flex items-center gap-3 shadow-2xl border border-amber-500/30 cursor-pointer active:scale-95 transition-transform',
-              toastsLeaving.includes(toastItem.id) && 'toast-exit',
-            )}
-            title={t.toastCloseTip}
-          >
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-2xl shrink-0">{toastItem.emoji}</div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[10px] uppercase tracking-widest text-amber-400 font-bold">{toastItem.title}</div>
-              <div className="text-xs font-semibold truncate text-amber-100">{toastItem.text}</div>
+      {/* 🔔 PRETTY TOAST NOTIFICATIONS */}
+      <div className="fixed top-2.5 sm:top-4 left-3 right-3 sm:left-auto sm:right-4 sm:w-96 z-[95] flex flex-col gap-2.5 pointer-events-none select-none">
+        {toasts.map((toastItem) => {
+          const theme = getToastTheme(toastItem.emoji);
+          const isLeaving = toastsLeaving.includes(toastItem.id);
+          return (
+            <div
+              key={toastItem.id}
+              onClick={() => {
+                closeToast(toastItem.id);
+                haptic.light();
+              }}
+              className={cn(
+                'pointer-events-auto relative overflow-hidden rounded-2xl border backdrop-blur-xl transition-all duration-300 cursor-pointer active:scale-[0.98]',
+                theme.border,
+                theme.glow,
+                `bg-gradient-to-r ${theme.bg}`,
+                isLeaving ? 'toast-exit' : 'animate-toast'
+              )}
+              title={t.toastCloseTip}
+            >
+              {/* Subtle top glare highlight line */}
+              <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
+
+              <div className="p-3 sm:p-3.5 flex items-center gap-3">
+                {/* Glowing Emoji Icon Container */}
+                <div
+                  className={cn(
+                    'w-11 h-11 rounded-xl border flex items-center justify-center text-2xl shrink-0 shadow-inner transition-transform group-hover:scale-105',
+                    theme.iconBg
+                  )}
+                >
+                  <span className="filter drop-shadow-sm">{toastItem.emoji}</span>
+                </div>
+
+                {/* Text Content */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className={cn('w-1.5 h-1.5 rounded-full animate-pulse shrink-0', theme.dot)} />
+                    <span className={cn('text-[10px] uppercase tracking-widest font-black truncate', theme.tagText)}>
+                      {toastItem.title}
+                    </span>
+                  </div>
+                  <div className="text-xs font-semibold text-stone-100/95 leading-snug line-clamp-2">
+                    {toastItem.text}
+                  </div>
+                </div>
+
+                {/* Sleek Close Button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    closeToast(toastItem.id);
+                    haptic.light();
+                  }}
+                  className="w-7 h-7 rounded-full bg-white/5 hover:bg-white/15 text-stone-400 hover:text-white flex items-center justify-center text-xs font-bold transition shrink-0 ml-0.5 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Progress bar countdown line */}
+              <div className="h-[2.5px] w-full bg-white/10 overflow-hidden">
+                <div
+                  className={cn(
+                    'h-full bg-gradient-to-r animate-toast-progress',
+                    theme.progress
+                  )}
+                />
+              </div>
             </div>
-            <div className="text-amber-500/40 text-xs font-bold px-1">✕</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Confirm modal */}
