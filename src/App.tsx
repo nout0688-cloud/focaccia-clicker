@@ -2972,9 +2972,9 @@ export default function App() {
     let timeout: ReturnType<typeof setTimeout>;
     let diamondHideTimeout: ReturnType<typeof setTimeout>;
     const schedule = () => {
-      // Rare Diamond Focaccia: spawns every 85-145 seconds (moderately rarer)
-      const baseDelay = 85000;
-      const randomExtra = 60000;
+      // 💎 Rare Diamond Focaccia: spawns every 3 - 5 minutes (180s - 300s)
+      const baseDelay = 180000;
+      const randomExtra = 120000;
       timeout = setTimeout(() => {
         if (!isAppActiveRef.current) return;
         setDiamondFocaccia({ x: 12 + Math.random() * 76, y: 18 + Math.random() * 50 });
@@ -2995,9 +2995,9 @@ export default function App() {
     let timeout: ReturnType<typeof setTimeout>;
     let emeraldHideTimeout: ReturnType<typeof setTimeout>;
     const schedule = () => {
-      // 🌟 ULTRA-RARE Emerald Focaccia: spawns every 2.5 - 5 minutes (150s - 300s)
-      const baseDelay = 150000;
-      const randomExtra = 150000;
+      // 🌟 ULTRA-RARE Emerald Focaccia: spawns every 6 - 10 minutes (360s - 600s)
+      const baseDelay = 360000;
+      const randomExtra = 240000;
       timeout = setTimeout(() => {
         if (!isAppActiveRef.current) return;
         setEmeraldFocaccia({ x: 14 + Math.random() * 72, y: 20 + Math.random() * 45 });
