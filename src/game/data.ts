@@ -1,4 +1,4 @@
-export type BuildingEra = 'starter' | 'industry' | 'cosmos' | 'multiverse';
+export type BuildingEra = 'starter' | 'industry' | 'cosmos' | 'multiverse' | 'eternity';
 
 export interface Building {
   id: string;
@@ -58,17 +58,24 @@ export const BUILDINGS: Building[] = [
   { id: 'bakery', name: 'Пекарня', emoji: '🥖', desc: 'Справжня фокачерія', baseCost: 130000, cps: 260, requireRebirth: 0, era: 'industry' },
   { id: 'factory', name: 'Завод', emoji: '🏭', desc: 'Промислове виробництво фокач', baseCost: 1400000, cps: 1400, requireRebirth: 1, era: 'industry' },
   { id: 'italy', name: 'Філія в Італії', emoji: '🇮🇹', desc: 'Прямо з Лігурії', baseCost: 20000000, cps: 7800, requireRebirth: 2, era: 'industry' },
+  { id: 'train', name: 'Фокача-експрес', emoji: '🚂', desc: 'Швидкісна доставка гарячої випічки містами', baseCost: 80000000, cps: 22000, requireRebirth: 2, era: 'industry' },
 
   // 🚀 Космос (cosmos)
-  { id: 'rocket', name: 'Космо-пекарня', emoji: '🚀', desc: 'Фокачі на орбіті', baseCost: 330000000, cps: 44000, requireRebirth: 3, era: 'cosmos' },
-  { id: 'portal', name: 'Портал фокач', emoji: '🌀', desc: 'Фокачі з паралельних всесвітів', baseCost: 5100000000, cps: 260000, requireRebirth: 4, era: 'cosmos' },
-  { id: 'god', name: 'Бог фокачі', emoji: '👑', desc: 'Все є фокача', baseCost: 75000000000, cps: 1600000, requireRebirth: 5, era: 'cosmos' },
+  { id: 'rocket', name: 'Космо-пекарня', emoji: '🚀', desc: 'Фокачі на орбіті', baseCost: 330000000, cps: 55000, requireRebirth: 3, era: 'cosmos' },
+  { id: 'station', name: 'Орбітальна станція', emoji: '🛰️', desc: 'Лабораторія невагомого випікання на орбіті', baseCost: 1400000000, cps: 140000, requireRebirth: 3, era: 'cosmos' },
+  { id: 'portal', name: 'Портал фокач', emoji: '🌀', desc: 'Фокачі з паралельних всесвітів', baseCost: 5100000000, cps: 320000, requireRebirth: 4, era: 'cosmos' },
+  { id: 'god', name: 'Бог фокачі', emoji: '👑', desc: 'Все є фокача', baseCost: 75000000000, cps: 1800000, requireRebirth: 5, era: 'cosmos' },
 
-  // 🌌 Мультивсесвіт (multiverse)
-  { id: 'matrix', name: 'Сингулярність фокач', emoji: '🖧', desc: 'ШІ вираховує досконалий смак скоринки', baseCost: 1200000000000, cps: 12000000, requireRebirth: 6, era: 'multiverse' },
-  { id: 'galaxy', name: 'Галактична піч', emoji: '🪐', desc: 'Тепло зірок випікає цілі квадранти фокач', baseCost: 25000000000000, cps: 95000000, requireRebirth: 7, era: 'multiverse' },
-  { id: 'chronos', name: 'Часовий конвеєр', emoji: '⏳', desc: 'Доставляє гарячі фокачі прямо з майбутнього', baseCost: 500000000000000, cps: 800000000, requireRebirth: 8, era: 'multiverse' },
-  { id: 'bigbang', name: 'Великий вибух смаку', emoji: '💥', desc: 'Народження нового смакового виміру', baseCost: 10000000000000000, cps: 7500000000, requireRebirth: 10, era: 'multiverse' },
+  // 🌌 Всесвіт (multiverse)
+  { id: 'matrix', name: 'Сингулярність фокач', emoji: '🖧', desc: 'ШІ вираховує досконалий смак скоринки', baseCost: 1200000000000, cps: 14000000, requireRebirth: 6, era: 'multiverse' },
+  { id: 'galaxy', name: 'Галактична піч', emoji: '🪐', desc: 'Тепло зірок випікає цілі квадранти фокач', baseCost: 25000000000000, cps: 110000000, requireRebirth: 7, era: 'multiverse' },
+  { id: 'chronos', name: 'Часовий конвеєр', emoji: '⏳', desc: 'Доставляє гарячі фокачі прямо з майбутнього', baseCost: 500000000000000, cps: 900000000, requireRebirth: 8, era: 'multiverse' },
+  { id: 'dyson', name: 'Сфера Дайсона', emoji: '🌟', desc: 'Мегаструктура, що збирає енергію сонця для печей', baseCost: 10000000000000000, cps: 7500000000, requireRebirth: 9, era: 'multiverse' },
+
+  // ♾️ Вічність (eternity)
+  { id: 'quantum', name: 'Квантовий синтезатор', emoji: '⚛️', desc: 'Синтезує досконалі фокачі прямо з вакууму', baseCost: 250000000000000000, cps: 65000000000, requireRebirth: 11, era: 'eternity' },
+  { id: 'bigbang', name: 'Первинне полум’я', emoji: '💥', desc: 'Космічне тепло, що зародило всі аромати буття', baseCost: 8000000000000000000, cps: 600000000000, requireRebirth: 13, era: 'eternity' },
+  { id: 'infinity', name: 'Вічний очаг', emoji: '♾️', desc: 'Незгасне священне полум’я нескінченної випічки', baseCost: 300000000000000000000, cps: 5000000000000, requireRebirth: 15, era: 'eternity' },
 ];
 
 export const CLICK_UPGRADES: ClickUpgrade[] = [
@@ -227,8 +234,12 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: 'a18', name: 'Вбивця босів', emoji: '⚔️', desc: 'Переможи першого боса', check: (s) => (s.bossesDefeated || 0) >= 1 },
   { id: 'a19', name: 'Діамантовий магнат', emoji: '💎', desc: 'Збери 10 діамантів', check: (s) => (s.diamonds || 0) >= 10 },
   { id: 'a20', name: 'Діамантовий зодчий', emoji: '🏛️', desc: 'Побудуй першу діамантову будівлю', check: (s) => Object.values(s.diamondBuildings || {}).some((v) => v > 0) },
-  { id: 'a21', name: 'Володар часу', emoji: '⏳', desc: 'Побудуй часовий конвеєр', check: (s) => (s.buildings.chronos || 0) >= 1 },
-  { id: 'a22', name: 'Творець всесвіту', emoji: '💥', desc: 'Створи великий вибух смаку', check: (s) => (s.buildings.bigbang || 0) >= 1 },
+  { id: 'a21', name: 'Залізничник', emoji: '🚂', desc: 'Запусти фокача-експрес', check: (s) => (s.buildings.train || 0) >= 1 },
+  { id: 'a22', name: 'Орбітальний кухар', emoji: '🛰️', desc: 'Збудуй орбітальну станцію', check: (s) => (s.buildings.station || 0) >= 1 },
+  { id: 'a23', name: 'Володар часу', emoji: '⏳', desc: 'Побудуй часовий конвеєр', check: (s) => (s.buildings.chronos || 0) >= 1 },
+  { id: 'a24', name: 'Зоряний інженер', emoji: '🌟', desc: 'Збудуй сферу Дайсона', check: (s) => (s.buildings.dyson || 0) >= 1 },
+  { id: 'a25', name: 'Квантовий пекар', emoji: '⚛️', desc: 'Запусти квантовий синтезатор', check: (s) => (s.buildings.quantum || 0) >= 1 },
+  { id: 'a26', name: 'Вічність смаку', emoji: '♾️', desc: 'Розпали вічний очаг', check: (s) => (s.buildings.infinity || 0) >= 1 },
 ];
 
 export const buildingCost = (b: Building, owned: number) => Math.floor(b.baseCost * Math.pow(1.27, owned));

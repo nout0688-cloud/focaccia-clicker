@@ -11599,6 +11599,7 @@ export default function App() {
                     { id: 'industry' as const, label: t.eraIndustry, icon: '🏭' },
                     { id: 'cosmos' as const, label: t.eraCosmos, icon: '🚀' },
                     { id: 'multiverse' as const, label: t.eraMultiverse, icon: '🌌' },
+                    { id: 'eternity' as const, label: t.eraEternity, icon: '♾️' },
                   ].map((e) => {
                     const isSelected = buildingEra === e.id;
                     const hasAffordable = e.id !== 'all' ? BUILDINGS.some((b) => {
