@@ -3,6 +3,7 @@ import {
   DIVISIONS,
   type DivisionInfo,
   type LeagueCompetitor,
+  type WeeklyRewardPending,
   generateLeagueBracket,
   getWeekRemainingMs,
   formatTimeRemaining,
@@ -14,7 +15,7 @@ interface LeaguesSectionProps {
   playerScore: number;
   playerName: string;
   onClaimWeeklyReward?: () => void;
-  hasUnclaimedWeeklyReward?: boolean;
+  pendingReward?: WeeklyRewardPending | null;
   lang: 'uk' | 'ru';
 }
 
@@ -23,7 +24,7 @@ export const LeaguesSection: React.FC<LeaguesSectionProps> = ({
   playerScore,
   playerName,
   onClaimWeeklyReward,
-  hasUnclaimedWeeklyReward,
+  pendingReward,
   lang,
 }) => {
   const [remMs, setRemMs] = useState(getWeekRemainingMs());
@@ -100,16 +101,35 @@ export const LeaguesSection: React.FC<LeaguesSectionProps> = ({
       </div>
 
       {/* REWARD NOTICE / CLAIM */}
-      {hasUnclaimedWeeklyReward && onClaimWeeklyReward && (
-        <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 flex items-center justify-between shadow-lg animate-pulse">
-          <div className="flex items-center gap-2 font-black text-xs">
-            <span className="text-lg">🎁</span>
-            <span>{lang === 'uk' ? 'Нагорода за минулий тиждень готова!' : 'Награда за прошлую неделю готова!'}</span>
+      {pendingReward && onClaimWeeklyReward && (
+        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 text-stone-950 flex items-center justify-between shadow-xl animate-pulse">
+          <div className="min-w-0 pr-2">
+            <div className="flex items-center gap-1.5 font-black text-xs">
+              <span className="text-base">🎁</span>
+              <span>
+                {lang === 'uk'
+                  ? `Підсумки ${pendingReward.weekId}: #${pendingReward.finalRank} місце!`
+                  : `Итоги ${pendingReward.weekId}: #${pendingReward.finalRank} место!`}
+              </span>
+            </div>
+            <div className="text-[11px] font-bold text-stone-900 mt-0.5">
+              +{pendingReward.diamonds} 💎  +{pendingReward.passXp} XP
+              {pendingReward.status === 'promoted' && (
+                <span className="ml-1 text-emerald-950 font-black">
+                  • 🟢 {lang === 'uk' ? 'Підвищено!' : 'Повышен!'}
+                </span>
+              )}
+              {pendingReward.status === 'demoted' && (
+                <span className="ml-1 text-red-950 font-black">
+                  • 🔴 {lang === 'uk' ? 'Понижено' : 'Понижен'}
+                </span>
+              )}
+            </div>
           </div>
           <button
             type="button"
             onClick={onClaimWeeklyReward}
-            className="px-3 py-1 rounded-xl bg-stone-950 text-amber-300 font-black text-xs hover:bg-stone-900 active:scale-95 transition cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-stone-950 text-amber-300 font-black text-xs hover:bg-stone-900 active:scale-95 transition cursor-pointer shrink-0 shadow"
           >
             {lang === 'uk' ? 'Забрати' : 'Забрать'}
           </button>

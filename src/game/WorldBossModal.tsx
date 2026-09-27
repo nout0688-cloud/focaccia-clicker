@@ -168,25 +168,41 @@ export const WorldBossModal: React.FC<WorldBossModalProps> = ({
               </button>
             )}
 
-            {/* Tap prompt */}
-            <div className="mt-3 text-center">
-              <button
-                type="button"
-                onClick={() => handleStrike(false)}
-                disabled={bossState.stamina <= 0 || bossState.isDefeated}
-                className={cn(
-                  'px-6 py-2 rounded-xl font-black text-sm transition shadow-lg cursor-pointer',
-                  bossState.stamina > 0 && !bossState.isDefeated
-                    ? 'bg-gradient-to-r from-red-600 to-orange-500 text-white hover:brightness-110 active:scale-95 shadow-red-600/30'
-                    : 'bg-white/5 text-white/30 cursor-not-allowed'
-                )}
-              >
-                ⚔️ {lang === 'uk' ? 'УДАР ПО ГОЛЕМУ!' : 'УДАР ПО ГОЛЕМУ!'}
-              </button>
-              <div className="text-[10px] text-white/50 mt-1 font-mono">
-                {lang === 'uk' ? 'Сила тапу:' : 'Сила тапа:'} {playerClickPower.toLocaleString()} 👊
+            {/* Tap prompt or Defeated state */}
+            {bossState.isDefeated ? (
+              <div className="mt-3 text-center space-y-1.5 animate-fade-in">
+                <div className="px-4 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-black text-xs inline-block animate-pulse">
+                  👑 {lang === 'uk' ? 'ГОЛЕМ ПОВАЛЕНИЙ!' : 'ГОЛЕМ ПОВЕРЖЕН!'}
+                </div>
+                <div className="text-[11px] text-white/70">
+                  {lang === 'uk'
+                    ? 'Відродження наступного титана через:'
+                    : 'Возрождение следующего титана через:'}{' '}
+                  <span className="font-mono font-bold text-amber-300">
+                    {Math.max(1, Math.ceil(((bossState.respawnAt || Date.now()) - Date.now()) / 3600000))} {lang === 'uk' ? 'год.' : 'ч.'}
+                  </span>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="mt-3 text-center">
+                <button
+                  type="button"
+                  onClick={() => handleStrike(false)}
+                  disabled={bossState.stamina <= 0}
+                  className={cn(
+                    'px-6 py-2 rounded-xl font-black text-sm transition shadow-lg cursor-pointer',
+                    bossState.stamina > 0
+                      ? 'bg-gradient-to-r from-red-600 to-orange-500 text-white hover:brightness-110 active:scale-95 shadow-red-600/30'
+                      : 'bg-white/5 text-white/30 cursor-not-allowed'
+                  )}
+                >
+                  ⚔️ {lang === 'uk' ? 'УДАР ПО ГОЛЕМУ!' : 'УДАР ПО ГОЛЕМУ!'}
+                </button>
+                <div className="text-[10px] text-white/50 mt-1 font-mono">
+                  {lang === 'uk' ? 'Сила тапу:' : 'Сила тапа:'} {playerClickPower.toLocaleString()} 👊
+                </div>
+              </div>
+            )}
 
             {/* Live combat log ticker */}
             {recentHits.length > 0 && (

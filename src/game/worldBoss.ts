@@ -135,24 +135,38 @@ export function getBossPhase(currentHp: number, maxHp: number): BossPhase {
   return WORLD_BOSS_PHASES[2];
 }
 
+export function tickWorldBossState(s: WorldBossState, now: number = Date.now()): WorldBossState {
+  if (s.isDefeated && s.respawnAt && now >= s.respawnAt) {
+    const fresh = createFreshWorldBossState();
+    saveWorldBossState(fresh);
+    return fresh;
+  }
+
+  const elapsed = now - (s.lastStaminaRegen || now);
+  const maxStam = s.maxStamina || 10;
+  const regenAmount = Math.floor(elapsed / 45000);
+  if (regenAmount > 0 && s.stamina < maxStam) {
+    const nextStamina = Math.min(maxStam, s.stamina + regenAmount);
+    const nextLastRegen = (s.lastStaminaRegen || now) + regenAmount * 45000;
+    const updated: WorldBossState = {
+      ...s,
+      stamina: nextStamina,
+      lastStaminaRegen: nextLastRegen,
+    };
+    saveWorldBossState(updated);
+    return updated;
+  }
+
+  return s;
+}
+
 export function loadWorldBossState(): WorldBossState {
   const now = Date.now();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      // Check if boss respawn time has arrived
-      if (parsed.isDefeated && parsed.respawnAt && now >= parsed.respawnAt) {
-        return createFreshWorldBossState();
-      }
-      // Regenerate stamina (1 per 45s)
-      const elapsed = now - (parsed.lastStaminaRegen || now);
-      const regenAmount = Math.floor(elapsed / 45000);
-      if (regenAmount > 0 && parsed.stamina < (parsed.maxStamina || 10)) {
-        parsed.stamina = Math.min(parsed.maxStamina || 10, parsed.stamina + regenAmount);
-        parsed.lastStaminaRegen = now;
-      }
-      return parsed;
+      return tickWorldBossState(parsed, now);
     }
   } catch {}
   return createFreshWorldBossState();

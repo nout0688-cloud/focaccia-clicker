@@ -124,16 +124,19 @@ import {
   type WorldBossState,
   loadWorldBossState,
   saveWorldBossState,
+  tickWorldBossState,
 } from './game/worldBoss';
 import {
-  DIVISIONS,
   getCurrentWeekKey,
+  ensureLeagueState,
+  type LeagueState,
 } from './game/leagues';
 import { ExpeditionModal } from './game/ExpeditionModal';
 import { WorldBossModal } from './game/WorldBossModal';
-import { ArcadeSection } from './game/ArcadeSection';
+import { ArcadeSection, type WheelCostType } from './game/ArcadeSection';
 import { AlchemySection } from './game/AlchemySection';
 import { LeaguesSection } from './game/LeaguesSection';
+import { playSfx } from './game/sfx';
 
 /* ---- Telegram WebApp ---- */
 const tg = window.Telegram?.WebApp;
@@ -771,12 +774,7 @@ interface SaveState {
     playerDamage: number;
     claimedTiers: number[];
   };
-  league?: {
-    division: number;
-    weeklyScore: number;
-    weekId: string;
-    claimedWeekId?: string;
-  };
+  league?: LeagueState;
 }
 
 export const REBIRTH_TRADE_LOCK_MS = 5 * 24 * 60 * 60 * 1000; // 5 days
@@ -1010,11 +1008,7 @@ const defaultState = (): SaveState => ({
     playerDamage: 0,
     claimedTiers: [],
   },
-  league: {
-    division: 0,
-    weeklyScore: 0,
-    weekId: getCurrentWeekKey(),
-  },
+  league: ensureLeagueState(undefined, tgUser?.first_name || 'Ти'),
 });
 
 async function loadState(): Promise<SaveState> {
@@ -1146,6 +1140,12 @@ async function loadState(): Promise<SaveState> {
         spent: Number(parsed.talents?.spent) || 0,
         nodes: parsed.talents?.nodes && typeof parsed.talents.nodes === 'object' ? parsed.talents.nodes : {},
       },
+      alchemy: parsed.alchemy ? {
+        ingredients: { ...getDefaultAlchemyState().ingredients, ...(parsed.alchemy.ingredients || {}) },
+        buffs: parsed.alchemy.buffs || {},
+      } : getDefaultAlchemyState(),
+      expedition: parsed.expedition || null,
+      league: ensureLeagueState(parsed.league, tgUser?.first_name || 'Ти'),
     };
   } catch { return defaultState(); }
 }
@@ -2355,13 +2355,18 @@ export default function App() {
       if (!quest || !quest.completed || quest.claimed) return prev;
 
       const newDaily = qState.daily.map((q) => (q.id === questId ? { ...q, claimed: true } : q));
-      const nextXp = qState.passXp + quest.rewardXp;
+      const isCosmic = isBuffActive(prev.alchemy?.buffs, 'cosmic_ferment');
+      const gainedXp = quest.rewardXp * (isCosmic ? 2 : 1);
+      const nextXp = qState.passXp + gainedXp;
+
+      const curLeague = prev.league ? ensureLeagueState(prev.league, tgUser?.first_name || 'Ти') : undefined;
+      const nextWeeklyScore = curLeague ? (curLeague.weeklyScore + quest.rewardFocaccia) : quest.rewardFocaccia;
 
       haptic.success();
       burstConfetti(['📜', '✨', '💎', '⭐']);
       addToast(
         langRef.current === 'uk' ? '🎁 Нагороду отримано!' : '🎁 Награда получена!',
-        `+${quest.rewardFocaccia.toLocaleString()} 🫓  +${quest.rewardDiamonds} 💎  +${quest.rewardXp} XP`,
+        `+${quest.rewardFocaccia.toLocaleString()} 🫓  +${quest.rewardDiamonds} 💎  +${gainedXp} XP${isCosmic ? ' (x2 🌌)' : ''}`,
         '🎉'
       );
 
@@ -2375,6 +2380,7 @@ export default function App() {
           daily: newDaily,
           passXp: nextXp,
         },
+        league: curLeague ? { ...curLeague, weeklyScore: nextWeeklyScore } : undefined,
       };
       stateRef.current = next;
       saveNow(next);
@@ -3210,7 +3216,18 @@ export default function App() {
     if (loading || !isAppActive) return;
     const iv = setInterval(() => {
       const gain = cpsRef.current / 10;
-      if (gain > 0) setState((p) => ({ ...p, focaccia: p.focaccia + gain, total: p.total + gain }));
+      if (gain > 0) {
+        setState((p) => {
+          const curLeague = p.league;
+          const nextScore = curLeague ? (curLeague.weeklyScore + gain) : gain;
+          return {
+            ...p,
+            focaccia: p.focaccia + gain,
+            total: p.total + gain,
+            league: curLeague ? { ...curLeague, weeklyScore: nextScore } : undefined,
+          };
+        });
+      }
     }, 100);
     return () => clearInterval(iv);
   }, [loading, isAppActive]);
@@ -3640,10 +3657,20 @@ export default function App() {
     return () => clearInterval(iv);
   }, [loading, isAppActive, brokenBuilding, addToast, saveNow]);
 
-  /* ---- Autosave ---- */
+  /* ---- Autosave & Background Subsystems (Boss Stamina, League Rollover) ---- */
   useEffect(() => {
     if (loading || !isAppActive) return;
     const iv = setInterval(() => {
+      setWorldBossState((prev) => tickWorldBossState(prev));
+      setState((prev) => {
+        const curLeague = prev.league;
+        const curWeek = getCurrentWeekKey();
+        if (curLeague && curLeague.weekId !== curWeek) {
+          const nextLeague = ensureLeagueState(curLeague, tgUser?.first_name || 'Ти');
+          return { ...prev, league: nextLeague };
+        }
+        return prev;
+      });
       saveNow();
     }, 2000);
     return () => clearInterval(iv);
@@ -3815,6 +3842,7 @@ export default function App() {
       };
 
       haptic.success();
+      playSfx('potion_brew');
       burstConfetti(['⚗️', '✨', '⚡', '🔥']);
       addToast(
         langRef.current === 'uk' ? '⚗️ Зілля зварено!' : '⚗️ Зелье сварено!',
@@ -3835,7 +3863,9 @@ export default function App() {
       saveNow(next);
       return next;
     });
-  }, [addToast, burstConfetti, saveNow]);
+
+    updateQuestProgress('alchemy', 1);
+  }, [addToast, burstConfetti, saveNow, updateQuestProgress]);
 
   /* ===== 🍕 ARCADE & CHEF WHEEL HANDLERS ===== */
   const handleArcadeComplete = useCallback((rewards: {
@@ -3900,7 +3930,7 @@ export default function App() {
     updateQuestProgress('casino', 1);
   }, [addToast, burstConfetti, saveNow, updateQuestProgress]);
 
-  const handleSpinWheel = useCallback((segment: ChefWheelSegment) => {
+  const handleSpinWheel = useCallback((segment: ChefWheelSegment, cost?: { type: WheelCostType; amount: number }) => {
     setState((prev) => {
       const curAlchemy = prev.alchemy || getDefaultAlchemyState();
       let nextFoc = prev.focaccia;
@@ -3908,6 +3938,12 @@ export default function App() {
       let nextDia = prev.diamonds;
       const nextIngs = { ...curAlchemy.ingredients };
       const nextBuffs = { ...curAlchemy.buffs };
+
+      if (cost?.type === 'focaccia') {
+        nextFoc = Math.max(0, nextFoc - cost.amount);
+      } else if (cost?.type === 'diamonds') {
+        nextDia = Math.max(0, nextDia - cost.amount);
+      }
 
       const qState = ensureQuestsState(prev.quests, prev.total, prev.prestige);
       let nextPassXp = qState.passXp;
@@ -3921,12 +3957,17 @@ export default function App() {
       } else if (segment.type === 'ingredient' && segment.ingredientId) {
         nextIngs[segment.ingredientId] = (nextIngs[segment.ingredientId] || 0) + (segment.amount || 1);
       } else if (segment.type === 'xp') {
-        nextPassXp += (segment.amount || 35);
+        const isCosmic = isBuffActive(curAlchemy.buffs, 'cosmic_ferment');
+        nextPassXp += (segment.amount || 35) * (isCosmic ? 2 : 1);
       } else if (segment.type === 'buff' && segment.buffId) {
         const pot = ALCHEMY_POTIONS.find((p) => p.id === segment.buffId);
         const dur = pot ? pot.durationMs : 10 * 60 * 1000;
         nextBuffs[segment.buffId] = Math.max(Date.now(), nextBuffs[segment.buffId] || 0) + dur;
       }
+
+      const curLeague = prev.league ? ensureLeagueState(prev.league, tgUser?.first_name || 'Ти') : undefined;
+      const focAdded = segment.type === 'focaccia' ? (segment.amount || 25000) : 0;
+      const nextWeeklyScore = curLeague ? (curLeague.weeklyScore + focAdded) : focAdded;
 
       haptic.success();
       burstConfetti(['🎡', '✨', '💎']);
@@ -3949,6 +3990,7 @@ export default function App() {
           ...qState,
           passXp: nextPassXp,
         },
+        league: curLeague ? { ...curLeague, weeklyScore: nextWeeklyScore } : undefined,
       };
       stateRef.current = next;
       saveNow(next);
@@ -3968,6 +4010,7 @@ export default function App() {
       const durationMs = getCatExpeditionDuration(loc.baseDurationMs, catLvl);
 
       haptic.medium();
+      playSfx('expedition_start');
       addToast(
         langRef.current === 'uk' ? '🧭 Мурчик вирушив у путь!' : '🧭 Мурчик отправился в путь!',
         langRef.current === 'uk' ? `Пункт: ${loc.nameUk}` : `Пункт: ${loc.nameRu}`,
@@ -4005,14 +4048,20 @@ export default function App() {
         nextIngs[k] = (nextIngs[k] || 0) + v;
       }
 
+      const isCosmic = isBuffActive(curAlchemy.buffs, 'cosmic_ferment');
+      const gainedXp = rewards.passXp * (isCosmic ? 2 : 1);
       const qState = ensureQuestsState(prev.quests, prev.total, prev.prestige);
-      const nextPassXp = qState.passXp + rewards.passXp;
+      const nextPassXp = qState.passXp + gainedXp;
+
+      const curLeague = prev.league ? ensureLeagueState(prev.league, tgUser?.first_name || 'Ти') : undefined;
+      const nextWeeklyScore = curLeague ? (curLeague.weeklyScore + rewards.focaccia) : rewards.focaccia;
 
       haptic.success();
+      playSfx('expedition_claim');
       burstConfetti(['🧭', '🎒', '💎', '🍄', '🌿']);
       addToast(
         langRef.current === 'uk' ? '🎒 Мурчик повернувся зі здобиччю!' : '🎒 Мурчик вернулся с добычей!',
-        `+${rewards.focaccia.toLocaleString()} 🫓  +${rewards.diamonds} 💎  +${rewards.passXp} XP`,
+        `+${rewards.focaccia.toLocaleString()} 🫓  +${rewards.diamonds} 💎  +${gainedXp} XP${isCosmic ? ' (x2 🌌)' : ''}`,
         '😸'
       );
 
@@ -4030,6 +4079,7 @@ export default function App() {
           ...qState,
           passXp: nextPassXp,
         },
+        league: curLeague ? { ...curLeague, weeklyScore: nextWeeklyScore } : undefined,
       };
       stateRef.current = next;
       saveNow(next);
@@ -4079,6 +4129,7 @@ export default function App() {
       const nextStamina = Math.max(0, prev.stamina - 1);
 
       haptic.heavy();
+      playSfx(isCritWeakPoint ? 'boss_crit' : 'boss_hit');
       if (isCritWeakPoint) {
         doFlash('golden');
         burstConfetti(['🎯', '💥', '🔥']);
@@ -4130,20 +4181,26 @@ export default function App() {
         truffle: (curAlchemy.ingredients.truffle || 0) + tier.truffles,
       };
 
+      const isCosmic = isBuffActive(curAlchemy.buffs, 'cosmic_ferment');
+      const gainedXp = tier.passXp * (isCosmic ? 2 : 1);
       const qState = ensureQuestsState(prev.quests, prev.total, prev.prestige);
-      const nextPassXp = qState.passXp + tier.passXp;
+      const nextPassXp = qState.passXp + gainedXp;
+
+      const curBadges = prev.badges || [];
+      const nextBadges = tier.badgeTitle ? Array.from(new Set([...curBadges, tier.badgeTitle])) : curBadges;
 
       haptic.success();
       burstConfetti(['🏆', '💎', '🍄']);
       addToast(
         langRef.current === 'uk' ? '🏆 Нагороду за рейд отримано!' : '🏆 Награда за рейд получена!',
-        `+${tier.diamonds} 💎  +${tier.passXp} XP  +${tier.truffles} 🍄`,
+        `+${tier.diamonds} 💎  +${gainedXp} XP  +${tier.truffles} 🍄${tier.badgeTitle ? `  +🏅 "${tier.badgeTitle}"` : ''}`,
         '👹'
       );
 
       const next: SaveState = {
         ...prev,
         diamonds: prev.diamonds + tier.diamonds,
+        badges: nextBadges,
         alchemy: {
           ...curAlchemy,
           ingredients: nextIngs,
@@ -4190,31 +4247,39 @@ export default function App() {
   const handleClaimWeeklyReward = useCallback(() => {
     setState((prev) => {
       const curLeague = prev.league;
-      if (!curLeague) return prev;
-      const div = DIVISIONS[curLeague.division] || DIVISIONS[0];
-      const reward = div.rewards.top2;
+      const pending = curLeague?.pendingReward;
+      if (!curLeague || !pending) return prev;
 
+      const isCosmic = isBuffActive(prev.alchemy?.buffs, 'cosmic_ferment');
+      const gainedXp = pending.passXp * (isCosmic ? 2 : 1);
       const qState = ensureQuestsState(prev.quests, prev.total, prev.prestige);
-      const nextPassXp = qState.passXp + reward.passXp;
+      const nextPassXp = qState.passXp + gainedXp;
 
       haptic.success();
       burstConfetti(['🏆', '✨', '💎']);
+      const statusText = pending.status === 'promoted'
+        ? (langRef.current === 'uk' ? '🟢 Підвищено до наступної ліги!' : '🟢 Повышен в следующую лигу!')
+        : pending.status === 'demoted'
+        ? (langRef.current === 'uk' ? '🔴 Понижено в лізі' : '🔴 Понижен в лиге')
+        : (langRef.current === 'uk' ? '🟡 Збережено місце в лізі' : '🟡 Сохранено место в лиге');
+
       addToast(
         langRef.current === 'uk' ? '🏆 Тижнева Ліга: Нагорода!' : '🏆 Недельная Лига: Награда!',
-        `+${reward.diamonds} 💎  +${reward.passXp} XP`,
+        `+${pending.diamonds} 💎  +${gainedXp} XP (${statusText})`,
         '🥇'
       );
 
       const next: SaveState = {
         ...prev,
-        diamonds: prev.diamonds + reward.diamonds,
+        diamonds: prev.diamonds + pending.diamonds,
         quests: {
           ...qState,
           passXp: nextPassXp,
         },
         league: {
           ...curLeague,
-          claimedWeekId: curLeague.weekId,
+          pendingReward: null,
+          claimedWeekId: pending.weekId,
         },
       };
       stateRef.current = next;
@@ -4423,7 +4488,8 @@ export default function App() {
     const critChance = baseCritChance + (activeSkin?.critChance || 0) * activeSkinLevelMult + talentCritChance;
     const talentCritMult = (stateRef.current.talents?.nodes?.t_crit_surge || 0) * 1.5;
     const critMultVal = (hasCritUp ? 12 : 10) + talentCritMult;
-    const crit = !burning && Math.random() < critChance;
+    const isAromaOverload = isBuffActive(stateRef.current.alchemy?.buffs, 'aroma_overload');
+    const crit = !burning && (isAromaOverload || Math.random() < critChance);
     const talentMaxComboExtra = (stateRef.current.talents?.nodes?.t_combo_master || 0) * 25;
     const dynamicComboMult = 1 + Math.min(newCombo, 100 + talentMaxComboExtra) * 0.02;
     const gain = clickPower * dynamicComboMult * frenzyMult * diamondMult * emeraldMult * (crit ? critMultVal : 1) * (burning ? 0.05 : 1);
@@ -4431,10 +4497,13 @@ export default function App() {
     setState((p) => {
       const newEnergy = p.energy - 1;
       if (newEnergy <= 0) setRecharging(true);
+      const curLeague = p.league;
+      const nextScore = curLeague ? (curLeague.weeklyScore + gain) : gain;
       return {
         ...p,
         focaccia: p.focaccia + gain,
         total: p.total + gain,
+        league: curLeague ? { ...curLeague, weeklyScore: nextScore } : undefined,
         clicks: p.clicks + 1,
         maxCombo: Math.max(p.maxCombo, newCombo),
         energy: Math.max(0, newEnergy),
@@ -4618,10 +4687,13 @@ export default function App() {
     let bonus = 0;
     let dGain = 0;
     const curT = TRANSLATIONS[langRef.current];
+    const isGoldenTouch = isBuffActive(stateRef.current.alchemy?.buffs, 'golden_touch');
+    const isFrenzyInferno = isBuffActive(stateRef.current.alchemy?.buffs, 'frenzy_inferno');
+
     if (roll < 0.45) {
       const hasFrenzyUp = stateRef.current.vipUpgrades?.includes('vip_frenzy');
-      const dur = hasFrenzyUp ? 20 : 15;
-      const mult = hasFrenzyUp ? 7 : 6;
+      const dur = (hasFrenzyUp ? 20 : 15) + (isFrenzyInferno ? 10 : 0);
+      const mult = isFrenzyInferno ? 10 : (hasFrenzyUp ? 7 : 6);
       setFrenzy(dur);
       addToast(
         byCat
@@ -4631,7 +4703,7 @@ export default function App() {
         '🔥'
       );
     } else if (roll < 0.8) {
-      bonus = Math.max(cps * 60 * 3, clickPower * 200, 50);
+      bonus = Math.max(cps * 60 * 3, clickPower * 200, 50) * (isGoldenTouch ? 2 : 1);
       addToast(
         byCat
           ? (langRef.current === 'uk' ? `🐾 ${catSkinInfo.nameUk} підібрав Золоту фокачу!` : `🐾 ${catSkinInfo.nameRu} подобрал Золотую фокаччу!`)
@@ -4641,7 +4713,7 @@ export default function App() {
       );
     } else {
       // Golden gives diamonds!
-      dGain = 2;
+      dGain = 2 * (isGoldenTouch ? 2 : 1);
       addToast(
         byCat
           ? (langRef.current === 'uk' ? `🐾 ${catSkinInfo.nameUk} знайшов діаманти у фокачі!` : `🐾 ${catSkinInfo.nameRu} нашел алмазы в фокачче!`)
@@ -4657,12 +4729,15 @@ export default function App() {
       if (bonus > 0) bonus *= 2;
       addToast('👑 Кулінарне Диво!', 'Талант збільшив нагороду та додав +5 💎!', '✨');
     }
+    const curLeague = cur.league ? ensureLeagueState(cur.league, tgUser?.first_name || 'Ти') : undefined;
+    const nextWeeklyScore = curLeague ? (curLeague.weeklyScore + bonus) : bonus;
     const next: SaveState = {
       ...cur,
       focaccia: cur.focaccia + bonus,
       total: cur.total + bonus,
       diamonds: cur.diamonds + dGain,
       goldenCaught: cur.goldenCaught + 1,
+      league: curLeague ? { ...curLeague, weeklyScore: nextWeeklyScore } : undefined,
     };
     stateRef.current = next;
     setState(next);
@@ -13618,7 +13693,7 @@ export default function App() {
                 playerScore={state.league?.weeklyScore || 0}
                 playerName={tgUser?.first_name || 'Ти'}
                 onClaimWeeklyReward={handleClaimWeeklyReward}
-                hasUnclaimedWeeklyReward={state.league?.claimedWeekId !== state.league?.weekId && (state.league?.weeklyScore || 0) > 0}
+                pendingReward={state.league?.pendingReward}
                 lang={lang}
               />
             )}

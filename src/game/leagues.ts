@@ -114,6 +114,23 @@ export const DIVISIONS: DivisionInfo[] = [
   },
 ];
 
+export interface WeeklyRewardPending {
+  weekId: string;
+  division: number;
+  finalRank: number;
+  diamonds: number;
+  passXp: number;
+  status: 'promoted' | 'demoted' | 'retained';
+}
+
+export interface LeagueState {
+  division: number;
+  weeklyScore: number;
+  weekId: string;
+  claimedWeekId?: string;
+  pendingReward?: WeeklyRewardPending | null;
+}
+
 export interface LeagueCompetitor {
   id: string;
   name: string;
@@ -122,23 +139,26 @@ export interface LeagueCompetitor {
   isPlayer?: boolean;
 }
 
-export function getCurrentWeekKey(): string {
-  const d = new Date();
+export function getCurrentWeekKey(date: Date = new Date()): string {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  // ISO week: week starts on Monday (1) and ends on Sunday (7)
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
   const year = d.getUTCFullYear();
-  // Simple week number
-  const startOfYear = new Date(Date.UTC(year, 0, 1));
-  const days = Math.floor((d.getTime() - startOfYear.getTime()) / (24 * 60 * 60 * 1000));
-  const weekNo = Math.ceil((days + startOfYear.getUTCDay() + 1) / 7);
-  return `${year}-W${weekNo}`;
+  const yearStart = new Date(Date.UTC(year, 0, 1));
+  const weekNo = Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return `${year}-W${String(weekNo).padStart(2, '0')}`;
 }
 
-export function getWeekRemainingMs(): number {
-  const now = new Date();
-  const nextSunday = new Date();
-  const day = now.getUTCDay();
-  const daysUntilSunday = (7 - day) % 7;
-  nextSunday.setUTCDate(now.getUTCDate() + (daysUntilSunday === 0 ? 7 : daysUntilSunday));
-  nextSunday.setUTCHours(23, 59, 59, 999);
+export function getWeekRemainingMs(now: Date = new Date()): number {
+  const day = now.getUTCDay() || 7; // Monday = 1, ..., Sunday = 7
+  const daysUntilSundayEnd = 7 - day;
+  const nextSunday = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + daysUntilSundayEnd,
+    23, 59, 59, 999
+  ));
   return Math.max(0, nextSunday.getTime() - now.getTime());
 }
 
@@ -164,9 +184,10 @@ const BOT_NAMES = [
 export function generateLeagueBracket(
   division: number,
   playerScore: number,
-  playerName: string = 'Ти'
+  playerName: string = 'Ти',
+  weekKeyOverride?: string
 ): LeagueCompetitor[] {
-  const weekKey = getCurrentWeekKey();
+  const weekKey = weekKeyOverride || getCurrentWeekKey();
   let seed = 0;
   for (let i = 0; i < weekKey.length; i++) {
     seed = (seed * 37 + weekKey.charCodeAt(i)) % 100000;
@@ -199,4 +220,76 @@ export function generateLeagueBracket(
 
   list.sort((a, b) => b.score - a.score);
   return list;
+}
+
+export function ensureLeagueState(
+  current?: LeagueState,
+  playerName: string = 'Ти'
+): LeagueState {
+  const curWeek = getCurrentWeekKey();
+  if (!current) {
+    return {
+      division: 0,
+      weeklyScore: 0,
+      weekId: curWeek,
+      pendingReward: null,
+    };
+  }
+
+  // If week hasn't rolled over, return current (keeping any unclaimed pendingReward)
+  if (current.weekId === curWeek) {
+    return current;
+  }
+
+  // Week rolled over! Calculate outcomes from completed week
+  const prevDiv = current.division ?? 0;
+  const prevScore = current.weeklyScore ?? 0;
+  const divInfo = DIVISIONS[prevDiv] || DIVISIONS[0];
+  const bracket = generateLeagueBracket(prevDiv, prevScore, playerName, current.weekId);
+  const pIndex = bracket.findIndex((c) => c.isPlayer);
+  const finalRank = pIndex >= 0 ? pIndex + 1 : 20;
+
+  let diamonds = 0;
+  let passXp = 0;
+  if (prevScore > 0) {
+    if (finalRank === 1) {
+      diamonds = divInfo.rewards.top1.diamonds;
+      passXp = divInfo.rewards.top1.passXp;
+    } else if (finalRank === 2) {
+      diamonds = divInfo.rewards.top2.diamonds;
+      passXp = divInfo.rewards.top2.passXp;
+    } else if (finalRank <= divInfo.promoteTop) {
+      diamonds = divInfo.rewards.top3.diamonds;
+      passXp = divInfo.rewards.top3.passXp;
+    } else {
+      diamonds = divInfo.rewards.safe.diamonds;
+      passXp = divInfo.rewards.safe.passXp;
+    }
+  }
+
+  let nextDiv = prevDiv;
+  let status: 'promoted' | 'demoted' | 'retained' = 'retained';
+  if (prevScore > 0 && finalRank <= divInfo.promoteTop && divInfo.promoteTop > 0 && prevDiv < DIVISIONS.length - 1) {
+    nextDiv = prevDiv + 1;
+    status = 'promoted';
+  } else if (divInfo.demoteBottom > 0 && finalRank > bracket.length - divInfo.demoteBottom && prevDiv > 0) {
+    nextDiv = prevDiv - 1;
+    status = 'demoted';
+  }
+
+  const pendingReward: WeeklyRewardPending | null = prevScore > 0 ? {
+    weekId: current.weekId,
+    division: prevDiv,
+    finalRank,
+    diamonds,
+    passXp,
+    status,
+  } : current.pendingReward || null;
+
+  return {
+    division: nextDiv,
+    weeklyScore: 0,
+    weekId: curWeek,
+    pendingReward,
+  };
 }
