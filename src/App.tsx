@@ -137,6 +137,17 @@ import { ArcadeSection, type WheelCostType } from './game/ArcadeSection';
 import { AlchemySection } from './game/AlchemySection';
 import { LeaguesSection } from './game/LeaguesSection';
 import { playSfx } from './game/sfx';
+import { FortuneCookieModal } from './game/FortuneCookieModal';
+import { RecipesSection } from './game/RecipesSection';
+import {
+  type CookieReward,
+  COOKIE_COOLDOWN_MS,
+  COOKIE_INSTANT_DIAMOND_COST,
+} from './game/fortuneCookie';
+import {
+  type AncientRecipe,
+  getCombinedRecipeBonuses,
+} from './game/recipes';
 
 /* ---- Telegram WebApp ---- */
 const tg = window.Telegram?.WebApp;
@@ -775,6 +786,11 @@ interface SaveState {
     claimedTiers: number[];
   };
   league?: LeagueState;
+  fortuneCookie?: {
+    lastOpenedAt: number;
+    countOpened: number;
+  };
+  unlockedRecipes?: string[];
 }
 
 export const REBIRTH_TRADE_LOCK_MS = 5 * 24 * 60 * 60 * 1000; // 5 days
@@ -806,7 +822,8 @@ export function calculateOfflineProgress(
 ): { cleanGain: number; cleanDay: number; cleanNight: number } | null {
   if (!s || !fromTs || !toTs || toTs <= fromTs) return null;
   const talentExtraHours = (s.talents?.nodes?.t_tycoon_capstone || 0) > 0 ? 12 : 0;
-  const maxHours = (s.vipUpgrades?.includes('vip_night') ? 24 : 12) + talentExtraHours;
+  const recipeExtraHours = (s.unlockedRecipes || []).includes('recipe_astral') ? 6 : 0;
+  const maxHours = (s.vipUpgrades?.includes('vip_night') ? 24 : 12) + talentExtraHours + recipeExtraHours;
   const cappedTo = Math.min(toTs, fromTs + 60 * 60 * maxHours * 1000);
   const totalElapsed = (cappedTo - fromTs) / 1000;
   if (totalElapsed <= 30) return null;
@@ -1009,6 +1026,11 @@ const defaultState = (): SaveState => ({
     claimedTiers: [],
   },
   league: ensureLeagueState(undefined, tgUser?.first_name || 'Ти'),
+  fortuneCookie: {
+    lastOpenedAt: 0,
+    countOpened: 0,
+  },
+  unlockedRecipes: [],
 });
 
 async function loadState(): Promise<SaveState> {
@@ -1146,6 +1168,11 @@ async function loadState(): Promise<SaveState> {
       } : getDefaultAlchemyState(),
       expedition: parsed.expedition || null,
       league: ensureLeagueState(parsed.league, tgUser?.first_name || 'Ти'),
+      fortuneCookie: {
+        lastOpenedAt: Number(parsed.fortuneCookie?.lastOpenedAt) || 0,
+        countOpened: Number(parsed.fortuneCookie?.countOpened) || 0,
+      },
+      unlockedRecipes: Array.isArray(parsed.unlockedRecipes) ? parsed.unlockedRecipes : [],
     };
   } catch { return defaultState(); }
 }
@@ -1274,9 +1301,11 @@ export default function App() {
   const [showTalentsModal, setShowTalentsModal] = useState(false);
   const [showExpeditionModal, setShowExpeditionModal] = useState(false);
   const [showWorldBossModal, setShowWorldBossModal] = useState(false);
+  const [showFortuneCookieModal, setShowFortuneCookieModal] = useState(false);
+  const [nowTs, setNowTs] = useState(() => Date.now());
   const [worldBossState, setWorldBossState] = useState<WorldBossState>(() => loadWorldBossState());
   const [leaderMainTab, setLeaderMainTab] = useState<'league' | 'global'>('league');
-  const [boostTab, setBoostTab] = useState<'arcade' | 'alchemy'>('arcade');
+  const [boostTab, setBoostTab] = useState<'arcade' | 'alchemy' | 'recipes'>('arcade');
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
   const [tradeJoinInput, setTradeJoinInput] = useState('');
   const [tradeCreating, setTradeCreating] = useState(false);
@@ -2124,6 +2153,8 @@ export default function App() {
     return catImg;
   };
 
+  const recipeBonuses = useMemo(() => getCombinedRecipeBonuses(state.unlockedRecipes || []), [state.unlockedRecipes]);
+
   const clickPower = useMemo(() => {
     let add = 1, mult = 1;
     for (const u of CLICK_UPGRADES) {
@@ -2136,8 +2167,8 @@ export default function App() {
     }
     const talentClickMult = 1 + (state.talents?.nodes?.t_click_power || 0) * 0.15;
     const alchemyClickMult = isBuffActive(state.alchemy?.buffs, 'aroma_overload') ? 4 : 1;
-    return add * mult * prestigeMult * talentClickMult * alchemyClickMult;
-  }, [state.upgrades, state.talents?.nodes?.t_click_power, state.alchemy?.buffs, prestigeMult, activeSkin?.clickMult, activeSkinLevelMult]);
+    return add * mult * prestigeMult * talentClickMult * alchemyClickMult * recipeBonuses.clickPowerMult;
+  }, [state.upgrades, state.talents?.nodes?.t_click_power, state.alchemy?.buffs, prestigeMult, activeSkin?.clickMult, activeSkinLevelMult, recipeBonuses.clickPowerMult]);
 
   const cps = useMemo(() => {
     let base = 0;
@@ -2163,10 +2194,10 @@ export default function App() {
     if (state.cat?.unlocked && catInfo?.cpsBonus) mult *= (1 + catInfo.cpsBonus);
     const talentCpsMult = 1 + (state.talents?.nodes?.t_tycoon_cps || 0) * 0.10;
     const alchemyCpsMult = isBuffActive(state.alchemy?.buffs, 'yeast_overdrive') ? 3 : 1;
-    mult *= (1 + dPercentTotal) * talentCpsMult * alchemyCpsMult;
+    mult *= (1 + dPercentTotal) * talentCpsMult * alchemyCpsMult * recipeBonuses.cpsMult;
     if (activeEvent) mult *= activeEvent.cpsMult;
     return base * mult * prestigeMult;
-  }, [state.buildings, state.diamondBuildings, state.upgrades, state.vipUpgrades, state.talents?.nodes?.t_tycoon_cps, state.alchemy?.buffs, brokenBuilding, activeEvent, prestigeMult, activeSkin?.cpsMult, activeSkinLevelMult, state.cat?.unlocked, catInfo?.cpsBonus]);
+  }, [state.buildings, state.diamondBuildings, state.upgrades, state.vipUpgrades, state.talents?.nodes?.t_tycoon_cps, state.alchemy?.buffs, brokenBuilding, activeEvent, prestigeMult, activeSkin?.cpsMult, activeSkinLevelMult, state.cat?.unlocked, catInfo?.cpsBonus, recipeBonuses.cpsMult]);
 
   const talentFrenzyBoost = (frenzy > 0 || diamondFrenzy > 0 || emeraldFrenzy > 0)
     ? 1 + (state.talents?.nodes?.t_frenzy_ignite || 0) * 0.40
@@ -2204,8 +2235,11 @@ export default function App() {
     if (activeSkin?.energyRegenMult) {
       mult *= (1 + (activeSkin.energyRegenMult - 1) * activeSkinLevelMult);
     }
+    if (recipeBonuses.energyRegenMult) {
+      mult *= recipeBonuses.energyRegenMult;
+    }
     return mult;
-  }, [state.upgrades, activeSkin?.energyRegenMult, activeSkinLevelMult]);
+  }, [state.upgrades, activeSkin?.energyRegenMult, activeSkinLevelMult, recipeBonuses.energyRegenMult]);
 
   /* ---- Active cosmetics & Live Try-on ---- */
   const effectiveFrameId = previewFrame || state.cosmetics?.equippedFrame || 'frame_default';
@@ -3211,6 +3245,12 @@ export default function App() {
     };
   }, [loading, tgUser, reportSync, saveNow, applyOfflineProgress, resetCatHome, energyRegenSpeed]);
 
+  /* ---- 1-second Clock Ticker for Timers & Cooldowns ---- */
+  useEffect(() => {
+    const iv = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, []);
+
   /* ---- Game tick ---- */
   useEffect(() => {
     if (loading || !isAppActive) return;
@@ -3836,9 +3876,11 @@ export default function App() {
         nextIngs[k] = Math.max(0, (nextIngs[k] || 0) - v);
       }
 
+      const recBonuses = getCombinedRecipeBonuses(prev.unlockedRecipes || []);
+      const effectiveDuration = Math.round(potion.durationMs * recBonuses.potionDurationMult);
       const nextBuffs = {
         ...curAlchemy.buffs,
-        [potion.id]: Math.max(Date.now(), curAlchemy.buffs?.[potion.id] || 0) + potion.durationMs,
+        [potion.id]: Math.max(Date.now(), curAlchemy.buffs?.[potion.id] || 0) + effectiveDuration,
       };
 
       haptic.success();
@@ -4007,7 +4049,8 @@ export default function App() {
       const loc = EXPEDITION_LOCATIONS.find((l) => l.id === locationId);
       if (!loc) return prev;
       const catLvl = prev.cat?.level || 1;
-      const durationMs = getCatExpeditionDuration(loc.baseDurationMs, catLvl);
+      const recBonuses = getCombinedRecipeBonuses(prev.unlockedRecipes || []);
+      const durationMs = Math.round(getCatExpeditionDuration(loc.baseDurationMs, catLvl) * recBonuses.catExpeditionSpeedMult);
 
       haptic.medium();
       playSfx('expedition_start');
@@ -4040,12 +4083,14 @@ export default function App() {
       if (!loc) return prev;
 
       const catLvl = prev.cat?.level || 1;
+      const recBonuses = getCombinedRecipeBonuses(prev.unlockedRecipes || []);
       const rewards = generateExpeditionRewards(loc, catLvl);
+      const lootMult = recBonuses.catExpeditionLootMult;
 
       const curAlchemy = prev.alchemy || getDefaultAlchemyState();
       const nextIngs = { ...curAlchemy.ingredients };
       for (const [k, v] of Object.entries(rewards.ingredients)) {
-        nextIngs[k] = (nextIngs[k] || 0) + v;
+        nextIngs[k] = (nextIngs[k] || 0) + Math.ceil(v * lootMult);
       }
 
       const isCosmic = isBuffActive(curAlchemy.buffs, 'cosmic_ferment');
@@ -4121,7 +4166,8 @@ export default function App() {
       const weaponsBonus = getBossDamage(stateRef.current.vipUpgrades).damage * 250;
       const aromaBuff = isBuffActive(stateRef.current.alchemy?.buffs, 'aroma_overload') ? 2 : 1;
       const critMult = isCritWeakPoint ? 5 : 1;
-      const strikeDmg = Math.floor((Math.max(10, clickPower * 3) + weaponsBonus) * critMult * aromaBuff);
+      const recBonuses = getCombinedRecipeBonuses(stateRef.current.unlockedRecipes || []);
+      const strikeDmg = Math.floor((Math.max(10, clickPower * 3) + weaponsBonus) * critMult * aromaBuff * recBonuses.bossDamageMult);
 
       const nextHp = Math.max(0, prev.currentHp - strikeDmg);
       const isNowDefeated = nextHp <= 0;
@@ -4242,6 +4288,145 @@ export default function App() {
       '💎'
     );
   }, [addToast, saveNow]);
+
+  /* ===== 🥠 BAKER'S FORTUNE COOKIE HANDLERS ===== */
+  const cookieCooldownRemaining = Math.max(
+    0,
+    (state.fortuneCookie?.lastOpenedAt || 0) + COOKIE_COOLDOWN_MS - nowTs
+  );
+  const isCookieReady = cookieCooldownRemaining === 0;
+
+  const handleClaimCookieReward = useCallback((reward: CookieReward) => {
+    setState((prev) => {
+      const next = { ...prev };
+      next.fortuneCookie = {
+        lastOpenedAt: Date.now(),
+        countOpened: (prev.fortuneCookie?.countOpened || 0) + 1,
+      };
+
+      if (reward.type === 'diamonds' && reward.diamonds) {
+        next.diamonds = (next.diamonds || 0) + reward.diamonds;
+      } else if (reward.type === 'frenzy') {
+        setFrenzy(20);
+      } else if (reward.type === 'ingredients' && reward.ingredients) {
+        const curIngs = { ...(next.alchemy?.ingredients || {}) };
+        for (const [k, v] of Object.entries(reward.ingredients)) {
+          curIngs[k] = (curIngs[k] || 0) + v;
+        }
+        next.alchemy = {
+          ...(next.alchemy || getDefaultAlchemyState()),
+          ingredients: curIngs,
+        };
+      } else if (reward.type === 'focaccia' && reward.focaccia) {
+        next.focaccia = (next.focaccia || 0) + reward.focaccia;
+        next.total = (next.total || 0) + reward.focaccia;
+      }
+
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+
+    burstConfetti(['🥠', '✨', '💎', '🎉']);
+    haptic.success();
+    addToast(
+      langRef.current === 'uk'
+        ? `🥠 ${reward.titleUk}`
+        : `🥠 ${reward.titleRu}`,
+      langRef.current === 'uk' ? reward.descriptionUk : reward.descriptionRu,
+      reward.icon
+    );
+  }, [addToast, burstConfetti, saveNow]);
+
+  const handleInstantCrackWithDiamonds = useCallback((): boolean => {
+    if (stateRef.current.diamonds < COOKIE_INSTANT_DIAMOND_COST) {
+      addToast(
+        langRef.current === 'uk' ? 'Не вистачає діамантів!' : 'Не хватает алмазов!',
+        `${COOKIE_INSTANT_DIAMOND_COST} 💎`,
+        '❌'
+      );
+      return false;
+    }
+
+    setState((prev) => {
+      const next = {
+        ...prev,
+        diamonds: Math.max(0, prev.diamonds - COOKIE_INSTANT_DIAMOND_COST),
+        fortuneCookie: {
+          ...(prev.fortuneCookie || { countOpened: 0 }),
+          lastOpenedAt: 0,
+        },
+      };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+
+    haptic.medium();
+    return true;
+  }, [addToast, saveNow]);
+
+  /* ===== 📖 ANCIENT SECRET RECIPES HANDLERS ===== */
+  const handleUnlockRecipe = useCallback((recipe: AncientRecipe) => {
+    const cur = stateRef.current;
+    const curAlchemy = cur.alchemy || getDefaultAlchemyState();
+    const curIngs = curAlchemy.ingredients || {};
+
+    if ((cur.unlockedRecipes || []).includes(recipe.id)) return;
+    if (recipe.cost.minPrestige && cur.prestige < recipe.cost.minPrestige) return;
+    if (cur.diamonds < recipe.cost.diamonds) {
+      addToast(
+        langRef.current === 'uk' ? 'Не вистачає діамантів!' : 'Не хватает алмазов!',
+        `${recipe.cost.diamonds} 💎`,
+        '❌'
+      );
+      return;
+    }
+    for (const [ingId, count] of Object.entries(recipe.cost.ingredients)) {
+      if ((curIngs[ingId] || 0) < count) {
+        addToast(
+          langRef.current === 'uk' ? 'Не вистачає інгредієнтів!' : 'Не хватает ингредиентов!',
+          recipe.nameUk,
+          '❌'
+        );
+        return;
+      }
+    }
+
+    setState((prev) => {
+      const pAlchemy = prev.alchemy || getDefaultAlchemyState();
+      const nextIngs = { ...pAlchemy.ingredients };
+      for (const [ingId, count] of Object.entries(recipe.cost.ingredients)) {
+        nextIngs[ingId] = Math.max(0, (nextIngs[ingId] || 0) - count);
+      }
+
+      const nextRecipes = Array.from(new Set([...(prev.unlockedRecipes || []), recipe.id]));
+
+      const next: SaveState = {
+        ...prev,
+        diamonds: Math.max(0, prev.diamonds - recipe.cost.diamonds),
+        alchemy: {
+          ...pAlchemy,
+          ingredients: nextIngs,
+        },
+        unlockedRecipes: nextRecipes,
+      };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+
+    playSfx('recipe_unlock');
+    burstConfetti(['📖', '✨', '👑', '🫓', '⭐']);
+    haptic.success();
+    addToast(
+      langRef.current === 'uk'
+        ? `📖 Рецепт розкрито: ${recipe.nameUk}!`
+        : `📖 Рецепт раскрыт: ${recipe.nameRu}!`,
+      langRef.current === 'uk' ? recipe.bonusDescriptionUk : recipe.bonusDescriptionRu,
+      recipe.emoji
+    );
+  }, [addToast, burstConfetti, saveNow]);
 
   /* ===== 🏆 WEEKLY LEAGUES HANDLERS ===== */
   const handleClaimWeeklyReward = useCallback(() => {
@@ -4485,7 +4670,7 @@ export default function App() {
     const hasCritUp = stateRef.current.vipUpgrades?.includes('vip_crit');
     const baseCritChance = hasCritUp ? 0.08 : 0.05;
     const talentCritChance = (stateRef.current.talents?.nodes?.t_crit_surge || 0) * 0.02;
-    const critChance = baseCritChance + (activeSkin?.critChance || 0) * activeSkinLevelMult + talentCritChance;
+    const critChance = baseCritChance + (activeSkin?.critChance || 0) * activeSkinLevelMult + talentCritChance + recipeBonuses.critChanceAdd;
     const talentCritMult = (stateRef.current.talents?.nodes?.t_crit_surge || 0) * 1.5;
     const critMultVal = (hasCritUp ? 12 : 10) + talentCritMult;
     const isAromaOverload = isBuffActive(stateRef.current.alchemy?.buffs, 'aroma_overload');
@@ -4509,6 +4694,24 @@ export default function App() {
         energy: Math.max(0, newEnergy),
       };
     });
+
+    // 🥠 Lucky Baker's Fortune Cookie Drop (0.5% chance)
+    if (Math.random() < 0.005) {
+      setState((p) => ({
+        ...p,
+        fortuneCookie: {
+          ...(p.fortuneCookie || { countOpened: 0 }),
+          lastOpenedAt: 0,
+        },
+      }));
+      addFloat(x, y - 40, '🥠 Печиво Долі!', 'text-amber-300 text-lg font-black animate-bounce');
+      addToast(
+        langRef.current === 'uk' ? '🥠 Диво пекарні!' : '🥠 Чудо пекарни!',
+        langRef.current === 'uk' ? 'Печиво Долі спеклось і готове!' : 'Печенье Судьбы спеклось и готово!',
+        '🥠'
+      );
+      haptic.success();
+    }
 
     updateQuestProgress('clicks', 1);
     if (newCombo >= 30) updateQuestProgress('combo', newCombo);
@@ -4563,7 +4766,8 @@ export default function App() {
       // Read damage from the current stateRef to avoid stale closure on vipUpgrades
       const { damage: baseDamage, icon } = getBossDamage(stateRef.current.vipUpgrades);
       const skinBossMult = activeSkin?.bossDamageMult ? (1 + (activeSkin.bossDamageMult - 1) * activeSkinLevelMult) : 1;
-      const damage = Math.floor(baseDamage * skinBossMult);
+      const recBonuses = getCombinedRecipeBonuses(stateRef.current.unlockedRecipes || []);
+      const damage = Math.floor(baseDamage * skinBossMult * recBonuses.bossDamageMult);
       const newHp = currentBoss.currentHp - damage;
 
       addFloat(window.innerWidth / 2, window.innerHeight * 0.35, `-${damage} ${icon}`, 'text-red-400 text-2xl font-black');
@@ -10131,6 +10335,20 @@ export default function App() {
         lang={lang}
       />
 
+      {/* ===== 🥠 BAKER'S FORTUNE COOKIE MODAL ===== */}
+      <FortuneCookieModal
+        isOpen={showFortuneCookieModal}
+        onClose={() => setShowFortuneCookieModal(false)}
+        onClaimReward={handleClaimCookieReward}
+        onInstantCrackWithDiamonds={handleInstantCrackWithDiamonds}
+        playerDiamonds={state.diamonds}
+        currentCps={cpsRef.current}
+        playerClickPower={clickPower}
+        isReady={isCookieReady}
+        cooldownRemainingMs={cookieCooldownRemaining}
+        lang={lang}
+      />
+
       {/* ===== 🔮 SKINS, CASES & UPGRADER MODAL ===== */}
       {showSkinsModal && (
         <div className="fixed inset-0 z-[80] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
@@ -12769,7 +12987,44 @@ export default function App() {
             </div>
 
             {/* Clicker */}
-            <div className="relative">
+            <div className="relative flex flex-col items-center">
+              {/* Floating Pill 1: Top-Left - 🥠 Baker's Fortune Cookie */}
+              <button
+                type="button"
+                onClick={() => { setShowFortuneCookieModal(true); haptic.selection(); }}
+                className={cn(
+                  'absolute -top-3 left-0 sm:left-2 z-20 px-2.5 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1.5 shadow-md backdrop-blur-md active:scale-95 transition-all cursor-pointer select-none',
+                  isCookieReady
+                    ? 'bg-amber-500/25 border-amber-400 text-amber-200 shadow-[0_0_14px_rgba(251,191,36,0.45)] animate-bounce'
+                    : 'bg-zinc-900/85 border-white/10 text-amber-200/70 hover:border-amber-500/30'
+                )}
+              >
+                <span className="text-xs">🥠</span>
+                <span>{lang === 'uk' ? 'Печиво Долі' : 'Печенье'}</span>
+                {isCookieReady ? (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping inline-block" />
+                ) : (
+                  <span className="text-[9px] font-mono text-amber-400/80">
+                    {(() => {
+                      const s = Math.max(0, Math.floor(cookieCooldownRemaining / 1000));
+                      const m = Math.floor(s / 60);
+                      const sec = s % 60;
+                      return `${m}:${sec < 10 ? '0' : ''}${sec}`;
+                    })()}
+                  </span>
+                )}
+              </button>
+
+              {/* Floating Pill 2: Top-Right - 🔮 Wardrobe / Skins */}
+              <button
+                type="button"
+                onClick={() => { setShowSkinsModal(true); haptic.selection(); }}
+                className="absolute -top-3 right-0 sm:right-2 z-20 px-2.5 py-1 rounded-full bg-zinc-900/85 hover:bg-zinc-800 border border-purple-500/40 text-purple-200 text-[11px] font-bold flex items-center gap-1.5 shadow-[0_2px_12px_rgba(168,85,247,0.3)] backdrop-blur-md active:scale-95 transition-all cursor-pointer hover:border-purple-400 select-none"
+              >
+                <span className="text-xs">🔮</span>
+                <span>{lang === 'uk' ? 'Гардероб' : 'Гардероб'}</span>
+              </button>
+
               {state.energy > 0 && frenzy <= 0 && diamondFrenzy <= 0 && emeraldFrenzy <= 0 && [0, 1, 2].map((i) => (
                 <span key={i} className="animate-steam pointer-events-none absolute -top-5 text-base" style={{ left: `${28 + i * 22}%`, animationDelay: `${i * 0.8}s` }}>💨</span>
               ))}
@@ -12869,99 +13124,147 @@ export default function App() {
               </button>
             </div>
 
-            {/* Quick access action buttons: Quests, Skins & Talents */}
-            <div className="mt-2.5 flex items-center justify-center gap-1.5 flex-wrap z-20">
-              {/* Quests Button */}
+            {/* ===== 4-SLOT GLASS ACTION DOCK ===== */}
+            <div className="w-full max-w-xs grid grid-cols-4 gap-2 mt-2.5 z-20">
+              {/* 1. 📜 Квести (Quests) */}
               <button
                 type="button"
                 onClick={() => { setShowQuestsModal(true); haptic.selection(); }}
                 className={cn(
-                  'px-3 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm relative',
+                  'relative flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all duration-150 active:scale-95 cursor-pointer shadow-md backdrop-blur-md select-none',
                   state.quests?.daily?.some((q) => q.completed && !q.claimed)
-                    ? 'bg-emerald-950/90 border-emerald-400 text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.4)] animate-pulse'
+                    ? 'bg-emerald-950/80 border-emerald-400 text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.35)] animate-pulse'
                     : 'bg-zinc-900/85 hover:bg-zinc-800 border-white/10 hover:border-amber-500/40 text-amber-200/90'
                 )}
               >
-                <span>📜</span>
-                <span>{lang === 'uk' ? 'Квести' : 'Квесты'}</span>
+                <span className="text-xl drop-shadow-sm mb-0.5">📜</span>
+                <span className="text-[10px] font-black tracking-tight truncate max-w-full">
+                  {lang === 'uk' ? 'Квести' : 'Квесты'}
+                </span>
                 {state.quests?.daily?.some((q) => q.completed && !q.claimed) ? (
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
                 ) : (
-                  <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono">
+                  <span className="text-[8px] font-mono font-bold text-amber-400/70 mt-0.5">
                     PASS
                   </span>
                 )}
               </button>
 
-              {/* Wardrobe & Skins */}
+              {/* 2. 🌳 Таланти (Talents) */}
               <button
                 type="button"
-                onClick={() => { setShowSkinsModal(true); haptic.selection(); }}
-                className="px-3 py-1 rounded-full bg-zinc-900/85 hover:bg-zinc-800 border border-white/10 hover:border-amber-500/40 text-[11px] text-amber-200/90 font-medium flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm"
+                onClick={() => {
+                  if (state.prestige > 0) {
+                    setShowTalentsModal(true);
+                    haptic.selection();
+                  } else {
+                    haptic.warning();
+                    addToast(
+                      lang === 'uk' ? 'Таланти заблоковано' : 'Таланты заблокированы',
+                      lang === 'uk'
+                        ? 'Відкриваються після 1-го Престижу!'
+                        : 'Открываются после 1-го Престижа!',
+                      '🔒'
+                    );
+                  }
+                }}
+                className={cn(
+                  'relative flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all duration-150 active:scale-95 cursor-pointer shadow-md backdrop-blur-md select-none',
+                  state.prestige > 0
+                    ? (getAvailableTalentPoints(state.prestige, getTotalSpentPoints(state.talents?.nodes || {})) > 0
+                        ? 'bg-amber-500/25 border-amber-400 text-amber-100 shadow-[0_0_12px_rgba(251,191,36,0.35)] animate-pulse'
+                        : 'bg-zinc-900/85 hover:bg-zinc-800 border-white/10 hover:border-amber-500/40 text-amber-200/90')
+                    : 'bg-zinc-900/50 border-white/5 text-stone-500 opacity-60'
+                )}
               >
-                <span>🔮</span>
-                <span>{lang === 'uk' ? 'Гардероб' : 'Гардероб'}</span>
-              </button>
-
-              {/* Talents Button (Available from prestige >= 1) */}
-              {state.prestige > 0 && (
-                <button
-                  type="button"
-                  onClick={() => { setShowTalentsModal(true); haptic.selection(); }}
-                  className={cn(
-                    'px-3 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm',
-                    getAvailableTalentPoints(state.prestige, getTotalSpentPoints(state.talents?.nodes || {})) > 0
-                      ? 'bg-amber-500/25 border-amber-400 text-amber-100 shadow-[0_0_12px_rgba(251,191,36,0.4)] animate-pulse'
-                      : 'bg-zinc-900/85 hover:bg-zinc-800 border-white/10 hover:border-amber-500/40 text-amber-200/90'
-                  )}
-                >
-                  <span>🌳</span>
-                  <span>{lang === 'uk' ? 'Таланти' : 'Таланты'}</span>
-                  {getAvailableTalentPoints(state.prestige, getTotalSpentPoints(state.talents?.nodes || {})) > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-stone-950 font-black text-[9px] font-mono">
+                <span className="text-xl drop-shadow-sm mb-0.5">🌳</span>
+                <span className="text-[10px] font-black tracking-tight truncate max-w-full">
+                  {lang === 'uk' ? 'Таланти' : 'Таланты'}
+                </span>
+                {state.prestige > 0 ? (
+                  getAvailableTalentPoints(state.prestige, getTotalSpentPoints(state.talents?.nodes || {})) > 0 ? (
+                    <span className="text-[8px] font-mono font-black text-amber-300 mt-0.5">
                       {getAvailableTalentPoints(state.prestige, getTotalSpentPoints(state.talents?.nodes || {}))}⭐
                     </span>
-                  )}
-                </button>
-              )}
+                  ) : (
+                    <span className="text-[8px] font-mono text-stone-400 mt-0.5">Дерево</span>
+                  )
+                ) : (
+                  <span className="text-[8px] font-mono text-stone-500 mt-0.5">🔒 1 Реб</span>
+                )}
+              </button>
 
-              {/* Cat Expeditions Button */}
-              {state.cat?.unlocked && (
-                <button
-                  type="button"
-                  onClick={() => { setShowExpeditionModal(true); haptic.selection(); }}
-                  className={cn(
-                    'px-3 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm relative',
-                    state.expedition && (Date.now() - state.expedition.startTime >= state.expedition.durationMs)
-                      ? 'bg-emerald-950/90 border-emerald-400 text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.4)] animate-pulse'
-                      : 'bg-zinc-900/85 hover:bg-zinc-800 border-white/10 hover:border-emerald-500/40 text-emerald-200/90'
-                  )}
-                >
-                  <span>🧭</span>
-                  <span>{lang === 'uk' ? 'Експедиції' : 'Экспедиции'}</span>
-                  {state.expedition && (Date.now() - state.expedition.startTime >= state.expedition.durationMs) && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
-                  )}
-                </button>
-              )}
+              {/* 3. 🧭 Експедиції (Expeditions) */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (state.cat?.unlocked) {
+                    setShowExpeditionModal(true);
+                    haptic.selection();
+                  } else {
+                    haptic.warning();
+                    addToast(
+                      lang === 'uk' ? 'Експедиції недоступні' : 'Экспедиции недоступны',
+                      lang === 'uk'
+                        ? 'Придбайте котика Мурчика в магазині!'
+                        : 'Купите котика Мурчика в магазине!',
+                      '🐱'
+                    );
+                  }
+                }}
+                className={cn(
+                  'relative flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all duration-150 active:scale-95 cursor-pointer shadow-md backdrop-blur-md select-none',
+                  state.cat?.unlocked
+                    ? (state.expedition && (Date.now() - state.expedition.startTime >= state.expedition.durationMs)
+                        ? 'bg-emerald-950/85 border-emerald-400 text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.35)] animate-pulse'
+                        : 'bg-zinc-900/85 hover:bg-zinc-800 border-white/10 hover:border-emerald-500/40 text-emerald-200/90')
+                    : 'bg-zinc-900/50 border-white/5 text-stone-500 opacity-60'
+                )}
+              >
+                <span className="text-xl drop-shadow-sm mb-0.5">🧭</span>
+                <span className="text-[10px] font-black tracking-tight truncate max-w-full">
+                  {lang === 'uk' ? 'Походи' : 'Походы'}
+                </span>
+                {state.cat?.unlocked ? (
+                  state.expedition ? (
+                    Date.now() - state.expedition.startTime >= state.expedition.durationMs ? (
+                      <span className="text-[8px] font-mono font-black text-emerald-300 mt-0.5 animate-pulse">
+                        ГОТОВО!
+                      </span>
+                    ) : (
+                      <span className="text-[8px] font-mono text-amber-300/80 mt-0.5">
+                        {Math.ceil(Math.max(0, state.expedition.durationMs - (Date.now() - state.expedition.startTime)) / 60000)}хв
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-[8px] font-mono text-emerald-400/60 mt-0.5">Вільний</span>
+                  )
+                ) : (
+                  <span className="text-[8px] font-mono text-stone-500 mt-0.5">🔒 Кіт</span>
+                )}
+              </button>
 
-              {/* World Boss Button */}
+              {/* 4. 👹 Рейд (World Raid Boss) */}
               <button
                 type="button"
                 onClick={() => { setShowWorldBossModal(true); haptic.selection(); }}
                 className={cn(
-                  'px-3 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm',
+                  'relative flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all duration-150 active:scale-95 cursor-pointer shadow-md backdrop-blur-md select-none',
                   !worldBossState.isDefeated
-                    ? 'bg-red-950/80 hover:bg-red-900/80 border-red-500/50 text-red-200 shadow-[0_0_10px_rgba(239,68,68,0.3)] animate-pulse'
+                    ? 'bg-red-950/80 hover:bg-red-900/80 border-red-500/50 text-red-200 shadow-[0_0_12px_rgba(239,68,68,0.3)] animate-pulse'
                     : 'bg-zinc-900/85 hover:bg-zinc-800 border-white/10 text-white/60'
                 )}
               >
-                <span>👹</span>
-                <span>{lang === 'uk' ? 'Рейд-Бос' : 'Рейд-Босс'}</span>
-                {!worldBossState.isDefeated && (
-                  <span className="text-[9px] px-1 py-0.2 rounded bg-red-500/30 text-red-300 font-mono">
+                <span className="text-xl drop-shadow-sm mb-0.5">👹</span>
+                <span className="text-[10px] font-black tracking-tight truncate max-w-full">
+                  {lang === 'uk' ? 'Рейд' : 'Рейд'}
+                </span>
+                {!worldBossState.isDefeated ? (
+                  <span className="text-[8px] font-mono font-black text-red-300 mt-0.5">
                     {Math.round((worldBossState.currentHp / worldBossState.maxHp) * 100)}%
                   </span>
+                ) : (
+                  <span className="text-[8px] font-mono text-stone-400 mt-0.5">💀 Здолано</span>
                 )}
               </button>
             </div>
@@ -13598,33 +13901,52 @@ export default function App() {
         {page === 'casino' && (
           <div className={cn('h-full overflow-y-auto p-4 space-y-3.5', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
             {/* Top Sub-tabs Switcher */}
-            <div className="flex gap-2 p-1 glass-card rounded-2xl border border-amber-500/25 bg-black/50">
+            <div className="flex gap-1.5 p-1 glass-card rounded-2xl border border-amber-500/25 bg-black/50">
               <button
                 type="button"
                 onClick={() => { setBoostTab('arcade'); haptic.selection(); }}
                 className={cn(
-                  'flex-1 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                  'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer',
                   boostTab === 'arcade'
                     ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 shadow-lg shadow-amber-500/20'
                     : 'text-amber-300/60 hover:text-amber-200'
                 )}
               >
                 <span>🍕</span>
-                <span>{lang === 'uk' ? 'Кухня & Аркада' : 'Кухня & Аркада'}</span>
+                <span>{lang === 'uk' ? 'Аркада' : 'Аркада'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => { setBoostTab('alchemy'); haptic.selection(); }}
                 className={cn(
-                  'flex-1 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                  'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer',
                   boostTab === 'alchemy'
                     ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 shadow-lg shadow-amber-500/20'
                     : 'text-amber-300/60 hover:text-amber-200'
                 )}
               >
                 <span>⚗️</span>
-                <span>{lang === 'uk' ? 'Алхімічний Казан' : 'Алхимический Котёл'}</span>
+                <span>{lang === 'uk' ? 'Казан' : 'Котёл'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setBoostTab('recipes'); haptic.selection(); }}
+                className={cn(
+                  'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer relative',
+                  boostTab === 'recipes'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 shadow-lg shadow-amber-500/20'
+                    : 'text-amber-300/60 hover:text-amber-200'
+                )}
+              >
+                <span>📖</span>
+                <span>{lang === 'uk' ? 'Рецепти' : 'Рецепты'}</span>
+                {(state.unlockedRecipes?.length || 0) > 0 && (
+                  <span className="text-[9px] px-1 py-0.2 rounded-full bg-amber-400/20 text-amber-300 font-mono font-bold">
+                    {state.unlockedRecipes?.length}
+                  </span>
+                )}
               </button>
             </div>
 
@@ -13647,6 +13969,18 @@ export default function App() {
                 buffs={state.alchemy?.buffs || {}}
                 onBrewPotion={handleBrewPotion}
                 onOpenExpeditions={() => setShowExpeditionModal(true)}
+                lang={lang}
+              />
+            )}
+
+            {/* Sub-tab 3: Ancient Secret Recipes Grimoire */}
+            {boostTab === 'recipes' && (
+              <RecipesSection
+                unlockedRecipes={state.unlockedRecipes || []}
+                ingredients={state.alchemy?.ingredients || {}}
+                playerDiamonds={state.diamonds}
+                playerPrestige={state.prestige}
+                onUnlockRecipe={handleUnlockRecipe}
                 lang={lang}
               />
             )}

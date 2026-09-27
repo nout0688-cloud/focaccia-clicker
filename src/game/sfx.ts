@@ -43,7 +43,10 @@ export type SfxType =
   | 'boss_hit'
   | 'boss_crit'
   | 'expedition_start'
-  | 'expedition_claim';
+  | 'expedition_claim'
+  | 'cookie_crack'
+  | 'cookie_reward'
+  | 'recipe_unlock';
 
 export function playSfx(type: SfxType): void {
   const ctx = getContext();
@@ -233,6 +236,81 @@ export function playSfx(type: SfxType): void {
           gain.connect(ctx.destination);
           osc.start(t);
           osc.stop(t + 0.26);
+        });
+        break;
+      }
+
+      case 'cookie_crack': {
+        // Crunchy cookie break: dual quick frequency burst + snappy click
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(450, now);
+        osc.frequency.exponentialRampToValueAtTime(80, now + 0.08);
+
+        gain.gain.setValueAtTime(0.28, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.09);
+
+        // Snap crunch layer
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.type = 'triangle';
+        osc2.frequency.setValueAtTime(950, now + 0.02);
+        osc2.frequency.exponentialRampToValueAtTime(180, now + 0.07);
+
+        gain2.gain.setValueAtTime(0.22, now + 0.02);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start(now + 0.02);
+        osc2.stop(now + 0.08);
+        break;
+      }
+
+      case 'cookie_reward': {
+        // Sparkling magical harp chime (E5 -> G#5 -> B5 -> E6)
+        const notes = [659.25, 830.61, 987.77, 1318.51];
+        notes.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const t = now + idx * 0.07;
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, t);
+
+          gain.gain.setValueAtTime(0.24, t);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.29);
+        });
+        break;
+      }
+
+      case 'recipe_unlock': {
+        // Ancient triumph resonance (A4 -> C#5 -> E5 -> A5 -> C#6)
+        const notes = [440.00, 554.37, 659.25, 880.00, 1108.73];
+        notes.forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const t = now + idx * 0.09;
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, t);
+
+          gain.gain.setValueAtTime(0.25, t);
+          gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.46);
         });
         break;
       }
