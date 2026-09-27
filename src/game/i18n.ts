@@ -578,7 +578,7 @@ export const TRANSLATIONS = {
 
     // Bottom Nav
     navShop: 'Прокачки',
-    navCasino: 'Казино',
+    navCasino: 'Бусти',
     navClicker: 'Клікер',
     navLeaders: 'Лідери',
     navSettings: 'Інше',
@@ -922,7 +922,7 @@ export const TRANSLATIONS = {
 
     // Bottom Nav
     navShop: 'Прокачки',
-    navCasino: 'Казино',
+    navCasino: 'Бусты',
     navClicker: 'Кликер',
     navLeaders: 'Лидеры',
     navSettings: 'Прочее',

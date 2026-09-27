@@ -92,6 +92,7 @@ import {
   ensureQuestsState,
   type QuestsState,
   type QuestType,
+  type DailyQuest,
   BAKER_PASS_TIERS,
 } from './game/quests';
 import {
@@ -101,6 +102,38 @@ import {
   getBranchSpentPoints,
   getTotalSpentPoints,
 } from './game/talents';
+import {
+  ALCHEMY_POTIONS,
+  type AlchemyPotion,
+  type AlchemyState,
+  getDefaultAlchemyState,
+  isBuffActive,
+  canBrewPotion,
+} from './game/alchemy';
+import {
+  type ChefWheelSegment,
+} from './game/arcade';
+import {
+  EXPEDITION_LOCATIONS,
+  type ActiveExpedition,
+  getCatExpeditionDuration,
+  generateExpeditionRewards,
+} from './game/expeditions';
+import {
+  BOSS_REWARD_TIERS,
+  type WorldBossState,
+  loadWorldBossState,
+  saveWorldBossState,
+} from './game/worldBoss';
+import {
+  DIVISIONS,
+  getCurrentWeekKey,
+} from './game/leagues';
+import { ExpeditionModal } from './game/ExpeditionModal';
+import { WorldBossModal } from './game/WorldBossModal';
+import { ArcadeSection } from './game/ArcadeSection';
+import { AlchemySection } from './game/AlchemySection';
+import { LeaguesSection } from './game/LeaguesSection';
 
 /* ---- Telegram WebApp ---- */
 const tg = window.Telegram?.WebApp;
@@ -732,6 +765,18 @@ interface SaveState {
   starterPackBought?: boolean;
   quests?: QuestsState;
   talents?: TalentsState;
+  alchemy?: AlchemyState;
+  expedition?: ActiveExpedition | null;
+  worldBoss?: {
+    playerDamage: number;
+    claimedTiers: number[];
+  };
+  league?: {
+    division: number;
+    weeklyScore: number;
+    weekId: string;
+    claimedWeekId?: string;
+  };
 }
 
 export const REBIRTH_TRADE_LOCK_MS = 5 * 24 * 60 * 60 * 1000; // 5 days
@@ -959,6 +1004,17 @@ const defaultState = (): SaveState => ({
   starterPackBought: false,
   quests: ensureQuestsState(undefined, 0, 0),
   talents: { spent: 0, nodes: {} },
+  alchemy: getDefaultAlchemyState(),
+  expedition: null,
+  worldBoss: {
+    playerDamage: 0,
+    claimedTiers: [],
+  },
+  league: {
+    division: 0,
+    weeklyScore: 0,
+    weekId: getCurrentWeekKey(),
+  },
 });
 
 async function loadState(): Promise<SaveState> {
@@ -1160,22 +1216,6 @@ interface Tap {
   y: number;
 }
 
-/* ---- Казино «Однарука бабуся» ---- */
-const CASINO_SYMBOLS = ['💎', '👵', '⭐', '🍅', '🫓', '🧄'];
-const CASINO_PAYOUTS: Record<string, number> = { '💎': 50, '👵': 15, '⭐': 8, '🍅': 4, '🫓': 2, '🧄': 1.5 };
-const CASINO_PAIR_MULT = 1.4;
-const CASINO_BETS = [100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000];
-const CASINO_BETS_GEM = [1, 2, 5, 10, 25, 50, 100];
-const randSymbol = () => CASINO_SYMBOLS[Math.floor(Math.random() * CASINO_SYMBOLS.length)];
-const DICE_FACES = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
-// Колесо: 10 секторів, сума = 9.5 → повернення ~95%
-const WHEEL_SEGMENTS = [0, 0.5, 1.5, 0, 2, 0, 0.5, 0, 5, 0];
-const WHEEL_EDGE = 360 / WHEEL_SEGMENTS.length;
-const wheelGradient = WHEEL_SEGMENTS.map((m, i) => {
-  const color = m === 0 ? '#160f05' : m >= 5 ? '#f59e0b' : m >= 2 ? '#b45309' : '#6b3f0e';
-  return `${color} ${i * WHEEL_EDGE}deg ${(i + 1) * WHEEL_EDGE}deg`;
-}).join(', ');
-
 export default function App() {
   const [state, setState] = useState<SaveState>(defaultState);
   const [loading, setLoading] = useState(true);
@@ -1232,6 +1272,11 @@ export default function App() {
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [showQuestsModal, setShowQuestsModal] = useState(false);
   const [showTalentsModal, setShowTalentsModal] = useState(false);
+  const [showExpeditionModal, setShowExpeditionModal] = useState(false);
+  const [showWorldBossModal, setShowWorldBossModal] = useState(false);
+  const [worldBossState, setWorldBossState] = useState<WorldBossState>(() => loadWorldBossState());
+  const [leaderMainTab, setLeaderMainTab] = useState<'league' | 'global'>('league');
+  const [boostTab, setBoostTab] = useState<'arcade' | 'alchemy'>('arcade');
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
   const [tradeJoinInput, setTradeJoinInput] = useState('');
   const [tradeCreating, setTradeCreating] = useState(false);
@@ -1378,18 +1423,6 @@ export default function App() {
   const langRef = useRef<Lang>('uk');
   langRef.current = lang;
   const t = TRANSLATIONS[lang];
-
-  /* Казино */
-  const [casinoGame, setCasinoGame] = useState<'slots' | 'dice' | 'wheel'>('slots');
-  const [casinoBet, setCasinoBet] = useState(100);
-  const [casinoCur, setCasinoCur] = useState<'foc' | 'gem'>('foc');
-  const casinoMaxBet = karma < 50 ? 0 : karma < 75 ? (casinoCur === 'gem' ? 10 : 1000) : Infinity; // дотівська лестниця обмежень
-  const [casinoCustomBet, setCasinoCustomBet] = useState('100');
-  const [casinoReels, setCasinoReels] = useState<[string, string, string]>(['🫓', '👵', '💎']);
-  const [casinoSpinning, setCasinoSpinning] = useState(false);
-  const [casinoMsg, setCasinoMsg] = useState<null | { text: string; win: boolean }>(null);
-  const [diceRoll, setDiceRoll] = useState<null | { mine: number; house: number }>(null);
-  const [wheelAngle, setWheelAngle] = useState(0);
 
   /* New mechanics state */
   const [boss, setBoss] = useState<Boss | null>(null);
@@ -2102,8 +2135,9 @@ export default function App() {
       mult *= (1 + (activeSkin.clickMult - 1) * activeSkinLevelMult);
     }
     const talentClickMult = 1 + (state.talents?.nodes?.t_click_power || 0) * 0.15;
-    return add * mult * prestigeMult * talentClickMult;
-  }, [state.upgrades, state.talents?.nodes?.t_click_power, prestigeMult, activeSkin?.clickMult, activeSkinLevelMult]);
+    const alchemyClickMult = isBuffActive(state.alchemy?.buffs, 'aroma_overload') ? 4 : 1;
+    return add * mult * prestigeMult * talentClickMult * alchemyClickMult;
+  }, [state.upgrades, state.talents?.nodes?.t_click_power, state.alchemy?.buffs, prestigeMult, activeSkin?.clickMult, activeSkinLevelMult]);
 
   const cps = useMemo(() => {
     let base = 0;
@@ -2128,15 +2162,21 @@ export default function App() {
     }
     if (state.cat?.unlocked && catInfo?.cpsBonus) mult *= (1 + catInfo.cpsBonus);
     const talentCpsMult = 1 + (state.talents?.nodes?.t_tycoon_cps || 0) * 0.10;
-    mult *= (1 + dPercentTotal) * talentCpsMult;
+    const alchemyCpsMult = isBuffActive(state.alchemy?.buffs, 'yeast_overdrive') ? 3 : 1;
+    mult *= (1 + dPercentTotal) * talentCpsMult * alchemyCpsMult;
     if (activeEvent) mult *= activeEvent.cpsMult;
     return base * mult * prestigeMult;
-  }, [state.buildings, state.diamondBuildings, state.upgrades, state.vipUpgrades, state.talents?.nodes?.t_tycoon_cps, brokenBuilding, activeEvent, prestigeMult, activeSkin?.cpsMult, activeSkinLevelMult, state.cat?.unlocked, catInfo?.cpsBonus]);
+  }, [state.buildings, state.diamondBuildings, state.upgrades, state.vipUpgrades, state.talents?.nodes?.t_tycoon_cps, state.alchemy?.buffs, brokenBuilding, activeEvent, prestigeMult, activeSkin?.cpsMult, activeSkinLevelMult, state.cat?.unlocked, catInfo?.cpsBonus]);
 
   const talentFrenzyBoost = (frenzy > 0 || diamondFrenzy > 0 || emeraldFrenzy > 0)
     ? 1 + (state.talents?.nodes?.t_frenzy_ignite || 0) * 0.40
     : 1;
-  const frenzyMult = ((frenzy > 0 ? (state.vipUpgrades?.includes('vip_frenzy') ? 7 : 6) : 1) * (frenzy > 0 && activeSkin?.id === 'skin_demon' ? (1 + 0.5 * activeSkinLevelMult) : 1)) * talentFrenzyBoost;
+  const frenzyBaseMult = frenzy > 0
+    ? (isBuffActive(state.alchemy?.buffs, 'frenzy_inferno')
+        ? 10
+        : (state.vipUpgrades?.includes('vip_frenzy') ? 7 : 6))
+    : 1;
+  const frenzyMult = (frenzyBaseMult * (frenzy > 0 && activeSkin?.id === 'skin_demon' ? (1 + 0.5 * activeSkinLevelMult) : 1)) * talentFrenzyBoost;
   const diamondMult = diamondFrenzy > 0 ? 10 : 1;
   const emeraldMult = emeraldFrenzy > 0 ? 15 : 1;
   const comboMult = 1 + Math.min(combo, 100) * 0.02;
@@ -3237,8 +3277,10 @@ export default function App() {
       const hasGoldenUpgrade = stateRef.current.vipUpgrades?.includes('vip_golden');
       const omenLvl = stateRef.current.talents?.nodes?.t_golden_omen || 0;
       const omenMult = Math.max(0.4, 1 - omenLvl * 0.12);
-      const baseDelay = (hasGoldenUpgrade ? 25000 : 50000) * omenMult;
-      const randomExtra = (hasGoldenUpgrade ? 30000 : 55000) * omenMult;
+      const isGoldenTouch = isBuffActive(stateRef.current.alchemy?.buffs, 'golden_touch');
+      const goldenTouchMult = isGoldenTouch ? 0.35 : 1.0;
+      const baseDelay = (hasGoldenUpgrade ? 25000 : 50000) * omenMult * goldenTouchMult;
+      const randomExtra = (hasGoldenUpgrade ? 30000 : 55000) * omenMult * goldenTouchMult;
       timeout = setTimeout(() => {
         if (!isAppActiveRef.current) return;
         setGolden({ x: 10 + Math.random() * 80, y: 15 + Math.random() * 55 });
@@ -3756,231 +3798,430 @@ export default function App() {
     }
   };
 
-  /* ---- Казино: система везіння + три ігри ---- */
+  /* ===== ⚗️ ALCHEMY & BOOSTS HANDLERS ===== */
+  const handleBrewPotion = useCallback((potion: AlchemyPotion) => {
+    setState((prev) => {
+      const curAlchemy = prev.alchemy || getDefaultAlchemyState();
+      if (!canBrewPotion(potion, curAlchemy.ingredients)) return prev;
 
-  // Валюта казино: фокачі або алмази
-  const casinoCurSym = casinoCur === 'gem' ? '💎' : '🫓';
-  const casinoBalance = casinoCur === 'gem' ? state.diamonds : Math.floor(state.focaccia);
-  const casinoTake = (b: number) => {
-    const cleanB = Math.max(0, Math.floor(Number(b) || 0));
-    if (cleanB <= 0) return;
-    const cur = stateRef.current;
-    const next: SaveState = casinoCur === 'gem'
-      ? { ...cur, diamonds: Math.max(0, cur.diamonds - cleanB) }
-      : { ...cur, focaccia: Math.max(0, cur.focaccia - cleanB) };
-    stateRef.current = next;
-    setState(next);
-    saveNow(next);
-  };
-  const casinoGive = (curType: 'foc' | 'gem', a: number) => {
-    const cleanA = Math.max(0, Math.floor(Number(a) || 0));
-    if (cleanA <= 0) return;
-    const cur = stateRef.current;
-    const next: SaveState = curType === 'gem'
-      ? { ...cur, diamonds: cur.diamonds + cleanA }
-      : { ...cur, focaccia: cur.focaccia + cleanA };
-    stateRef.current = next;
-    setState(next);
-    saveNow(next);
-  };
+      const nextIngs = { ...curAlchemy.ingredients };
+      for (const [k, v] of Object.entries(potion.cost)) {
+        nextIngs[k] = Math.max(0, (nextIngs[k] || 0) - v);
+      }
 
-  // Після кожної гри: виграш гріє «везіння», програш охолоджує
-  const updateLuck = (mult: number) => {
-    setState((p) => ({ ...p, luck: Math.max(-8, Math.min(12, (p.luck || 0) + mult - 0.95)) }));
-  };
+      const nextBuffs = {
+        ...curAlchemy.buffs,
+        [potion.id]: Math.max(Date.now(), curAlchemy.buffs?.[potion.id] || 0) + potion.durationMs,
+      };
 
-  const creditWin = (mult: number, combo: string, jackpot: boolean) => {
-    const winAmt = Math.floor(casinoBet * mult);
-    casinoGive(casinoCur, winAmt);
-    const curT = TRANSLATIONS[langRef.current];
-    setCasinoMsg({ text: formatTemplate(curT.winText, formatNum(winAmt), casinoCurSym, mult), win: true });
-    updateLuck(mult);
-    if (jackpot || mult >= 5) {
-      burstConfetti(['🫓', '💎', '⭐', '✨']);
-      doFlash('golden');
-      addToast(curT.toastJackpot, formatTemplate(curT.toastJackpotDesc, combo, formatNum(winAmt), casinoCurSym), '💎');
-      haptic.heavy();
-    } else {
       haptic.success();
-    }
-  };
+      burstConfetti(['⚗️', '✨', '⚡', '🔥']);
+      addToast(
+        langRef.current === 'uk' ? '⚗️ Зілля зварено!' : '⚗️ Зелье сварено!',
+        langRef.current === 'uk'
+          ? `Активовано: "${potion.nameUk}" — ${potion.effectUk}`
+          : `Активировано: "${potion.nameRu}" — ${potion.effectRu}`,
+        potion.icon
+      );
 
-  const slotsScore = (r: [string, string, string]) => {
-    if (r[0] === r[1] && r[1] === r[2]) return CASINO_PAYOUTS[r[0]];
-    if (r[0] === r[1] || r[1] === r[2] || r[0] === r[2]) return CASINO_PAIR_MULT;
-    return 0;
-  };
+      const next: SaveState = {
+        ...prev,
+        alchemy: {
+          ingredients: nextIngs,
+          buffs: nextBuffs,
+        },
+      };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+  }, [addToast, burstConfetti, saveNow]);
 
-  const spinCasino = () => {
-    if (casinoSpinning) return;
-    if (!Number.isFinite(casinoBet) || casinoBet < 1) return;
-    const curT = TRANSLATIONS[langRef.current];
-    if (casinoBet > casinoMaxBet) {
-      addToast(curT.toastKarmaLow, formatTemplate(curT.toastKarmaMaxBet, formatNum(casinoMaxBet), casinoCurSym), '❌');
-      return;
-    }
-    if (casinoBalance < casinoBet) {
-      const curName = casinoCur === 'gem' ? curT.curDiamonds.toLowerCase() : curT.curFocaccia.toLowerCase();
-      addToast(formatTemplate(curT.toastNotEnough, curName), formatTemplate(curT.toastNotEnoughDesc, formatNum(casinoBet), casinoCurSym), '❌');
-      return;
-    }
-    setCasinoSpinning(true);
-    setCasinoMsg(null);
-    casinoTake(casinoBet);
-    haptic.medium();
-    updateQuestProgress('casino', 1);
-
-    // Фінальні барабани — з урахуванням везіння (може кинути двічі)
-    let final: [string, string, string] = [randSymbol(), randSymbol(), randSymbol()];
-    let finalMult = slotsScore(final);
-    const luck = stateRef.current.luck || 0;
-    if (luck >= 4 || luck <= -4) {
-      const alt: [string, string, string] = [randSymbol(), randSymbol(), randSymbol()];
-      const altMult = slotsScore(alt);
-      const takeAlt = luck >= 4 ? altMult <= finalMult : altMult >= finalMult;
-      if (takeAlt) { final = alt; finalMult = altMult; }
-    }
-
-    const iv = setInterval(() => {
-      setCasinoReels([randSymbol(), randSymbol(), randSymbol()]);
-    }, 70);
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    timers.push(setTimeout(() => setCasinoReels((r) => [final[0], r[1], r[2]]), 500));
-    timers.push(setTimeout(() => setCasinoReels((r) => [r[0], final[1], r[2]]), 950));
-    timers.push(setTimeout(() => setCasinoReels((r) => [r[0], r[1], final[2]]), 1400));
-    timers.push(setTimeout(() => {
-      clearInterval(iv);
-      timers.forEach(clearTimeout);
-      setCasinoReels(final);
-      setCasinoSpinning(false);
-
-      if (finalMult > 0) {
-        const winAmt = Math.floor(casinoBet * finalMult);
-        casinoGive(casinoCur, winAmt);
-        setCasinoMsg({ text: formatTemplate(curT.winText, formatNum(winAmt), casinoCurSym, finalMult), win: true });
-        updateLuck(finalMult);
-        if (finalMult >= 8) {
-          burstConfetti(['🫓', '💎', '⭐', '✨']);
-          doFlash('golden');
-          addToast(curT.toastJackpot, formatTemplate(curT.toastJackpotDesc, `${final[0]}${final[1]}${final[2]}`, formatNum(winAmt), casinoCurSym), '💎');
-          haptic.heavy();
-        } else {
-          haptic.success();
-        }
-      } else {
-        setCasinoMsg({ text: curT.slotsLoss, win: false });
-        updateLuck(0);
-        haptic.light();
+  /* ===== 🍕 ARCADE & CHEF WHEEL HANDLERS ===== */
+  const handleArcadeComplete = useCallback((rewards: {
+    focaccia: number;
+    diamonds: number;
+    passXp: number;
+    ingredients: Record<string, number>;
+  }) => {
+    setState((prev) => {
+      const curAlchemy = prev.alchemy || getDefaultAlchemyState();
+      const nextIngs = { ...curAlchemy.ingredients };
+      for (const [k, v] of Object.entries(rewards.ingredients)) {
+        nextIngs[k] = (nextIngs[k] || 0) + v;
       }
-    }, 1500));
-  };
 
-  const rollDice = () => {
-    if (casinoSpinning) return;
-    if (!Number.isFinite(casinoBet) || casinoBet < 1) return;
-    const curT = TRANSLATIONS[langRef.current];
-    if (casinoBet > casinoMaxBet) {
-      addToast(curT.toastKarmaLow, formatTemplate(curT.toastKarmaMaxBet, formatNum(casinoMaxBet), casinoCurSym), '❌');
-      return;
-    }
-    if (casinoBalance < casinoBet) {
-      const curName = casinoCur === 'gem' ? curT.curDiamonds.toLowerCase() : curT.curFocaccia.toLowerCase();
-      addToast(formatTemplate(curT.toastNotEnough, curName), formatTemplate(curT.toastNotEnoughDesc, formatNum(casinoBet), casinoCurSym), '❌');
-      return;
-    }
-    setCasinoSpinning(true);
-    setCasinoMsg(null);
-    casinoTake(casinoBet);
-    haptic.medium();
+      const isCosmic = isBuffActive(curAlchemy.buffs, 'cosmic_ferment');
+      const earnedXp = rewards.passXp * (isCosmic ? 2 : 1);
+
+      const qState = ensureQuestsState(prev.quests, prev.total, prev.prestige);
+      const nextPassXp = qState.passXp + earnedXp;
+
+      const curWeek = getCurrentWeekKey();
+      const prevLeague = prev.league;
+      const nextWeeklyScore = (!prevLeague || prevLeague.weekId !== curWeek)
+        ? rewards.focaccia
+        : (prevLeague.weeklyScore || 0) + rewards.focaccia;
+
+      haptic.success();
+      burstConfetti(['🍕', '✨', '💎', '🫓']);
+      addToast(
+        langRef.current === 'uk' ? '🍕 Кулінарна Аркада!' : '🍕 Кулинарная Аркада!',
+        `+${rewards.focaccia.toLocaleString()} 🫓  +${rewards.diamonds} 💎  +${earnedXp} XP`,
+        '🎉'
+      );
+
+      const next: SaveState = {
+        ...prev,
+        focaccia: prev.focaccia + rewards.focaccia,
+        total: prev.total + rewards.focaccia,
+        diamonds: prev.diamonds + rewards.diamonds,
+        alchemy: {
+          ...curAlchemy,
+          ingredients: nextIngs,
+        },
+        quests: {
+          ...qState,
+          passXp: nextPassXp,
+        },
+        league: {
+          division: prevLeague?.division || 0,
+          weeklyScore: nextWeeklyScore,
+          weekId: curWeek,
+          claimedWeekId: prevLeague?.claimedWeekId,
+        },
+      };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+
+    updateQuestProgress('arcade', 1);
     updateQuestProgress('casino', 1);
+  }, [addToast, burstConfetti, saveNow, updateQuestProgress]);
 
-    // генеруємо дуель: свій кістяк vs бабуся; рахуємо множник
-    const duelMult = (mine: number, house: number) => (mine > house ? 1.9 : mine === house ? 1 : 0);
-    let result = { mine: 1 + Math.floor(Math.random() * 6), house: 1 + Math.floor(Math.random() * 6) };
-    let mult = duelMult(result.mine, result.house);
-    const luck = stateRef.current.luck || 0;
-    if (luck >= 4 || luck <= -4) {
-      const alt = { mine: 1 + Math.floor(Math.random() * 6), house: 1 + Math.floor(Math.random() * 6) };
-      const altMult = duelMult(alt.mine, alt.house);
-      const takeAlt = luck >= 4 ? altMult <= mult : altMult >= mult;
-      if (takeAlt) { result = alt; mult = altMult; }
-    }
+  const handleSpinWheel = useCallback((segment: ChefWheelSegment) => {
+    setState((prev) => {
+      const curAlchemy = prev.alchemy || getDefaultAlchemyState();
+      let nextFoc = prev.focaccia;
+      let nextTot = prev.total;
+      let nextDia = prev.diamonds;
+      const nextIngs = { ...curAlchemy.ingredients };
+      const nextBuffs = { ...curAlchemy.buffs };
 
-    // анімація кидка
-    const iv = setInterval(() => {
-      setDiceRoll({ mine: 1 + Math.floor(Math.random() * 6), house: 1 + Math.floor(Math.random() * 6) });
-    }, 90);
-    setTimeout(() => {
-      clearInterval(iv);
-      setDiceRoll(result);
-      setCasinoSpinning(false);
+      const qState = ensureQuestsState(prev.quests, prev.total, prev.prestige);
+      let nextPassXp = qState.passXp;
 
-      if (mult === 1.9) {
-        const winAmt = Math.floor(casinoBet * 1.9);
-        casinoGive(casinoCur, winAmt);
-        setCasinoMsg({ text: formatTemplate(curT.diceWin, DICE_FACES[result.mine - 1], DICE_FACES[result.house - 1], formatNum(winAmt), casinoCurSym), win: true });
-        updateLuck(1.9);
-        haptic.success();
-      } else if (mult === 1) {
-        casinoGive(casinoCur, casinoBet); // ничья — ставка возвращается
-        setCasinoMsg({ text: curT.diceTie, win: false });
-        updateLuck(1);
-        haptic.light();
-      } else {
-        setCasinoMsg({ text: formatTemplate(curT.diceLoss, DICE_FACES[result.house - 1], DICE_FACES[result.mine - 1]), win: false });
-        updateLuck(0);
-        haptic.light();
+      if (segment.type === 'focaccia') {
+        const amt = segment.amount || 25000;
+        nextFoc += amt;
+        nextTot += amt;
+      } else if (segment.type === 'diamonds') {
+        nextDia += (segment.amount || 5);
+      } else if (segment.type === 'ingredient' && segment.ingredientId) {
+        nextIngs[segment.ingredientId] = (nextIngs[segment.ingredientId] || 0) + (segment.amount || 1);
+      } else if (segment.type === 'xp') {
+        nextPassXp += (segment.amount || 35);
+      } else if (segment.type === 'buff' && segment.buffId) {
+        const pot = ALCHEMY_POTIONS.find((p) => p.id === segment.buffId);
+        const dur = pot ? pot.durationMs : 10 * 60 * 1000;
+        nextBuffs[segment.buffId] = Math.max(Date.now(), nextBuffs[segment.buffId] || 0) + dur;
       }
-    }, 1100);
-  };
 
-  const spinWheel = () => {
-    if (casinoSpinning) return;
-    if (!Number.isFinite(casinoBet) || casinoBet < 1) return;
-    const curT = TRANSLATIONS[langRef.current];
-    if (casinoBet > casinoMaxBet) {
-      addToast(curT.toastKarmaLow, formatTemplate(curT.toastKarmaMaxBet, formatNum(casinoMaxBet), '🫓'), '❌');
-      return;
-    }
-    if (state.focaccia < casinoBet) {
-      addToast(formatTemplate(curT.toastNotEnough, curT.curFocaccia.toLowerCase()), formatTemplate(curT.toastNotEnoughDesc, formatNum(casinoBet), '🫓'), '❌');
-      return;
-    }
-    setCasinoSpinning(true);
-    setCasinoMsg(null);
-    casinoTake(casinoBet);
-    haptic.medium();
+      haptic.success();
+      burstConfetti(['🎡', '✨', '💎']);
+      addToast(
+        langRef.current === 'uk' ? '🎡 Колесо Шефа!' : '🎡 Колесо Шефа!',
+        langRef.current === 'uk' ? `Виграно: ${segment.labelUk}` : `Выиграно: ${segment.labelRu}`,
+        segment.icon
+      );
+
+      const next: SaveState = {
+        ...prev,
+        focaccia: nextFoc,
+        total: nextTot,
+        diamonds: nextDia,
+        alchemy: {
+          ingredients: nextIngs,
+          buffs: nextBuffs,
+        },
+        quests: {
+          ...qState,
+          passXp: nextPassXp,
+        },
+      };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+
+    updateQuestProgress('arcade', 1);
     updateQuestProgress('casino', 1);
+  }, [addToast, burstConfetti, saveNow, updateQuestProgress]);
 
-    // вибір сектора з урахуванням везіння
-    const pick = () => Math.floor(Math.random() * WHEEL_SEGMENTS.length);
-    let idx = pick();
-    let mult = WHEEL_SEGMENTS[idx];
-    const luck = stateRef.current.luck || 0;
-    if (luck >= 4 || luck <= -4) {
-      const alt = pick();
-      const altMult = WHEEL_SEGMENTS[alt];
-      const takeAlt = luck >= 4 ? altMult <= mult : altMult >= mult;
-      if (takeAlt) { idx = alt; mult = altMult; }
+  /* ===== 🧭 CAT EXPEDITION HANDLERS ===== */
+  const handleStartExpedition = useCallback((locationId: string) => {
+    setState((prev) => {
+      const loc = EXPEDITION_LOCATIONS.find((l) => l.id === locationId);
+      if (!loc) return prev;
+      const catLvl = prev.cat?.level || 1;
+      const durationMs = getCatExpeditionDuration(loc.baseDurationMs, catLvl);
+
+      haptic.medium();
+      addToast(
+        langRef.current === 'uk' ? '🧭 Мурчик вирушив у путь!' : '🧭 Мурчик отправился в путь!',
+        langRef.current === 'uk' ? `Пункт: ${loc.nameUk}` : `Пункт: ${loc.nameRu}`,
+        loc.icon
+      );
+
+      const next: SaveState = {
+        ...prev,
+        expedition: {
+          locationId,
+          startTime: Date.now(),
+          durationMs,
+        },
+      };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+
+    updateQuestProgress('expedition', 1);
+  }, [addToast, saveNow, updateQuestProgress]);
+
+  const handleClaimExpedition = useCallback(() => {
+    setState((prev) => {
+      if (!prev.expedition) return prev;
+      const loc = EXPEDITION_LOCATIONS.find((l) => l.id === prev.expedition?.locationId);
+      if (!loc) return prev;
+
+      const catLvl = prev.cat?.level || 1;
+      const rewards = generateExpeditionRewards(loc, catLvl);
+
+      const curAlchemy = prev.alchemy || getDefaultAlchemyState();
+      const nextIngs = { ...curAlchemy.ingredients };
+      for (const [k, v] of Object.entries(rewards.ingredients)) {
+        nextIngs[k] = (nextIngs[k] || 0) + v;
+      }
+
+      const qState = ensureQuestsState(prev.quests, prev.total, prev.prestige);
+      const nextPassXp = qState.passXp + rewards.passXp;
+
+      haptic.success();
+      burstConfetti(['🧭', '🎒', '💎', '🍄', '🌿']);
+      addToast(
+        langRef.current === 'uk' ? '🎒 Мурчик повернувся зі здобиччю!' : '🎒 Мурчик вернулся с добычей!',
+        `+${rewards.focaccia.toLocaleString()} 🫓  +${rewards.diamonds} 💎  +${rewards.passXp} XP`,
+        '😸'
+      );
+
+      const next: SaveState = {
+        ...prev,
+        focaccia: prev.focaccia + rewards.focaccia,
+        total: prev.total + rewards.focaccia,
+        diamonds: prev.diamonds + rewards.diamonds,
+        expedition: null,
+        alchemy: {
+          ...curAlchemy,
+          ingredients: nextIngs,
+        },
+        quests: {
+          ...qState,
+          passXp: nextPassXp,
+        },
+      };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+  }, [addToast, burstConfetti, saveNow]);
+
+  const handleInstantCompleteExpedition = useCallback((diamondCost: number) => {
+    if (stateRef.current.diamonds < diamondCost) {
+      addToast(
+        langRef.current === 'uk' ? 'Не вистачає діамантів!' : 'Не хватает алмазов!',
+        `${diamondCost} 💎`,
+        '❌'
+      );
+      return;
+    }
+    setState((prev) => {
+      if (!prev.expedition) return prev;
+      const next: SaveState = {
+        ...prev,
+        diamonds: prev.diamonds - diamondCost,
+        expedition: {
+          ...prev.expedition,
+          startTime: Date.now() - prev.expedition.durationMs - 1000,
+        },
+      };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+    setTimeout(() => handleClaimExpedition(), 100);
+  }, [addToast, handleClaimExpedition, saveNow]);
+
+  /* ===== 👹 WORLD RAID BOSS HANDLERS ===== */
+  const handleAttackWorldBoss = useCallback((isCritWeakPoint: boolean = false) => {
+    setWorldBossState((prev) => {
+      if (prev.stamina <= 0 || prev.isDefeated) return prev;
+
+      const weaponsBonus = getBossDamage(stateRef.current.vipUpgrades).damage * 250;
+      const aromaBuff = isBuffActive(stateRef.current.alchemy?.buffs, 'aroma_overload') ? 2 : 1;
+      const critMult = isCritWeakPoint ? 5 : 1;
+      const strikeDmg = Math.floor((Math.max(10, clickPower * 3) + weaponsBonus) * critMult * aromaBuff);
+
+      const nextHp = Math.max(0, prev.currentHp - strikeDmg);
+      const isNowDefeated = nextHp <= 0;
+      const nextDmg = prev.playerDamage + strikeDmg;
+      const nextStamina = Math.max(0, prev.stamina - 1);
+
+      haptic.heavy();
+      if (isCritWeakPoint) {
+        doFlash('golden');
+        burstConfetti(['🎯', '💥', '🔥']);
+      }
+
+      if (isNowDefeated && !prev.isDefeated) {
+        burstConfetti(['👑', '🏆', '💎', '🎉']);
+        addToast(
+          langRef.current === 'uk' ? '👑 Голем Повалений!' : '👑 Голем Повержен!',
+          langRef.current === 'uk' ? 'Світовий рейд-бос переможений! Всі учасники отримують пошану!' : 'Мировой рейд-босс повержен! Все участники получают почёт!',
+          '👹'
+        );
+      }
+
+      const nextBossState: WorldBossState = {
+        ...prev,
+        currentHp: nextHp,
+        playerDamage: nextDmg,
+        stamina: nextStamina,
+        isDefeated: isNowDefeated,
+        defeatedAt: isNowDefeated ? Date.now() : prev.defeatedAt,
+        respawnAt: isNowDefeated ? Date.now() + 24 * 60 * 60 * 1000 : prev.respawnAt,
+      };
+
+      saveWorldBossState(nextBossState);
+      return nextBossState;
+    });
+  }, [clickPower, doFlash, burstConfetti, addToast]);
+
+  const handleClaimBossTier = useCallback((tierNum: number) => {
+    const tier = BOSS_REWARD_TIERS.find((t) => t.tier === tierNum);
+    if (!tier || worldBossState.playerDamage < tier.damageRequired || worldBossState.claimedTiers.includes(tierNum)) {
+      return;
     }
 
-    // обертання: 4 повних оберти + докрутка до сектора (вказівник зверху)
-    const current = wheelAngle;
-    const targetOffset = (360 - ((idx * WHEEL_EDGE + WHEEL_EDGE / 2) % 360)) % 360;
-    const target = current + 1440 + ((targetOffset - (current % 360)) % 360);
-    setWheelAngle(target);
+    setWorldBossState((prev) => {
+      const nextBossState: WorldBossState = {
+        ...prev,
+        claimedTiers: [...prev.claimedTiers, tierNum],
+      };
+      saveWorldBossState(nextBossState);
+      return nextBossState;
+    });
 
-    setTimeout(() => {
-      setCasinoSpinning(false);
-      if (mult > 0) {
-        creditWin(mult, formatTemplate(curT.wheelWin, mult), false);
-      } else {
-        setCasinoMsg({ text: curT.wheelLoss, win: false });
-        updateLuck(0);
-        haptic.light();
-      }
-    }, 2500);
-  };
+    setState((prev) => {
+      const curAlchemy = prev.alchemy || getDefaultAlchemyState();
+      const nextIngs = {
+        ...curAlchemy.ingredients,
+        truffle: (curAlchemy.ingredients.truffle || 0) + tier.truffles,
+      };
+
+      const qState = ensureQuestsState(prev.quests, prev.total, prev.prestige);
+      const nextPassXp = qState.passXp + tier.passXp;
+
+      haptic.success();
+      burstConfetti(['🏆', '💎', '🍄']);
+      addToast(
+        langRef.current === 'uk' ? '🏆 Нагороду за рейд отримано!' : '🏆 Награда за рейд получена!',
+        `+${tier.diamonds} 💎  +${tier.passXp} XP  +${tier.truffles} 🍄`,
+        '👹'
+      );
+
+      const next: SaveState = {
+        ...prev,
+        diamonds: prev.diamonds + tier.diamonds,
+        alchemy: {
+          ...curAlchemy,
+          ingredients: nextIngs,
+        },
+        quests: {
+          ...qState,
+          passXp: nextPassXp,
+        },
+      };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+  }, [worldBossState.playerDamage, worldBossState.claimedTiers, addToast, burstConfetti, saveNow]);
+
+  const handleRefillBossStamina = useCallback(() => {
+    if (stateRef.current.diamonds < 3) return;
+    setState((prev) => {
+      const next = { ...prev, diamonds: prev.diamonds - 3 };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+
+    setWorldBossState((prev) => {
+      const next: WorldBossState = {
+        ...prev,
+        stamina: prev.maxStamina,
+        lastStaminaRegen: Date.now(),
+      };
+      saveWorldBossState(next);
+      return next;
+    });
+
+    haptic.success();
+    addToast(
+      langRef.current === 'uk' ? '⚡ Енергію відновлено!' : '⚡ Энергия восстановлена!',
+      '10/10 ⚡',
+      '💎'
+    );
+  }, [addToast, saveNow]);
+
+  /* ===== 🏆 WEEKLY LEAGUES HANDLERS ===== */
+  const handleClaimWeeklyReward = useCallback(() => {
+    setState((prev) => {
+      const curLeague = prev.league;
+      if (!curLeague) return prev;
+      const div = DIVISIONS[curLeague.division] || DIVISIONS[0];
+      const reward = div.rewards.top2;
+
+      const qState = ensureQuestsState(prev.quests, prev.total, prev.prestige);
+      const nextPassXp = qState.passXp + reward.passXp;
+
+      haptic.success();
+      burstConfetti(['🏆', '✨', '💎']);
+      addToast(
+        langRef.current === 'uk' ? '🏆 Тижнева Ліга: Нагорода!' : '🏆 Недельная Лига: Награда!',
+        `+${reward.diamonds} 💎  +${reward.passXp} XP`,
+        '🥇'
+      );
+
+      const next: SaveState = {
+        ...prev,
+        diamonds: prev.diamonds + reward.diamonds,
+        quests: {
+          ...qState,
+          passXp: nextPassXp,
+        },
+        league: {
+          ...curLeague,
+          claimedWeekId: curLeague.weekId,
+        },
+      };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+  }, [addToast, burstConfetti, saveNow]);
 
   /* ---- Trades ---- */
   const handleCreateOpenTrade = async () => {
@@ -9788,6 +10029,33 @@ export default function App() {
         lang={lang}
       />
 
+      {/* ===== 🧭 CAT EXPEDITIONS MODAL ===== */}
+      <ExpeditionModal
+        isOpen={showExpeditionModal}
+        onClose={() => setShowExpeditionModal(false)}
+        catLevel={state.cat?.level || 1}
+        isCatUnlocked={!!state.cat?.unlocked}
+        activeExpedition={state.expedition || null}
+        onStartExpedition={handleStartExpedition}
+        onClaimExpedition={handleClaimExpedition}
+        onInstantComplete={handleInstantCompleteExpedition}
+        playerDiamonds={state.diamonds}
+        lang={lang}
+      />
+
+      {/* ===== 👹 WORLD RAID BOSS MODAL ===== */}
+      <WorldBossModal
+        isOpen={showWorldBossModal}
+        onClose={() => setShowWorldBossModal(false)}
+        bossState={worldBossState}
+        onAttack={handleAttackWorldBoss}
+        onClaimTier={handleClaimBossTier}
+        onRefillStamina={handleRefillBossStamina}
+        playerDiamonds={state.diamonds}
+        playerClickPower={clickPower}
+        lang={lang}
+      />
+
       {/* ===== 🔮 SKINS, CASES & UPGRADER MODAL ===== */}
       {showSkinsModal && (
         <div className="fixed inset-0 z-[80] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
@@ -12280,6 +12548,21 @@ export default function App() {
                 <span>x20 {emeraldFrenzy}с</span>
               </div>
             )}
+            {Object.entries(state.alchemy?.buffs || {}).map(([buffId, expiresAt]) => {
+              if (expiresAt <= Date.now()) return null;
+              const pot = ALCHEMY_POTIONS.find((p) => p.id === buffId);
+              if (!pot) return null;
+              const remSec = Math.ceil((expiresAt - Date.now()) / 1000);
+              return (
+                <div
+                  key={buffId}
+                  className="text-amber-300 font-black animate-pulse text-[10px] bg-gradient-to-r from-amber-500/25 to-yellow-500/25 px-2 py-0.5 rounded-full border border-amber-400/50 flex items-center gap-1 shadow-[0_0_8px_rgba(251,191,36,0.3)] whitespace-nowrap"
+                >
+                  <span>{pot.icon}</span>
+                  <span>{pot.nameUk.split(' ')[0]} {Math.floor(remSec / 60)}:{remSec % 60 < 10 ? '0' : ''}{remSec % 60}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -12566,6 +12849,46 @@ export default function App() {
                   )}
                 </button>
               )}
+
+              {/* Cat Expeditions Button */}
+              {state.cat?.unlocked && (
+                <button
+                  type="button"
+                  onClick={() => { setShowExpeditionModal(true); haptic.selection(); }}
+                  className={cn(
+                    'px-3 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm relative',
+                    state.expedition && (Date.now() - state.expedition.startTime >= state.expedition.durationMs)
+                      ? 'bg-emerald-950/90 border-emerald-400 text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.4)] animate-pulse'
+                      : 'bg-zinc-900/85 hover:bg-zinc-800 border-white/10 hover:border-emerald-500/40 text-emerald-200/90'
+                  )}
+                >
+                  <span>🧭</span>
+                  <span>{lang === 'uk' ? 'Експедиції' : 'Экспедиции'}</span>
+                  {state.expedition && (Date.now() - state.expedition.startTime >= state.expedition.durationMs) && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+                  )}
+                </button>
+              )}
+
+              {/* World Boss Button */}
+              <button
+                type="button"
+                onClick={() => { setShowWorldBossModal(true); haptic.selection(); }}
+                className={cn(
+                  'px-3 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm',
+                  !worldBossState.isDefeated
+                    ? 'bg-red-950/80 hover:bg-red-900/80 border-red-500/50 text-red-200 shadow-[0_0_10px_rgba(239,68,68,0.3)] animate-pulse'
+                    : 'bg-zinc-900/85 hover:bg-zinc-800 border-white/10 text-white/60'
+                )}
+              >
+                <span>👹</span>
+                <span>{lang === 'uk' ? 'Рейд-Бос' : 'Рейд-Босс'}</span>
+                {!worldBossState.isDefeated && (
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-red-500/30 text-red-300 font-mono">
+                    {Math.round((worldBossState.currentHp / worldBossState.maxHp) * 100)}%
+                  </span>
+                )}
+              </button>
             </div>
 
             {/* Stats row */}
@@ -13196,223 +13519,111 @@ export default function App() {
           </div>
         )}
 
-        {/* --- CASINO --- */}
-        {page === 'casino' && (() => {
-          const spinLabel = casinoGame === 'slots' ? t.spinSlots : casinoGame === 'dice' ? t.spinDice : t.spinWheel;
-          const doSpin = casinoGame === 'slots' ? spinCasino : casinoGame === 'dice' ? rollDice : spinWheel;
-          const setCustomBet = (raw: string) => {
-            const digits = raw.replace(/\D/g, '').slice(0, 15);
-            setCasinoCustomBet(digits);
-            const n = parseInt(digits || '0', 10);
-            if (n >= 1) setCasinoBet(Math.min(n, casinoBalance, casinoMaxBet));
-            else setCasinoBet(casinoCur === 'gem' ? 1 : 100);
-          };
-          const casinoLocked = karma < 50;
-          return (
-            <div className={cn('h-full overflow-y-auto p-4 space-y-3', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
-              <h2 className="text-base font-black text-amber-200/80 text-center tracking-wide">{t.casinoTitle}</h2>
-
-              {/* Ігри */}
-              <div className="flex gap-1.5">
-                {([['slots', '🎰', t.tabSlots], ['dice', '🎲', t.tabDice], ['wheel', '🎡', t.tabWheel]] as const).map(([id, icon, label]) => (
-                  <button
-                    key={id}
-                    onClick={() => { setCasinoGame(id); haptic.light(); }}
-                    className={cn(
-                      'flex-1 py-2 rounded-xl text-[11px] font-black transition-all',
-                      casinoGame === id
-                        ? 'glass-card text-amber-200 border border-amber-500/30 shadow-lg'
-                        : 'text-amber-500/50',
-                    )}
-                  >
-                    {icon} {label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Ігрове поле */}
-              {casinoLocked ? (
-                <div className="glass-card rounded-2xl p-6 text-center space-y-2">
-                  <div className="text-5xl">🔒</div>
-                  <div className="font-black text-amber-100">{t.casinoClosedTitle}</div>
-                  <div className="text-[11px] text-amber-300/60">{formatTemplate(t.casinoClosedDesc, karma)}</div>
-                </div>
-              ) : (<>
-              <div className="glass-card rounded-2xl p-4 border-amber-500/25 space-y-4">
-                {casinoGame === 'slots' && (
-                  <div className="flex justify-center gap-2">
-                    {casinoReels.map((s, i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          'w-[4.5rem] h-[4.5rem] rounded-xl bg-black/50 border-2 flex items-center justify-center text-[2.6rem] leading-none',
-                          casinoSpinning ? 'border-amber-500/40' : 'border-amber-500/25',
-                        )}
-                      >
-                        <span key={s + String(casinoSpinning)} className={cn('inline-block', casinoSpinning && 'blur-[1px] opacity-80')}>{s}</span>
-                      </div>
-                    ))}
-                  </div>
+        {/* --- 🍕 KITCHEN ARCADE & ⚗️ ALCHEMY BOOSTER PAGE --- */}
+        {page === 'casino' && (
+          <div className={cn('h-full overflow-y-auto p-4 space-y-3.5', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
+            {/* Top Sub-tabs Switcher */}
+            <div className="flex gap-2 p-1 glass-card rounded-2xl border border-amber-500/25 bg-black/50">
+              <button
+                type="button"
+                onClick={() => { setBoostTab('arcade'); haptic.selection(); }}
+                className={cn(
+                  'flex-1 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                  boostTab === 'arcade'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 shadow-lg shadow-amber-500/20'
+                    : 'text-amber-300/60 hover:text-amber-200'
                 )}
+              >
+                <span>🍕</span>
+                <span>{lang === 'uk' ? 'Кухня & Аркада' : 'Кухня & Аркада'}</span>
+              </button>
 
-                {casinoGame === 'dice' && (
-                  <div className="flex items-center justify-center gap-5 py-1">
-                    <div className="text-center">
-                      <div className="text-[10px] font-black text-amber-500/50 mb-1">{t.diceYou}</div>
-                      <div className="w-20 h-20 rounded-xl bg-black/50 border-2 border-amber-500/30 flex items-center justify-center text-[3.4rem] leading-none">
-                        {diceRoll ? DICE_FACES[diceRoll.mine - 1] : '🎲'}
-                      </div>
-                    </div>
-                    <div className="text-2xl font-black text-amber-500/40">VS</div>
-                    <div className="text-center">
-                      <div className="text-[10px] font-black text-red-400/60 mb-1">{t.diceGranny}</div>
-                      <div className="w-20 h-20 rounded-xl bg-black/50 border-2 border-red-500/30 flex items-center justify-center text-[3.4rem] leading-none">
-                        {diceRoll ? DICE_FACES[diceRoll.house - 1] : '🎲'}
-                      </div>
-                    </div>
-                  </div>
+              <button
+                type="button"
+                onClick={() => { setBoostTab('alchemy'); haptic.selection(); }}
+                className={cn(
+                  'flex-1 py-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                  boostTab === 'alchemy'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 shadow-lg shadow-amber-500/20'
+                    : 'text-amber-300/60 hover:text-amber-200'
                 )}
-
-                {casinoGame === 'wheel' && (
-                  <div className="flex justify-center py-1">
-                    <div className="relative w-52 h-52">
-                      <div className="absolute left-1/2 -translate-x-1/2 -top-1 z-10 text-lg" style={{ filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.8))' }}>🔻</div>
-                      <div
-                        className="absolute inset-0 rounded-full border-4 border-amber-500/40 shadow-[0_0_30px_rgba(251,191,36,0.25)]"
-                        style={{
-                          background: `conic-gradient(${wheelGradient})`,
-                          transform: `rotate(${wheelAngle}deg)`,
-                          transition: casinoSpinning ? 'transform 2.4s cubic-bezier(0.15, 0.85, 0.25, 1)' : 'none',
-                        }}
-                      >
-                        {WHEEL_SEGMENTS.map((m, i) => (
-                          <div key={i} className="absolute inset-0 flex justify-center" style={{ transform: `rotate(${i * WHEEL_EDGE + WHEEL_EDGE / 2}deg)` }}>
-                            <span className="mt-1.5 text-[11px] font-black" style={{ color: m === 0 ? '#6b5a3a' : '#fff' }}>{m > 0 ? `×${m}` : '✖'}</span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full glass border-2 border-amber-500/40 flex items-center justify-center text-xl">🫓</div>
-                    </div>
-                  </div>
-                )}
-
-                <div className="h-6 text-center">
-                  {casinoMsg && (
-                    <div className={cn('text-[12px] font-black', casinoMsg.win ? 'text-emerald-300' : 'text-amber-500/50')}>
-                      {casinoMsg.text}
-                    </div>
-                  )}
-                </div>
-
-                <button
-                  onClick={doSpin}
-                  disabled={casinoSpinning || casinoBalance < casinoBet}
-                  className={cn(
-                    'w-full py-3 rounded-xl font-black text-sm transition active:scale-95 shadow-lg',
-                    casinoSpinning || casinoBalance < casinoBet
-                      ? 'bg-white/5 border border-amber-500/15 text-amber-500/40 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-rose-600 via-red-500 to-amber-500 text-white shadow-red-500/30 animate-pulse',
-                  )}
-                >
-                  {casinoSpinning ? t.spinning : `${spinLabel} — ${formatNum(casinoBet)} ${casinoCurSym}`}
-                </button>
-              </div>
-
-              {/* Валюта ставки */}
-              <div className="flex gap-1.5">
-                {([['foc', '🫓', t.curFocaccia], ['gem', '💎', t.curDiamonds]] as const).map(([id, icon, label]) => (
-                  <button
-                    key={id}
-                    onClick={() => { setCasinoCur(id); setCasinoBet(id === 'gem' ? 1 : 100); haptic.light(); }}
-                    className={cn(
-                      'flex-1 py-2 rounded-xl text-[11px] font-black transition-all',
-                      casinoCur === id
-                        ? 'glass-card text-amber-200 border border-amber-500/30 shadow-lg'
-                        : 'text-amber-500/50',
-                    )}
-                  >
-                    {icon} {label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Ставки */}
-              <div>
-                <div className="flex justify-between items-center mb-1.5">
-                  <div className="text-[10px] uppercase font-bold text-amber-500/30 tracking-widest">{t.betLabel}</div>
-                  <div className="text-[10px] font-bold text-amber-300/50 tabular-nums">{t.balanceLabel} {formatNum(casinoBalance)} {casinoCurSym}</div>
-                </div>
-                <div className="flex gap-1.5 mb-1.5">
-                  <input
-                    value={casinoCustomBet}
-                    onChange={(e) => setCustomBet(e.target.value)}
-                    inputMode="numeric"
-                    placeholder={t.customBetPlaceholder}
-                    className="flex-1 min-w-0 glass-card rounded-lg px-3 py-2.5 text-[13px] font-black text-amber-200 tabular-nums placeholder:text-amber-500/30 placeholder:font-bold outline-none border border-amber-500/15 focus:border-amber-400/60 transition-colors"
-                  />
-                  <div className="glass-card rounded-lg px-3 py-2.5 text-[13px] font-black text-amber-400/60">{casinoCurSym}</div>
-                </div>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {(casinoCur === 'gem' ? CASINO_BETS_GEM : CASINO_BETS).map((b) => {
-                    const can = casinoBalance >= b && b <= casinoMaxBet;
-                    return (
-                      <button
-                        key={b}
-                        onClick={() => { setCasinoBet(b); setCasinoCustomBet(String(b)); haptic.light(); }}
-                        disabled={!can}
-                        className={cn(
-                          'py-2 rounded-lg text-[11px] font-black transition active:scale-95',
-                          casinoBet === b
-                            ? 'bg-amber-500/25 border border-amber-400/60 text-amber-200 shadow-lg shadow-amber-500/10'
-                            : can
-                            ? 'glass-card glass-card-hover text-amber-300/70'
-                            : 'glass-card opacity-30 text-amber-500/40 cursor-not-allowed',
-                        )}
-                      >
-                        {formatNum(b)}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Правила / виплати */}
-              {casinoGame === 'slots' && (
-                <div className="glass-card rounded-2xl p-3 space-y-1">
-                  <div className="text-[10px] uppercase font-bold text-amber-500/30 mb-1 tracking-widest">{t.payoutsLabel}</div>
-                  {Object.entries(CASINO_PAYOUTS).map(([s, m]) => (
-                    <div key={s} className="flex justify-between items-center text-[11px]">
-                      <span className="tracking-widest">{s}{s}{s}</span>
-                      <span className={cn('font-black', m >= 15 ? 'text-fuchsia-300' : 'text-amber-300')}>×{m}</span>
-                    </div>
-                  ))}
-                  <div className="flex justify-between items-center text-[11px] pt-1 border-t border-amber-500/10">
-                    <span className="text-amber-400/60">{t.anyPair}</span>
-                    <span className="font-black text-amber-300/80">×{CASINO_PAIR_MULT}</span>
-                  </div>
-                </div>
-              )}
-              {casinoGame === 'dice' && (
-                <div className="glass-card rounded-2xl p-3 text-[11px] text-amber-300/60 space-y-1">
-                  <div>{t.diceRule1}<b className="text-amber-300">×1.9</b></div>
-                  <div>{t.diceRule2}</div>
-                  <div>{t.diceRule3}</div>
-                </div>
-              )}
-              {casinoGame === 'wheel' && (
-                <div className="glass-card rounded-2xl p-3 text-[11px] text-amber-300/60">
-                  {t.wheelRule}
-                </div>
-              )}
-              </>)}
-              <div className="text-center text-[9px] text-amber-500/30 pb-2">{t.casinoDisclaimer}</div>
+              >
+                <span>⚗️</span>
+                <span>{lang === 'uk' ? 'Алхімічний Казан' : 'Алхимический Котёл'}</span>
+              </button>
             </div>
-          );
-        })()}
 
-        {/* --- LEADERBOARD --- */}
+            {/* Sub-tab 1: Arcade & Oven Rush */}
+            {boostTab === 'arcade' && (
+              <ArcadeSection
+                onGameComplete={handleArcadeComplete}
+                onSpinWheel={handleSpinWheel}
+                playerFocaccia={state.focaccia}
+                playerDiamonds={state.diamonds}
+                currentCps={cpsRef.current}
+                lang={lang}
+              />
+            )}
+
+            {/* Sub-tab 2: Alchemy Cauldron & Timed Buffs */}
+            {boostTab === 'alchemy' && (
+              <AlchemySection
+                ingredients={state.alchemy?.ingredients || {}}
+                buffs={state.alchemy?.buffs || {}}
+                onBrewPotion={handleBrewPotion}
+                onOpenExpeditions={() => setShowExpeditionModal(true)}
+                lang={lang}
+              />
+            )}
+          </div>
+        )}
+
+        {/* --- LEADERBOARD & WEEKLY LEAGUES --- */}
         {page === 'leaders' && (
-          <div className={cn('h-full overflow-y-auto p-4 space-y-2.5', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
+          <div className={cn('h-full overflow-y-auto p-4 space-y-3', pageDir === 1 ? 'animate-page-right' : 'animate-page-left')}>
+            {/* Top Sub-tabs Switcher: League vs Global Top */}
+            <div className="flex gap-2 p-1 glass-card rounded-2xl border border-amber-500/25 bg-black/50">
+              <button
+                type="button"
+                onClick={() => { setLeaderMainTab('league'); haptic.selection(); }}
+                className={cn(
+                  'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                  leaderMainTab === 'league'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 shadow-md'
+                    : 'text-amber-300/60 hover:text-amber-200'
+                )}
+              >
+                <span>🏆</span>
+                <span>{lang === 'uk' ? 'Щотижнева Ліга' : 'Еженедельная Лига'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setLeaderMainTab('global'); haptic.selection(); }}
+                className={cn(
+                  'flex-1 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer',
+                  leaderMainTab === 'global'
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 shadow-md'
+                    : 'text-amber-300/60 hover:text-amber-200'
+                )}
+              >
+                <span>📊</span>
+                <span>{lang === 'uk' ? 'Загальний Рейтинг' : 'Общий Рейтинг'}</span>
+              </button>
+            </div>
+
+            {leaderMainTab === 'league' && (
+              <LeaguesSection
+                division={state.league?.division || 0}
+                playerScore={state.league?.weeklyScore || 0}
+                playerName={tgUser?.first_name || 'Ти'}
+                onClaimWeeklyReward={handleClaimWeeklyReward}
+                hasUnclaimedWeeklyReward={state.league?.claimedWeekId !== state.league?.weekId && (state.league?.weeklyScore || 0) > 0}
+                lang={lang}
+              />
+            )}
+
+            {leaderMainTab === 'global' && (<>
             <h2 className="text-base font-black text-amber-200/90 text-center tracking-wide">{t.leadersTitle}</h2>
 
             {/* Category Selector Tabs */}
@@ -13724,6 +13935,7 @@ export default function App() {
             )}
 
             <div className="text-center text-[9px] text-amber-500/30 pb-2">{t.leadersFooter}</div>
+            </>)}
           </div>
         )}
 
@@ -14259,7 +14471,7 @@ export default function App() {
         <div className="relative flex">
           {([
             ['shop', '🏪', t.navShop],
-            ['casino', '🎰', t.navCasino],
+            ['casino', '🍕', t.navCasino],
             ['clicker', '🫓', t.navClicker],
             ['leaders', '🏆', t.navLeaders],
             ['settings', '⚙️', t.navSettings],

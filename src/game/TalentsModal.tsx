@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { cn } from '../utils/cn';
 import {
   TALENT_NODES,
-  TalentBranch,
-  TalentsState,
+  type TalentBranch,
+  type TalentsState,
   getAvailableTalentPoints,
   getBranchSpentPoints,
   getTotalSpentPoints,
@@ -16,7 +16,7 @@ interface TalentsModalProps {
   prestige: number;
   onUpgradeTalent: (nodeId: string) => void;
   onResetTalents: () => void;
-  playerDiamonds: number;
+  playerDiamonds?: number;
   lang?: 'uk' | 'ru';
 }
 
@@ -27,7 +27,6 @@ export const TalentsModal: React.FC<TalentsModalProps> = ({
   prestige,
   onUpgradeTalent,
   onResetTalents,
-  playerDiamonds,
   lang = 'uk',
 }) => {
   const [activeBranch, setActiveBranch] = useState<TalentBranch>('berserk');

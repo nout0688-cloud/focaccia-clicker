@@ -2,9 +2,7 @@ import React, { useState } from 'react';
 import { cn } from '../utils/cn';
 import {
   BAKER_PASS_TIERS,
-  DailyQuest,
-  PassTier,
-  QuestsState,
+  type QuestsState,
   XP_PER_TIER,
   PASS_TIERS_COUNT,
 } from './quests';
@@ -16,7 +14,7 @@ interface QuestsModalProps {
   onClaimQuest: (questId: string) => void;
   onClaimPassTier: (tier: number, isVip: boolean) => void;
   onUnlockVip: () => void;
-  playerDiamonds: number;
+  playerDiamonds?: number;
   isPatron?: boolean;
   lang?: 'uk' | 'ru';
 }
@@ -28,7 +26,6 @@ export const QuestsModal: React.FC<QuestsModalProps> = ({
   onClaimQuest,
   onClaimPassTier,
   onUnlockVip,
-  playerDiamonds,
   isPatron,
   lang = 'uk',
 }) => {

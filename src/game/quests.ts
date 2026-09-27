@@ -5,6 +5,9 @@ export type QuestType =
   | 'pests'
   | 'pet_cat'
   | 'casino'
+  | 'arcade'
+  | 'expedition'
+  | 'alchemy'
   | 'focaccia_earn'
   | 'combo';
 
@@ -232,16 +235,30 @@ export function generateDailyQuests(totalBaked: number = 0, prestige: number = 0
       claimed: false,
     },
     {
-      id: 'q_casino',
-      type: 'casino',
-      title: { uk: 'Азартний Пекар', ru: 'Азартный Пекарь' },
-      desc: { uk: 'Зіграй 3 рази в будь-яку гру казино', ru: 'Сыграй 3 раза в любую игру казино' },
-      icon: '🎰',
-      target: 3,
+      id: 'q_arcade',
+      type: 'arcade',
+      title: { uk: 'Кулінарний Шеф', ru: 'Кулинарный Шеф' },
+      desc: { uk: 'Зіграй 2 рази в кулінарний слайсер або колесо шефа', ru: 'Сыграй 2 раза в кулинарный слайсер или колесо шефа' },
+      icon: '🍕',
+      target: 2,
       progress: 0,
-      rewardFocaccia: 20000,
+      rewardFocaccia: 25000,
       rewardDiamonds: 2,
-      rewardXp: 35,
+      rewardXp: 40,
+      completed: false,
+      claimed: false,
+    },
+    {
+      id: 'q_expedition',
+      type: 'expedition',
+      title: { uk: 'Зоряний Слідопит', ru: 'Звёздный Следопыт' },
+      desc: { uk: 'Відправ котика Мурчика в 1 експедицію', ru: 'Отправь котика Мурчика в 1 экспедицию' },
+      icon: '🧭',
+      target: 1,
+      progress: 0,
+      rewardFocaccia: 30000,
+      rewardDiamonds: 2,
+      rewardXp: 45,
       completed: false,
       claimed: false,
     },
