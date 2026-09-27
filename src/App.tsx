@@ -86,6 +86,21 @@ import {
   type CatLevelInfo,
   type CatSkin,
 } from './game/cat';
+import { QuestsModal } from './game/QuestsModal';
+import { TalentsModal } from './game/TalentsModal';
+import {
+  ensureQuestsState,
+  type QuestsState,
+  type QuestType,
+  BAKER_PASS_TIERS,
+} from './game/quests';
+import {
+  TALENT_NODES,
+  type TalentsState,
+  getAvailableTalentPoints,
+  getBranchSpentPoints,
+  getTotalSpentPoints,
+} from './game/talents';
 
 /* ---- Telegram WebApp ---- */
 const tg = window.Telegram?.WebApp;
@@ -715,6 +730,8 @@ interface SaveState {
   settledTrades?: string[];
   lastRebirthTime?: number;
   starterPackBought?: boolean;
+  quests?: QuestsState;
+  talents?: TalentsState;
 }
 
 export const REBIRTH_TRADE_LOCK_MS = 5 * 24 * 60 * 60 * 1000; // 5 days
@@ -745,7 +762,8 @@ export function calculateOfflineProgress(
   toTs: number
 ): { cleanGain: number; cleanDay: number; cleanNight: number } | null {
   if (!s || !fromTs || !toTs || toTs <= fromTs) return null;
-  const maxHours = s.vipUpgrades?.includes('vip_night') ? 24 : 12;
+  const talentExtraHours = (s.talents?.nodes?.t_tycoon_capstone || 0) > 0 ? 12 : 0;
+  const maxHours = (s.vipUpgrades?.includes('vip_night') ? 24 : 12) + talentExtraHours;
   const cappedTo = Math.min(toTs, fromTs + 60 * 60 * maxHours * 1000);
   const totalElapsed = (cappedTo - fromTs) / 1000;
   if (totalElapsed <= 30) return null;
@@ -764,11 +782,13 @@ export function calculateOfflineProgress(
     if (u.cpsMult && s.upgrades?.includes(u.id)) mult *= u.cpsMult;
   }
   if (s.vipUpgrades?.includes('vip_chef')) mult *= 1.3;
-  mult *= (1 + dPercentTotal);
+  const talentCpsMult = 1 + (s.talents?.nodes?.t_tycoon_cps || 0) * 0.10;
+  const talentOfflineMult = (s.talents?.nodes?.t_tycoon_capstone || 0) > 0 ? 1.30 : 1.0;
+  mult *= (1 + dPercentTotal) * talentCpsMult * talentOfflineMult;
   const karmaMult = (s.karma ?? 100) < 50 ? 0.5 : 1;
   const prestigeMul = 1 + (Number(s.prestige) || 0) * 0.07;
   const DAY_RATE = 0.45;
-  const NIGHT_RATE = 0.10;
+  const NIGHT_RATE = 0.10 + (s.talents?.nodes?.t_night_baking || 0) * 0.20;
   const { daySecs, nightSecs } = calcDayNightSecs(fromTs, cappedTo);
   const gainDay = base * mult * prestigeMul * daySecs * DAY_RATE * karmaMult;
   const gainNight = base * mult * prestigeMul * nightSecs * NIGHT_RATE * karmaMult;
@@ -937,6 +957,8 @@ const defaultState = (): SaveState => ({
   settledTrades: [],
   lastRebirthTime: 0,
   starterPackBought: false,
+  quests: ensureQuestsState(undefined, 0, 0),
+  talents: { spent: 0, nodes: {} },
 });
 
 async function loadState(): Promise<SaveState> {
@@ -1063,6 +1085,11 @@ async function loadState(): Promise<SaveState> {
         return list;
       })(),
       starterPackBought: isStarterBought,
+      quests: ensureQuestsState(parsed.quests, parsed.total, parsed.prestige),
+      talents: {
+        spent: Number(parsed.talents?.spent) || 0,
+        nodes: parsed.talents?.nodes && typeof parsed.talents.nodes === 'object' ? parsed.talents.nodes : {},
+      },
     };
   } catch { return defaultState(); }
 }
@@ -1203,6 +1230,8 @@ export default function App() {
   const [myPlayerOutsideTop, setMyPlayerOutsideTop] = useState<LeaderRow | null>(null);
   const [leaderCategory, setLeaderCategory] = useState<LeaderCategory>('focaccia');
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [showQuestsModal, setShowQuestsModal] = useState(false);
+  const [showTalentsModal, setShowTalentsModal] = useState(false);
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
   const [tradeJoinInput, setTradeJoinInput] = useState('');
   const [tradeCreating, setTradeCreating] = useState(false);
@@ -2072,8 +2101,9 @@ export default function App() {
     if (activeSkin?.clickMult) {
       mult *= (1 + (activeSkin.clickMult - 1) * activeSkinLevelMult);
     }
-    return add * mult * prestigeMult;
-  }, [state.upgrades, prestigeMult, activeSkin?.clickMult, activeSkinLevelMult]);
+    const talentClickMult = 1 + (state.talents?.nodes?.t_click_power || 0) * 0.15;
+    return add * mult * prestigeMult * talentClickMult;
+  }, [state.upgrades, state.talents?.nodes?.t_click_power, prestigeMult, activeSkin?.clickMult, activeSkinLevelMult]);
 
   const cps = useMemo(() => {
     let base = 0;
@@ -2097,12 +2127,16 @@ export default function App() {
       mult *= (1 + (activeSkin.cpsMult - 1) * activeSkinLevelMult);
     }
     if (state.cat?.unlocked && catInfo?.cpsBonus) mult *= (1 + catInfo.cpsBonus);
-    mult *= (1 + dPercentTotal);
+    const talentCpsMult = 1 + (state.talents?.nodes?.t_tycoon_cps || 0) * 0.10;
+    mult *= (1 + dPercentTotal) * talentCpsMult;
     if (activeEvent) mult *= activeEvent.cpsMult;
     return base * mult * prestigeMult;
-  }, [state.buildings, state.diamondBuildings, state.upgrades, state.vipUpgrades, brokenBuilding, activeEvent, prestigeMult, activeSkin?.cpsMult, activeSkinLevelMult, state.cat?.unlocked, catInfo?.cpsBonus]);
+  }, [state.buildings, state.diamondBuildings, state.upgrades, state.vipUpgrades, state.talents?.nodes?.t_tycoon_cps, brokenBuilding, activeEvent, prestigeMult, activeSkin?.cpsMult, activeSkinLevelMult, state.cat?.unlocked, catInfo?.cpsBonus]);
 
-  const frenzyMult = (frenzy > 0 ? (state.vipUpgrades?.includes('vip_frenzy') ? 7 : 6) : 1) * (frenzy > 0 && activeSkin?.id === 'skin_demon' ? (1 + 0.5 * activeSkinLevelMult) : 1);
+  const talentFrenzyBoost = (frenzy > 0 || diamondFrenzy > 0 || emeraldFrenzy > 0)
+    ? 1 + (state.talents?.nodes?.t_frenzy_ignite || 0) * 0.40
+    : 1;
+  const frenzyMult = ((frenzy > 0 ? (state.vipUpgrades?.includes('vip_frenzy') ? 7 : 6) : 1) * (frenzy > 0 && activeSkin?.id === 'skin_demon' ? (1 + 0.5 * activeSkinLevelMult) : 1)) * talentFrenzyBoost;
   const diamondMult = diamondFrenzy > 0 ? 10 : 1;
   const emeraldMult = emeraldFrenzy > 0 ? 15 : 1;
   const comboMult = 1 + Math.min(combo, 100) * 0.02;
@@ -2225,6 +2259,286 @@ export default function App() {
     setMilestone({ text, id });
     setTimeout(() => setMilestone((m) => (m && m.id === id ? null : m)), 950);
   }, []);
+
+  /* ===== 📜 DAILY QUESTS & BAKER PASS HANDLERS ===== */
+  const updateQuestProgress = useCallback((type: QuestType, amount: number = 1) => {
+    setState((prev) => {
+      const qState = ensureQuestsState(prev.quests, prev.total, prev.prestige);
+      let changed = false;
+      let justCompletedQuest: DailyQuest | null = null;
+
+      const newDaily = qState.daily.map((q) => {
+        if (q.type === type && !q.completed) {
+          const nextProg = q.progress + amount;
+          const completed = nextProg >= q.target;
+          if (completed && !q.completed) {
+            justCompletedQuest = q;
+          }
+          changed = true;
+          return {
+            ...q,
+            progress: nextProg,
+            completed,
+          };
+        }
+        return q;
+      });
+
+      if (!changed) return prev;
+
+      if (justCompletedQuest) {
+        haptic.success();
+        addToast(
+          langRef.current === 'uk' ? '📜 Квест виконано!' : '📜 Квест выполнен!',
+          langRef.current === 'uk' ? `Виконано: "${(justCompletedQuest as DailyQuest).title.uk}" — заберіть нагороду!` : `Выполнено: "${(justCompletedQuest as DailyQuest).title.ru}" — заберите награду!`,
+          '🎯'
+        );
+      }
+
+      const next: SaveState = {
+        ...prev,
+        quests: {
+          ...qState,
+          daily: newDaily,
+        },
+      };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+  }, [addToast, saveNow]);
+
+  const claimQuestReward = useCallback((questId: string) => {
+    setState((prev) => {
+      const qState = ensureQuestsState(prev.quests, prev.total, prev.prestige);
+      const quest = qState.daily.find((q) => q.id === questId);
+      if (!quest || !quest.completed || quest.claimed) return prev;
+
+      const newDaily = qState.daily.map((q) => (q.id === questId ? { ...q, claimed: true } : q));
+      const nextXp = qState.passXp + quest.rewardXp;
+
+      haptic.success();
+      burstConfetti(['📜', '✨', '💎', '⭐']);
+      addToast(
+        langRef.current === 'uk' ? '🎁 Нагороду отримано!' : '🎁 Награда получена!',
+        `+${quest.rewardFocaccia.toLocaleString()} 🫓  +${quest.rewardDiamonds} 💎  +${quest.rewardXp} XP`,
+        '🎉'
+      );
+
+      const next: SaveState = {
+        ...prev,
+        focaccia: prev.focaccia + quest.rewardFocaccia,
+        total: prev.total + quest.rewardFocaccia,
+        diamonds: prev.diamonds + quest.rewardDiamonds,
+        quests: {
+          ...qState,
+          daily: newDaily,
+          passXp: nextXp,
+        },
+      };
+      stateRef.current = next;
+      saveNow(next);
+      return next;
+    });
+  }, [addToast, burstConfetti, saveNow]);
+
+  const claimPassTier = useCallback((tier: number, isVip: boolean) => {
+    setState((prev) => {
+      const qState = ensureQuestsState(prev.quests, prev.total, prev.prestige);
+      const tierDef = BAKER_PASS_TIERS.find((t) => t.tier === tier);
+      if (!tierDef || qState.passXp < tierDef.requiredXp) return prev;
+
+      if (!isVip) {
+        if (qState.claimedFree.includes(tier)) return prev;
+        let nextFoc = prev.focaccia;
+        let nextTot = prev.total;
+        let nextDia = prev.diamonds;
+        let nextRk = prev.repairKit?.charges || 0;
+
+        const r = tierDef.freeReward;
+        if (r.type === 'focaccia') {
+          nextFoc += (r.amount || 0);
+          nextTot += (r.amount || 0);
+        } else if (r.type === 'diamonds') {
+          nextDia += (r.amount || 0);
+        } else if (r.type === 'repair_kit') {
+          nextRk += (r.amount || 0);
+        }
+
+        haptic.success();
+        burstConfetti(['🎫', '✨', '💎']);
+        addToast(
+          langRef.current === 'uk' ? '🎫 Нагорода Baker Pass!' : '🎫 Награда Baker Pass!',
+          langRef.current === 'uk' ? `Отримано: ${r.label.uk}` : `Получено: ${r.label.ru}`,
+          r.icon
+        );
+
+        const next: SaveState = {
+          ...prev,
+          focaccia: nextFoc,
+          total: nextTot,
+          diamonds: nextDia,
+          repairKit: {
+            ...prev.repairKit!,
+            charges: nextRk,
+          },
+          quests: {
+            ...qState,
+            claimedFree: [...qState.claimedFree, tier],
+          },
+        };
+        stateRef.current = next;
+        saveNow(next);
+        return next;
+      } else {
+        const isVipUnlocked = qState.vipUnlocked || !!prev.isPatron;
+        if (!isVipUnlocked || qState.claimedVip.includes(tier)) return prev;
+
+        let nextFoc = prev.focaccia;
+        let nextTot = prev.total;
+        let nextDia = prev.diamonds;
+        let nextRk = prev.repairKit?.charges || 0;
+        let nextCosmetics = prev.cosmetics;
+
+        const r = tierDef.vipReward;
+        if (r.type === 'focaccia') {
+          nextFoc += (r.amount || 0);
+          nextTot += (r.amount || 0);
+        } else if (r.type === 'diamonds') {
+          nextDia += (r.amount || 0);
+        } else if (r.type === 'repair_kit') {
+          nextRk += (r.amount || 0);
+        } else if (r.type === 'frame' && r.frameId) {
+          const ownedFrames = Array.from(new Set([...(prev.cosmetics?.ownedFrames || ['frame_default']), r.frameId]));
+          nextCosmetics = {
+            ...prev.cosmetics!,
+            ownedFrames,
+          };
+          savePermanentCosmetics(nextCosmetics);
+        }
+
+        haptic.success();
+        burstConfetti(['👑', '✨', '💎', '⭐']);
+        addToast(
+          langRef.current === 'uk' ? '👑 VIP Нагорода Baker Pass!' : '👑 VIP Награда Baker Pass!',
+          langRef.current === 'uk' ? `Отримано: ${r.label.uk}` : `Получено: ${r.label.ru}`,
+          r.icon
+        );
+
+        const next: SaveState = {
+          ...prev,
+          focaccia: nextFoc,
+          total: nextTot,
+          diamonds: nextDia,
+          repairKit: {
+            ...prev.repairKit!,
+            charges: nextRk,
+          },
+          cosmetics: nextCosmetics,
+          quests: {
+            ...qState,
+            claimedVip: [...qState.claimedVip, tier],
+          },
+        };
+        stateRef.current = next;
+        saveNow(next);
+        return next;
+      }
+    });
+  }, [addToast, burstConfetti, saveNow]);
+
+  const unlockVipPass = useCallback(() => {
+    const cur = stateRef.current;
+    if (cur.diamonds < 100) {
+      addToast(
+        langRef.current === 'uk' ? '💎 Не вистачає діамантів' : '💎 Не хватает алмазов',
+        langRef.current === 'uk' ? 'Для розблокування VIP Baker Pass потрібно 100 💎' : 'Для открытия VIP Baker Pass нужно 100 💎',
+        '⚠️'
+      );
+      haptic.error();
+      return;
+    }
+
+    const qState = ensureQuestsState(cur.quests, cur.total, cur.prestige);
+    const next: SaveState = {
+      ...cur,
+      diamonds: cur.diamonds - 100,
+      quests: {
+        ...qState,
+        vipUnlocked: true,
+      },
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+    haptic.success();
+    burstConfetti(['👑', '⭐', '💎', '🎉']);
+    addToast(
+      langRef.current === 'uk' ? '👑 VIP Baker Pass відкрито!' : '👑 VIP Baker Pass открыт!',
+      langRef.current === 'uk' ? 'Усі VIP нагороди доступні для збору!' : 'Все VIP награды доступны для сбора!',
+      '⭐'
+    );
+  }, [addToast, burstConfetti, saveNow]);
+
+  /* ===== 🌳 TALENT TREE (ASCENSION) HANDLERS ===== */
+  const upgradeTalent = useCallback((nodeId: string) => {
+    const cur = stateRef.current;
+    const node = TALENT_NODES[nodeId];
+    if (!node) return;
+
+    const tState = cur.talents || { spent: 0, nodes: {} };
+    const totalSpent = getTotalSpentPoints(tState.nodes || {});
+    const available = getAvailableTalentPoints(cur.prestige, totalSpent);
+    if (available < node.costPerLevel) return;
+
+    const branchSpent = getBranchSpentPoints(tState.nodes || {}, node.branch);
+    if (branchSpent < node.requiredBranchPoints) return;
+
+    const currentLvl = (tState.nodes && tState.nodes[nodeId]) || 0;
+    if (currentLvl >= node.maxLevel) return;
+
+    const newNodes = {
+      ...(tState.nodes || {}),
+      [nodeId]: currentLvl + 1,
+    };
+    const next: SaveState = {
+      ...cur,
+      talents: {
+        spent: totalSpent + node.costPerLevel,
+        nodes: newNodes,
+      },
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+    haptic.success();
+    burstConfetti(['⭐', '✨', '🌳']);
+    addToast(
+      langRef.current === 'uk' ? '⭐ Талант покращено!' : '⭐ Талант улучшен!',
+      langRef.current === 'uk' ? `Рівень ${currentLvl + 1}: ${node.name.uk}` : `Уровень ${currentLvl + 1}: ${node.name.ru}`,
+      node.icon
+    );
+  }, [addToast, burstConfetti, saveNow]);
+
+  const resetTalents = useCallback(() => {
+    const cur = stateRef.current;
+    const next: SaveState = {
+      ...cur,
+      talents: {
+        spent: 0,
+        nodes: {},
+      },
+    };
+    stateRef.current = next;
+    setState(next);
+    saveNow(next);
+    haptic.medium();
+    addToast(
+      langRef.current === 'uk' ? '🔄 Таланти скинуто!' : '🔄 Таланты сброшены!',
+      langRef.current === 'uk' ? 'Усі очки стародавньої мудрості повернуто.' : 'Все очки древней мудрости возвращены.',
+      '🌳'
+    );
+  }, [addToast, saveNow]);
 
 /* ---- Відлік до викидання з гри при раптовій техперерві (з сильною вібрацією кожну секунду) ---- */
   useEffect(() => {
@@ -2921,8 +3235,10 @@ export default function App() {
     let goldenHideTimeout: ReturnType<typeof setTimeout>;
     const schedule = () => {
       const hasGoldenUpgrade = stateRef.current.vipUpgrades?.includes('vip_golden');
-      const baseDelay = hasGoldenUpgrade ? 25000 : 50000;
-      const randomExtra = hasGoldenUpgrade ? 30000 : 55000;
+      const omenLvl = stateRef.current.talents?.nodes?.t_golden_omen || 0;
+      const omenMult = Math.max(0.4, 1 - omenLvl * 0.12);
+      const baseDelay = (hasGoldenUpgrade ? 25000 : 50000) * omenMult;
+      const randomExtra = (hasGoldenUpgrade ? 30000 : 55000) * omenMult;
       timeout = setTimeout(() => {
         if (!isAppActiveRef.current) return;
         setGolden({ x: 10 + Math.random() * 80, y: 15 + Math.random() * 55 });
@@ -2944,8 +3260,10 @@ export default function App() {
     let diamondHideTimeout: ReturnType<typeof setTimeout>;
     const schedule = () => {
       // 💎 Rare Diamond Focaccia: spawns every 3 - 5 minutes (180s - 300s)
-      const baseDelay = 180000;
-      const randomExtra = 120000;
+      const omenLvl = stateRef.current.talents?.nodes?.t_golden_omen || 0;
+      const omenMult = Math.max(0.4, 1 - omenLvl * 0.12);
+      const baseDelay = 180000 * omenMult;
+      const randomExtra = 120000 * omenMult;
       timeout = setTimeout(() => {
         if (!isAppActiveRef.current) return;
         setDiamondFocaccia({ x: 12 + Math.random() * 76, y: 18 + Math.random() * 50 });
@@ -2967,8 +3285,10 @@ export default function App() {
     let emeraldHideTimeout: ReturnType<typeof setTimeout>;
     const schedule = () => {
       // 🌟 ULTRA-RARE Emerald Focaccia: spawns every 6 - 10 minutes (360s - 600s)
-      const baseDelay = 360000;
-      const randomExtra = 240000;
+      const omenLvl = stateRef.current.talents?.nodes?.t_golden_omen || 0;
+      const omenMult = Math.max(0.4, 1 - omenLvl * 0.12);
+      const baseDelay = 360000 * omenMult;
+      const randomExtra = 240000 * omenMult;
       timeout = setTimeout(() => {
         if (!isAppActiveRef.current) return;
         setEmeraldFocaccia({ x: 14 + Math.random() * 72, y: 20 + Math.random() * 45 });
@@ -3008,8 +3328,14 @@ export default function App() {
 
       if (roll < 0.35 && cur.focaccia >= 500) {
         // Tax inspection
+        const talentLuckyFate = cur.talents?.nodes?.t_lucky_fate || 0;
+        if (talentLuckyFate >= 2) {
+          addToast('🍀 Щаслива Доля!', 'Податкова інспекція скасована імунітетом таланту!', '✨');
+          return;
+        }
         const hasAccountant = cur.vipUpgrades?.includes('vip_tax');
-        const taxRate = hasAccountant ? 0.01 : 0.05;
+        const baseRate = hasAccountant ? 0.01 : 0.05;
+        const taxRate = baseRate * (talentLuckyFate === 1 ? 0.5 : 1);
         const tax = Math.max(1, Math.floor(cur.focaccia * taxRate));
         setState((p) => ({ ...p, focaccia: Math.max(0, p.focaccia - tax) }));
         addToast(curT.toastTax, formatTemplate(curT.toastTaxDesc, taxRate * 100, formatNum(tax)), '📋');
@@ -3017,7 +3343,9 @@ export default function App() {
         haptic.medium();
       } else if (roll < 0.6) {
         // Baking Festival
-        setActiveEvent({ title: langRef.current === 'uk' ? 'Свято випічки' : 'Праздник выпечки', emoji: '☀️', timeLeft: 25, cpsMult: 2.0 });
+        const talentLuckyFate = cur.talents?.nodes?.t_lucky_fate || 0;
+        const extraTime = talentLuckyFate * 10;
+        setActiveEvent({ title: langRef.current === 'uk' ? 'Свято випічки' : 'Праздник выпечки', emoji: '☀️', timeLeft: 25 + extraTime, cpsMult: 2.0 });
         addToast(curT.toastBakingFest, curT.toastBakingFestDesc, '🎉');
         haptic.success();
       } else if (roll < 0.8) {
@@ -3233,6 +3561,27 @@ export default function App() {
       }
 
       setBrokenBuilding(target.id);
+      const talentRepairLvl = cur.talents?.nodes?.t_auto_repair || 0;
+      if (talentRepairLvl > 0) {
+        const autoRepairSecs = talentRepairLvl === 1 ? 45 : talentRepairLvl === 2 ? 25 : 10;
+        setTimeout(() => {
+          setBrokenBuilding((prev) => {
+            if (prev === target.id) {
+              addToast(
+                langRef.current === 'uk' ? '🔧 Авто-Майстер' : '🔧 Авто-Мастер',
+                langRef.current === 'uk'
+                  ? `Будівля "${bText.name}" автоматично полагодилася завдяки таланту!`
+                  : `Постройка "${bText.name}" автоматически починилась благодаря таланту!`,
+                '✨'
+              );
+              haptic.success();
+              return null;
+            }
+            return prev;
+          });
+        }, autoRepairSecs * 1000);
+      }
+
       if (rk?.unlocked && (rk.charges || 0) <= 0 && rk.autoRepairEnabled !== false) {
         addToast(
           langRef.current === 'uk' ? '⚠️ Закінчилися ремонти в ремкомплекті!' : '⚠️ Закончились ремонти в ремкомплекте!',
@@ -3479,6 +3828,7 @@ export default function App() {
     setCasinoMsg(null);
     casinoTake(casinoBet);
     haptic.medium();
+    updateQuestProgress('casino', 1);
 
     // Фінальні барабани — з урахуванням везіння (може кинути двічі)
     let final: [string, string, string] = [randSymbol(), randSymbol(), randSymbol()];
@@ -3542,6 +3892,7 @@ export default function App() {
     setCasinoMsg(null);
     casinoTake(casinoBet);
     haptic.medium();
+    updateQuestProgress('casino', 1);
 
     // генеруємо дуель: свій кістяк vs бабуся; рахуємо множник
     const duelMult = (mine: number, house: number) => (mine > house ? 1.9 : mine === house ? 1 : 0);
@@ -3599,6 +3950,7 @@ export default function App() {
     setCasinoMsg(null);
     casinoTake(casinoBet);
     haptic.medium();
+    updateQuestProgress('casino', 1);
 
     // вибір сектора з урахуванням везіння
     const pick = () => Math.floor(Math.random() * WHEEL_SEGMENTS.length);
@@ -3812,7 +4164,8 @@ export default function App() {
     if (state.energy <= 0) return;
     const burning = karma < 25; // «фокачі пригорають» — Тінь бабусі
     const hasComboUp = stateRef.current.vipUpgrades?.includes('vip_combo');
-    const comboDelay = hasComboUp ? 2200 : 1200;
+    const talentComboExtra = (stateRef.current.talents?.nodes?.t_combo_master || 0) * 500;
+    const comboDelay = (hasComboUp ? 2200 : 1200) + talentComboExtra;
     const newCombo = burning ? combo : (now - lastClick.current < comboDelay ? combo + 1 : 1);
     lastClick.current = now;
     setCombo(newCombo);
@@ -3825,10 +4178,14 @@ export default function App() {
 
     const hasCritUp = stateRef.current.vipUpgrades?.includes('vip_crit');
     const baseCritChance = hasCritUp ? 0.08 : 0.05;
-    const critChance = baseCritChance + (activeSkin?.critChance || 0) * activeSkinLevelMult;
-    const critMultVal = hasCritUp ? 12 : 10;
+    const talentCritChance = (stateRef.current.talents?.nodes?.t_crit_surge || 0) * 0.02;
+    const critChance = baseCritChance + (activeSkin?.critChance || 0) * activeSkinLevelMult + talentCritChance;
+    const talentCritMult = (stateRef.current.talents?.nodes?.t_crit_surge || 0) * 1.5;
+    const critMultVal = (hasCritUp ? 12 : 10) + talentCritMult;
     const crit = !burning && Math.random() < critChance;
-    const gain = clickPower * comboMult * frenzyMult * diamondMult * emeraldMult * (crit ? critMultVal : 1) * (burning ? 0.05 : 1);
+    const talentMaxComboExtra = (stateRef.current.talents?.nodes?.t_combo_master || 0) * 25;
+    const dynamicComboMult = 1 + Math.min(newCombo, 100 + talentMaxComboExtra) * 0.02;
+    const gain = clickPower * dynamicComboMult * frenzyMult * diamondMult * emeraldMult * (crit ? critMultVal : 1) * (burning ? 0.05 : 1);
 
     setState((p) => {
       const newEnergy = p.energy - 1;
@@ -3842,6 +4199,9 @@ export default function App() {
         energy: Math.max(0, newEnergy),
       };
     });
+
+    updateQuestProgress('clicks', 1);
+    if (newCombo >= 30) updateQuestProgress('combo', newCombo);
 
     setClickRipple({ x, y, id: floatId.current + 1 });
     setTimeout(() => setClickRipple(null), 500);
@@ -3901,7 +4261,8 @@ export default function App() {
       if (newHp <= 0) {
         // Boss defeated — apply rewards outside this setter via setState
         const hasMagnet = stateRef.current.vipUpgrades?.includes('vip_magnet');
-        const rDiamonds = currentBoss.rewardDiamonds + (hasMagnet ? 1 : 0);
+        const talentBossDiamonds = (stateRef.current.talents?.nodes?.t_diamond_gleam || 0);
+        const rDiamonds = currentBoss.rewardDiamonds + (hasMagnet ? 1 : 0) + talentBossDiamonds;
         const rFocaccia = currentBoss.rewardFocaccia;
         setBossSlain({ emoji: currentBoss.emoji, id: ++floatId.current });
         doFlash('success');
@@ -3917,6 +4278,7 @@ export default function App() {
         stateRef.current = next;
         setState(next);
         saveNow(next);
+        updateQuestProgress('bosses', 1);
         const curT = TRANSLATIONS[langRef.current];
         addToast(curT.toastBossSlain, formatTemplate(curT.toastBossSlainDesc, rDiamonds, formatNum(rFocaccia)), '⚔️');
         haptic.success();
@@ -3935,7 +4297,8 @@ export default function App() {
     burstConfetti(['💀', '🪲', '✨', '⭐']);
 
     const hasMagnet = stateRef.current.vipUpgrades?.includes('vip_magnet');
-    const gotDiamond = Math.random() < (hasMagnet ? 0.6 : 0.4);
+    const talentDiaBonus = (stateRef.current.talents?.nodes?.t_diamond_gleam || 0) * 0.10;
+    const gotDiamond = Math.random() < ((hasMagnet ? 0.6 : 0.4) + talentDiaBonus);
     const bonus = Math.max(50, Math.floor((cpsRef.current || 10) * 15));
     const cur = stateRef.current;
     const next: SaveState = {
@@ -3948,6 +4311,7 @@ export default function App() {
     stateRef.current = next;
     setState(next);
     saveNow(next);
+    updateQuestProgress('pests', 1);
 
     const curT = TRANSLATIONS[langRef.current];
     addToast(
@@ -3965,12 +4329,14 @@ export default function App() {
     burstConfetti(['🐾', '⭐', '✨', '🪲']);
 
     const hasMagnet = stateRef.current.vipUpgrades?.includes('vip_magnet');
+    const talentDiaBonus = (stateRef.current.talents?.nodes?.t_diamond_gleam || 0) * 0.10;
     const baseDiamondChance = hasMagnet ? 0.6 : 0.4;
-    const catDiamondChance = Math.max(baseDiamondChance, catInfo.diamondChance);
+    const catDiamondChance = Math.max(baseDiamondChance, catInfo.diamondChance) + talentDiaBonus;
     const gotDiamond = Math.random() < catDiamondChance;
 
+    const talentPestFocMult = 1 + (stateRef.current.talents?.nodes?.t_cat_agility || 0) * 0.30;
     const baseBonus = Math.max(50, Math.floor((cpsRef.current || 10) * 15));
-    const bonus = Math.floor(baseBonus * catInfo.catchBonusMult);
+    const bonus = Math.floor(baseBonus * catInfo.catchBonusMult * talentPestFocMult);
 
     const cur = stateRef.current;
     const next: SaveState = {
@@ -3987,6 +4353,7 @@ export default function App() {
     stateRef.current = next;
     setState(next);
     saveNow(next);
+    updateQuestProgress('pests', 1);
 
     const title = isBg
       ? (lang === 'uk' ? `🐾 ${catSkinInfo.nameUk} упіймав жука в пекарні!` : `🐾 ${catSkinInfo.nameRu} поймал жука в пекарне!`)
@@ -4043,6 +4410,12 @@ export default function App() {
       );
     }
     const cur = stateRef.current;
+    const hasMysticCapstone = (cur.talents?.nodes?.t_mystic_capstone || 0) > 0;
+    if (hasMysticCapstone && Math.random() < 0.25) {
+      dGain += 5;
+      if (bonus > 0) bonus *= 2;
+      addToast('👑 Кулінарне Диво!', 'Талант збільшив нагороду та додав +5 💎!', '✨');
+    }
     const next: SaveState = {
       ...cur,
       focaccia: cur.focaccia + bonus,
@@ -4053,6 +4426,7 @@ export default function App() {
     stateRef.current = next;
     setState(next);
     saveNow(next);
+    updateQuestProgress('golden', 1);
   };
 
   const catchDiamond = (byCat: boolean = false) => {
@@ -4060,23 +4434,27 @@ export default function App() {
     haptic.heavy();
     doFlash('diamond');
     burstConfetti(['💎', '✨', '💠', '🔷', '⭐']);
-    setDiamondFrenzy(15);
+    const cur = stateRef.current;
+    const hasMysticCapstone = (cur.talents?.nodes?.t_mystic_capstone || 0) > 0;
+    const bonusSecs = hasMysticCapstone && Math.random() < 0.25 ? 30 : 15;
+    setDiamondFrenzy(bonusSecs);
     const curT = TRANSLATIONS[langRef.current];
     addToast(
       byCat
         ? (langRef.current === 'uk' ? `🐾 ${catSkinInfo.nameUk} спіймав Алмазну фокачу!` : `🐾 ${catSkinInfo.nameRu} поймал Алмазную фокаччу!`)
         : curT.toastDiamondFrenzy,
-      formatTemplate(curT.toastDiamondFrenzyDesc, 10, 15),
+      formatTemplate(curT.toastDiamondFrenzyDesc, 10, bonusSecs),
       '💎'
     );
-    const cur = stateRef.current;
     const next: SaveState = {
       ...cur,
+      diamonds: cur.diamonds + (hasMysticCapstone ? 3 : 0),
       diamondCaught: (cur.diamondCaught || 0) + 1,
     };
     stateRef.current = next;
     setState(next);
     saveNow(next);
+    updateQuestProgress('golden', 1);
   };
 
   const catchEmerald = (byCat: boolean = false) => {
@@ -4084,23 +4462,27 @@ export default function App() {
     haptic.heavy();
     doFlash('emerald');
     burstConfetti(['💚', '❇️', '✨', '🍀', '💎']);
-    setEmeraldFrenzy(15);
+    const cur = stateRef.current;
+    const hasMysticCapstone = (cur.talents?.nodes?.t_mystic_capstone || 0) > 0;
+    const bonusSecs = hasMysticCapstone && Math.random() < 0.25 ? 30 : 15;
+    setEmeraldFrenzy(bonusSecs);
     const curT = TRANSLATIONS[langRef.current];
     addToast(
       byCat
         ? (langRef.current === 'uk' ? `🐾 ${catSkinInfo.nameUk} спіймав Смарагдову фокачу!` : `🐾 ${catSkinInfo.nameRu} поймал Изумрудную фокаччу!`)
         : curT.toastEmeraldFrenzy,
-      formatTemplate(curT.toastEmeraldFrenzyDesc, 15, 15),
+      formatTemplate(curT.toastEmeraldFrenzyDesc, 15, bonusSecs),
       '❇️'
     );
-    const cur = stateRef.current;
     const next: SaveState = {
       ...cur,
+      diamonds: cur.diamonds + (hasMysticCapstone ? 5 : 0),
       emeraldCaught: (cur.emeraldCaught || 0) + 1,
     };
     stateRef.current = next;
     setState(next);
     saveNow(next);
+    updateQuestProgress('golden', 1);
   };
 
   useEffect(() => {
@@ -4275,6 +4657,7 @@ export default function App() {
   const petCat = (e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     haptic.medium();
+    updateQuestProgress('pet_cat', 1);
 
     // 🐾 Mega-Fix: If cat was stuck in any running or pouncing state, clicking it immediately rescues it!
     if (catState !== 'idle' && catState !== 'hiding') {
@@ -5550,7 +5933,8 @@ export default function App() {
     if (!b) return false;
     const cur = stateRef.current;
     if ((b.requireRebirth || 0) > cur.prestige) return false;
-    const cost = buildingCost(b, cur.buildings[id] || 0);
+    const talentDiscount = 1 - (cur.talents?.nodes?.t_guild_discount || 0) * 0.03;
+    const cost = Math.floor(buildingCost(b, cur.buildings[id] || 0) * talentDiscount);
     if (cur.focaccia < cost) return false;
     const next: SaveState = {
       ...cur,
@@ -6377,15 +6761,18 @@ export default function App() {
           cat: cur.cat,
           repairKit: cur.repairKit,
           starterPackBought: cur.starterPackBought,
+          quests: cur.quests,
+          talents: cur.talents,
         };
         stateRef.current = next;
         setState(next);
         saveNow(next);
         reportSync();
         uploadServerSnapshot(next);
-        addToast(curT.toastRebirthDone, formatTemplate(curT.toastRebirthDoneDesc, (cur.prestige + prestigeGain) * 7), '🔄');
+        const talentBonusMsg = langRef.current === 'uk' ? ` (+${prestigeGain} ⭐ очок талантів!)` : ` (+${prestigeGain} ⭐ очков талантов!)`;
+        addToast(curT.toastRebirthDone, formatTemplate(curT.toastRebirthDoneDesc, (cur.prestige + prestigeGain) * 7) + talentBonusMsg, '🔄');
         doFlash('golden');
-        burstConfetti(['🔄', '💎', '✨', '⭐', '🫓']);
+        burstConfetti(['🔄', '💎', '✨', '⭐', '🫓', '🌳']);
         haptic.success();
         setConfirmModal(null);
       },
@@ -9376,6 +9763,31 @@ export default function App() {
         </div>
       )}
 
+      {/* ===== 📜 DAILY QUESTS & BAKER PASS MODAL ===== */}
+      <QuestsModal
+        isOpen={showQuestsModal}
+        onClose={() => setShowQuestsModal(false)}
+        questsState={ensureQuestsState(state.quests, state.total, state.prestige)}
+        onClaimQuest={claimQuestReward}
+        onClaimPassTier={claimPassTier}
+        onUnlockVip={unlockVipPass}
+        playerDiamonds={state.diamonds}
+        isPatron={state.isPatron}
+        lang={lang}
+      />
+
+      {/* ===== 🌳 TALENT TREE (ASCENSION) MODAL ===== */}
+      <TalentsModal
+        isOpen={showTalentsModal}
+        onClose={() => setShowTalentsModal(false)}
+        talentsState={state.talents || { spent: 0, nodes: {} }}
+        prestige={state.prestige}
+        onUpgradeTalent={upgradeTalent}
+        onResetTalents={resetTalents}
+        playerDiamonds={state.diamonds}
+        lang={lang}
+      />
+
       {/* ===== 🔮 SKINS, CASES & UPGRADER MODAL ===== */}
       {showSkinsModal && (
         <div className="fixed inset-0 z-[80] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 select-none safe-bottom animate-fade-in">
@@ -12099,20 +12511,62 @@ export default function App() {
               </button>
             </div>
 
-            {/* Quick access to skins & cases */}
-            <button
-              type="button"
-              onClick={() => { setShowSkinsModal(true); haptic.selection(); }}
-              className="mt-2.5 px-3 py-1 rounded-full bg-zinc-900/80 hover:bg-zinc-850 border border-white/10 hover:border-amber-500/40 text-[11px] text-amber-200/80 font-medium flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm"
-            >
-              <span>🔮</span>
-              <span>{lang === 'uk' ? 'Гардероб & Кейси' : 'Гардероб & Кейсы'}</span>
-              <span className="text-[10px] text-amber-400 font-bold">({activeSkin.badge})</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 text-[9px] font-black border border-amber-500/30 flex items-center gap-0.5">
-                <span>🎁</span>
-                <span>NEW</span>
-              </span>
-            </button>
+            {/* Quick access action buttons: Quests, Skins & Talents */}
+            <div className="mt-2.5 flex items-center justify-center gap-1.5 flex-wrap z-20">
+              {/* Quests Button */}
+              <button
+                type="button"
+                onClick={() => { setShowQuestsModal(true); haptic.selection(); }}
+                className={cn(
+                  'px-3 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm relative',
+                  state.quests?.daily?.some((q) => q.completed && !q.claimed)
+                    ? 'bg-emerald-950/90 border-emerald-400 text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.4)] animate-pulse'
+                    : 'bg-zinc-900/85 hover:bg-zinc-800 border-white/10 hover:border-amber-500/40 text-amber-200/90'
+                )}
+              >
+                <span>📜</span>
+                <span>{lang === 'uk' ? 'Квести' : 'Квесты'}</span>
+                {state.quests?.daily?.some((q) => q.completed && !q.claimed) ? (
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
+                ) : (
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-mono">
+                    PASS
+                  </span>
+                )}
+              </button>
+
+              {/* Wardrobe & Skins */}
+              <button
+                type="button"
+                onClick={() => { setShowSkinsModal(true); haptic.selection(); }}
+                className="px-3 py-1 rounded-full bg-zinc-900/85 hover:bg-zinc-800 border border-white/10 hover:border-amber-500/40 text-[11px] text-amber-200/90 font-medium flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm"
+              >
+                <span>🔮</span>
+                <span>{lang === 'uk' ? 'Гардероб' : 'Гардероб'}</span>
+              </button>
+
+              {/* Talents Button (Available from prestige >= 1) */}
+              {state.prestige > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setShowTalentsModal(true); haptic.selection(); }}
+                  className={cn(
+                    'px-3 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-sm',
+                    getAvailableTalentPoints(state.prestige, getTotalSpentPoints(state.talents?.nodes || {})) > 0
+                      ? 'bg-amber-500/25 border-amber-400 text-amber-100 shadow-[0_0_12px_rgba(251,191,36,0.4)] animate-pulse'
+                      : 'bg-zinc-900/85 hover:bg-zinc-800 border-white/10 hover:border-amber-500/40 text-amber-200/90'
+                  )}
+                >
+                  <span>🌳</span>
+                  <span>{lang === 'uk' ? 'Таланти' : 'Таланты'}</span>
+                  {getAvailableTalentPoints(state.prestige, getTotalSpentPoints(state.talents?.nodes || {})) > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-stone-950 font-black text-[9px] font-mono">
+                      {getAvailableTalentPoints(state.prestige, getTotalSpentPoints(state.talents?.nodes || {}))}⭐
+                    </span>
+                  )}
+                </button>
+              )}
+            </div>
 
             {/* Stats row */}
             <div className="flex gap-4 text-center text-[10px] mt-0.5">
@@ -12187,7 +12641,8 @@ export default function App() {
                     const hasAffordable = e.id !== 'all' ? BUILDINGS.some((b) => {
                       if (b.era !== e.id) return false;
                       if ((b.requireRebirth || 0) > state.prestige) return false;
-                      const cost = buildingCost(b, state.buildings[b.id] || 0);
+                      const talentDiscount = 1 - (state.talents?.nodes?.t_guild_discount || 0) * 0.03;
+                      const cost = Math.floor(buildingCost(b, state.buildings[b.id] || 0) * talentDiscount);
                       return state.focaccia >= cost;
                     }) : false;
                     const hasBroken = e.id !== 'all' ? (
@@ -12222,7 +12677,8 @@ export default function App() {
                 {BUILDINGS.filter((b) => buildingEra === 'all' || b.era === buildingEra).map((b, i) => {
                 const bText = getBuildingText(b.id, lang);
                 const owned = state.buildings[b.id] || 0;
-                const cost = buildingCost(b, owned);
+                const talentDiscount = 1 - (state.talents?.nodes?.t_guild_discount || 0) * 0.03;
+                const cost = Math.floor(buildingCost(b, owned) * talentDiscount);
                 const can = state.focaccia >= cost;
                 const isBroken = brokenBuilding === b.id;
                 const repairCost = getBuildingRepairCost(b, state.prestige);
@@ -13647,6 +14103,21 @@ export default function App() {
                   ? formatTemplate(t.rebirthBtnActive, prestigeGain)
                   : formatTemplate(t.rebirthBtnLocked, formatNum(Math.max(0, 1e7 - state.total)))}
               </button>
+
+              {/* Talents Navigation Button */}
+              {state.prestige > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setShowTalentsModal(true); haptic.selection(); }}
+                  className="w-full mt-2.5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500/20 via-yellow-500/15 to-orange-500/20 hover:from-amber-500/30 hover:to-orange-500/30 border border-amber-400/40 text-amber-200 text-xs font-black flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer shadow-md"
+                >
+                  <span className="text-base">🌳</span>
+                  <span>{lang === 'uk' ? 'Дерево Мудрості (Таланти)' : 'Древо Мудрости (Таланты)'}</span>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-400 text-stone-950 text-[10px] font-black font-mono">
+                    {getAvailableTalentPoints(state.prestige, getTotalSpentPoints(state.talents?.nodes || {}))} ⭐
+                  </span>
+                </button>
+              )}
             </div>
 
             {/* Статус акаунта — спідометр античиту */}
