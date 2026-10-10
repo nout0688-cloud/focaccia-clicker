@@ -18,6 +18,7 @@ interface ExpeditionModalProps {
   onClaimExpedition: () => void;
   onInstantComplete?: (diamondCost: number) => void;
   playerDiamonds: number;
+  speedMult?: number;
   lang: 'uk' | 'ru';
 }
 
@@ -31,6 +32,7 @@ export const ExpeditionModal: React.FC<ExpeditionModalProps> = ({
   onClaimExpedition,
   onInstantComplete,
   playerDiamonds,
+  speedMult = 1,
   lang,
 }) => {
   const [now, setNow] = useState(Date.now());
@@ -191,8 +193,8 @@ export const ExpeditionModal: React.FC<ExpeditionModalProps> = ({
               <div className="space-y-2.5">
                 {EXPEDITION_LOCATIONS.map((loc) => {
                   const isLocked = catLevel < loc.requiredCatLevel;
-                  const durationMs = getCatExpeditionDuration(loc.baseDurationMs, catLevel);
-                  const durationMin = Math.round(durationMs / 60000);
+                  const durationMs = Math.round(getCatExpeditionDuration(loc.baseDurationMs, catLevel) * (speedMult || 1));
+                  const durationMin = Math.max(1, Math.round(durationMs / 60000));
                   const isSelected = selectedLoc.id === loc.id;
 
                   return (

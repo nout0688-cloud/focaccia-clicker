@@ -148,6 +148,7 @@ import {
   type AncientRecipe,
   getCombinedRecipeBonuses,
 } from './game/recipes';
+import { ProjectRipScreen } from './game/ProjectRipScreen';
 
 /* ---- Telegram WebApp ---- */
 const tg = window.Telegram?.WebApp;
@@ -1390,6 +1391,22 @@ export default function App() {
   const [isAdminDistributing, setIsAdminDistributing] = useState(false);
   const [isMaintenance, setIsMaintenance] = useState(false);
   const [isTogglingMaintenance, setIsTogglingMaintenance] = useState(false);
+  const [isProjectRip, setIsProjectRip] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('focaccia_project_rip') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [isTogglingRip, setIsTogglingRip] = useState(false);
+  const [respectsCount, setRespectsCount] = useState<number>(() => {
+    try {
+      return Number(localStorage.getItem('focaccia_respects_count')) || 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [ripPreviewMode, setRipPreviewMode] = useState<boolean>(false);
   const [maintenanceCountdown, setMaintenanceCountdown] = useState<number | null>(null);
   const [hasMaintenanceKicked, setHasMaintenanceKicked] = useState(false);
   const isInitialCheckDone = useRef(false);
@@ -1582,6 +1599,14 @@ export default function App() {
             setHasMaintenanceKicked(true);
           }
         }
+        if (typeof data?.projectRip === 'boolean') {
+          setIsProjectRip(data.projectRip);
+          try { localStorage.setItem('focaccia_project_rip', data.projectRip ? '1' : '0'); } catch {}
+        }
+        if (typeof data?.respectsCount === 'number') {
+          setRespectsCount(data.respectsCount);
+          try { localStorage.setItem('focaccia_respects_count', String(data.respectsCount)); } catch {}
+        }
         isInitialCheckDone.current = true;
       })
       .catch(() => {
@@ -1622,6 +1647,14 @@ export default function App() {
                 reportSync();
                 setMaintenanceCountdown(10);
               }
+            }
+            if (typeof data?.projectRip === 'boolean') {
+              setIsProjectRip(data.projectRip);
+              try { localStorage.setItem('focaccia_project_rip', data.projectRip ? '1' : '0'); } catch {}
+            }
+            if (typeof data?.respectsCount === 'number') {
+              setRespectsCount(data.respectsCount);
+              try { localStorage.setItem('focaccia_respects_count', String(data.respectsCount)); } catch {}
             }
             if (!uid || uid === 0 || uid === '0') return;
             if (typeof data?.karma === 'number') {
@@ -6428,6 +6461,79 @@ export default function App() {
     }
   };
 
+  const handleToggleProjectRip = async () => {
+    if (!isDevUser(tgUser?.id) || isTogglingRip) return;
+    setIsTogglingRip(true);
+    haptic.heavy();
+    const nextState = !isProjectRip;
+    try {
+      const res = await fetch(`${API_BASE}/api/reward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: tgUser?.id || ADMIN_ID,
+          action: 'set_project_rip',
+          enabled: nextState,
+        }),
+      });
+      const data = await res.json();
+      if (data?.ok) {
+        setIsProjectRip(nextState);
+        try { localStorage.setItem('focaccia_project_rip', nextState ? '1' : '0'); } catch {}
+        haptic.success();
+        addToast(
+          nextState
+            ? (lang === 'uk' ? '💀 Проєкт закрито (RIP увімкнено)!' : '💀 Проект закрыт (RIP включен)!')
+            : (lang === 'uk' ? '✨ Проєкт воскрешено!' : '✨ Проект воскрешён!'),
+          nextState
+            ? (lang === 'uk' ? 'Усі гравці бачать могилу, свічки та Press F' : 'Все игроки видят могилу, свечи и Press F')
+            : (lang === 'uk' ? 'Доступ до гри повністю відновлено' : 'Доступ к игре полностью восстановлен'),
+          nextState ? '💀' : '✨'
+        );
+      } else {
+        addToast(
+          lang === 'uk' ? 'Помилка' : 'Ошибка',
+          data?.error || (lang === 'uk' ? 'Не вдалося змінити статус' : 'Не удалось изменить статус'),
+          '❌'
+        );
+      }
+    } catch (err: any) {
+      // Fallback local toggle
+      setIsProjectRip(nextState);
+      try { localStorage.setItem('focaccia_project_rip', nextState ? '1' : '0'); } catch {}
+      addToast(
+        nextState
+          ? (lang === 'uk' ? '💀 Режим смерті увімкнено локально' : '💀 Режим смерти включен локально')
+          : (lang === 'uk' ? '✨ Проєкт відновлено локально' : '✨ Проект восстановлен локально'),
+        err?.message || 'Local toggle',
+        nextState ? '💀' : '✨'
+      );
+    } finally {
+      setIsTogglingRip(false);
+    }
+  };
+
+  const handlePayRespect = () => {
+    setRespectsCount((prev) => {
+      const next = prev + 1;
+      try { localStorage.setItem('focaccia_respects_count', String(next)); } catch {}
+      return next;
+    });
+    fetch(`${API_BASE}/api/reward`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'pay_respect' }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (typeof d?.respectsCount === 'number') {
+          setRespectsCount(d.respectsCount);
+          try { localStorage.setItem('focaccia_respects_count', String(d.respectsCount)); } catch {}
+        }
+      })
+      .catch(() => {});
+  };
+
   const fixBuilding = (id: string) => {
     const b = BUILDINGS.find((x) => x.id === id);
     if (!b) return;
@@ -7333,6 +7439,22 @@ export default function App() {
           </div>
         </div>
       </div>
+    );
+  }
+
+  /* ---- Project RIP Mode (Закриття проєкту / Похорон) ---- */
+  if ((isProjectRip && !isDevUser(tgUser?.id)) || ripPreviewMode) {
+    return (
+      <ProjectRipScreen
+        lang={lang}
+        isDev={isDevUser(tgUser?.id)}
+        respectsCount={respectsCount}
+        onPayRespect={handlePayRespect}
+        onOpenAdmin={() => {
+          setRipPreviewMode(false);
+          setShowAdminModal(true);
+        }}
+      />
     );
   }
 
@@ -9690,6 +9812,98 @@ export default function App() {
 
             {/* Content Body */}
             <div className="p-4 space-y-4 overflow-y-auto flex-1 z-10">
+              {/* Section 00: Project RIP Mode (Закриття проєкту / Похорон) */}
+              <div className="glass-card rounded-2xl p-3.5 border-2 border-rose-500/60 bg-gradient-to-r from-stone-950 via-zinc-950 to-rose-950/40 space-y-3 shadow-xl shadow-rose-950/40">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-xl">🪦</span>
+                    <div>
+                      <div className="text-xs font-black text-white flex items-center gap-1.5">
+                        <span>{lang === 'uk' ? 'Закриття проєкту (Режим RIP)' : 'Закрытие проекта (Режим RIP)'}</span>
+                        <span className={cn(
+                          'text-[9px] px-1.5 py-0.5 rounded-md font-bold uppercase',
+                          isProjectRip ? 'bg-rose-500/30 text-rose-300 border border-rose-500/50 animate-pulse' : 'bg-zinc-800 text-zinc-400 border border-white/10'
+                        )}>
+                          {isProjectRip ? (lang === 'uk' ? '🪦 ПРОЄКТ ПОХОВАНО' : '🪦 ПРОЕКТ ПОХОРОНЕН') : (lang === 'uk' ? '🟢 ПРОЄКТ ЖИВИЙ' : '🟢 ПРОЕКТ ЖИВ')}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-400">
+                        {lang === 'uk'
+                          ? 'Могила, свічки, падаючі в\'ялі троянди та кнопка Press F'
+                          : 'Могила, свечи, падающие вялые розы и кнопка Press F'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-black/60 rounded-xl p-2.5 border border-white/5 text-[10px] text-zinc-300 leading-relaxed space-y-1">
+                  {isProjectRip ? (
+                    <div>
+                      <p className="text-rose-300 font-bold">
+                        ☠️ {lang === 'uk' ? 'ПРОЄКТ ПОМЕР. Усі гравці бачать жалобний екран:' : 'ПРОЕКТ УМЕР. Все игроки видят траурный экран:'}
+                      </p>
+                      <p className="text-zinc-400 text-[9px] mt-0.5">
+                        {lang === 'uk'
+                          ? 'Посередині стоїть могила, падають в’ялі троянди 🥀, горять свічки 🕯️, грає дзвін і працює кнопка Press F to pay respects.'
+                          : 'Посередине стоит могила, падают вялые розы 🥀, горят свечи 🕯️, звонит колокол и работает кнопка Press F to pay respects.'}
+                      </p>
+                      <div className="mt-1 flex items-center gap-2 text-amber-300 font-mono text-[9px]">
+                        <span>🕯️ {lang === 'uk' ? 'Віддано шану:' : 'Почтили память:'}</span>
+                        <strong className="text-rose-300 font-bold">{respectsCount.toLocaleString()}</strong>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-emerald-300 font-bold">
+                        🟢 {lang === 'uk' ? 'Проєкт працює у звичайному режимі.' : 'Проект работает в обычном режиме.'}
+                      </p>
+                      <p className="text-zinc-400 text-[9px] mt-0.5">
+                        {lang === 'uk'
+                          ? 'Увімкнення кнопки покаже всім гравцям екран закриття на невизначений термін.'
+                          : 'Включение кнопки покажет всем игрокам экран закрытия на неопределённый период.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={isTogglingRip}
+                    onClick={handleToggleProjectRip}
+                    className={cn(
+                      'flex-1 py-2.5 px-4 rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-98 cursor-pointer',
+                      isProjectRip
+                        ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:brightness-110 text-white shadow-emerald-600/30'
+                        : 'bg-gradient-to-r from-stone-900 via-rose-950 to-red-950 border border-rose-500/60 hover:brightness-125 text-rose-200 shadow-rose-950/50'
+                    )}
+                  >
+                    <span>{isTogglingRip ? '⏳' : isProjectRip ? '✨' : '💀'}</span>
+                    <span>
+                      {isTogglingRip
+                        ? (lang === 'uk' ? 'Оновлення статусу...' : 'Обновление статуса...')
+                        : isProjectRip
+                          ? (lang === 'uk' ? 'Воскресити проєкт ✨' : 'Воскресить проект ✨')
+                          : (lang === 'uk' ? 'Закрити проєкт (Поховати) 🪦' : 'Закрыть проект (Похоронить) 🪦')}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdminModal(false);
+                      setRipPreviewMode(true);
+                      haptic.selection();
+                    }}
+                    className="py-2.5 px-3 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-white/10 text-zinc-300 font-bold text-xs flex items-center gap-1 active:scale-95 cursor-pointer shadow"
+                    title={lang === 'uk' ? 'Попередній перегляд екрану' : 'Предпросмотр экрана'}
+                  >
+                    <span>👁️</span>
+                    <span>{lang === 'uk' ? 'Тест' : 'Тест'}</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Section 0: Maintenance Mode (Технічна перерва) */}
               <div className="glass-card rounded-2xl p-3.5 border border-red-500/40 bg-gradient-to-r from-red-950/40 via-black/50 to-amber-950/30 space-y-3">
                 <div className="flex items-center justify-between">
@@ -12719,6 +12933,34 @@ export default function App() {
           >
             {lang === 'uk' ? 'Адмінка' : 'Админка'}
           </button>
+        </div>
+      )}
+
+      {/* Dev Project RIP Notice Banner */}
+      {isProjectRip && isDevUser(tgUser?.id) && (
+        <div className="relative z-20 shrink-0 bg-gradient-to-r from-stone-950 via-zinc-900 to-rose-950 border-b border-rose-500/50 px-3 py-1.5 flex items-center justify-between gap-2 text-xs select-none shadow-md">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="animate-pulse text-base">🪦</span>
+            <span className="font-black text-rose-200 truncate">
+              {lang === 'uk' ? 'РЕЖИМ СМЕРТІ АКТИВНО: гравці бачать могилу та свічки' : 'РЕЖИМ СМЕРТИ АКТИВЕН: игроки видят могилу и свечи'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => { setRipPreviewMode(true); haptic.selection(); }}
+              className="px-2 py-0.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-[10px] cursor-pointer"
+            >
+              {lang === 'uk' ? '👁️ Екран' : '👁️ Экран'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setShowAdminModal(true); haptic.selection(); }}
+              className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-black text-[10px] uppercase cursor-pointer shadow"
+            >
+              {lang === 'uk' ? 'Адмінка' : 'Админка'}
+            </button>
+          </div>
         </div>
       )}
 

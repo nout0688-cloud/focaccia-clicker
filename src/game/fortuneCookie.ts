@@ -310,7 +310,7 @@ export function generateCookieReward(currentCps: number, clickPower: number): Co
     titleRu: 'Щедрый Кулинарный Куш!',
     icon: '🫓',
     focaccia: amount,
-    descriptionUk: `Величезна гора свіжої випічки!`,
-    descriptionRu: `Огромная гора свежей выпечки!`,
+    descriptionUk: `+${amount.toLocaleString()} свіжих фокач!`,
+    descriptionRu: `+${amount.toLocaleString()} свежих фокачч!`,
   };
 }

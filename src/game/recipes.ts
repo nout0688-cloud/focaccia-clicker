@@ -180,7 +180,7 @@ export function canUnlockRecipe(
   diamonds: number = 0,
   prestige: number = 0,
   unlockedIds: string[] = []
-): { canUnlock: boolean; reason?: string } {
+): { canUnlock: boolean; reason?: 'already_unlocked' | 'prestige_low' | 'diamonds_low' | 'ingredients_low'; missingIngredientId?: string } {
   if (unlockedIds.includes(recipe.id)) {
     return { canUnlock: false, reason: 'already_unlocked' };
   }
@@ -195,7 +195,7 @@ export function canUnlockRecipe(
 
   for (const [ingId, count] of Object.entries(recipe.cost.ingredients)) {
     if ((ingredients[ingId] || 0) < count) {
-      return { canUnlock: false, reason: 'ingredients_low' };
+      return { canUnlock: false, reason: 'ingredients_low', missingIngredientId: ingId };
     }
   }
 

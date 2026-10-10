@@ -46,7 +46,9 @@ export type SfxType =
   | 'expedition_claim'
   | 'cookie_crack'
   | 'cookie_reward'
-  | 'recipe_unlock';
+  | 'recipe_unlock'
+  | 'funeral_bell'
+  | 'rose_drop';
 
 export function playSfx(type: SfxType): void {
   const ctx = getContext();
@@ -312,6 +314,64 @@ export function playSfx(type: SfxType): void {
           osc.start(t);
           osc.stop(t + 0.46);
         });
+        break;
+      }
+
+      case 'funeral_bell': {
+        // Deep, resonant, somber church funeral bell toll
+        // Fundamental A2 (110Hz) + minor third (130.8Hz) + inharmonic partials
+        const partials = [
+          { f: 110.0, gain: 0.35, dur: 3.5 },
+          { f: 130.81, gain: 0.25, dur: 3.0 },
+          { f: 220.0, gain: 0.2, dur: 2.4 },
+          { f: 277.18, gain: 0.15, dur: 2.0 },
+          { f: 440.0, gain: 0.1, dur: 1.5 },
+          { f: 554.37, gain: 0.06, dur: 1.0 },
+        ];
+
+        partials.forEach((p) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(p.f, now);
+
+          gain.gain.setValueAtTime(p.gain, now);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + p.dur);
+
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + p.dur);
+        });
+
+        // Add soft low-frequency metallic strike transient
+        const strike = ctx.createOscillator();
+        const strikeGain = ctx.createGain();
+        strike.type = 'triangle';
+        strike.frequency.setValueAtTime(75, now);
+        strike.frequency.exponentialRampToValueAtTime(40, now + 0.18);
+        strikeGain.gain.setValueAtTime(0.4, now);
+        strikeGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+        strike.connect(strikeGain);
+        strikeGain.connect(ctx.destination);
+        strike.start(now);
+        strike.stop(now + 0.2);
+        break;
+      }
+
+      case 'rose_drop': {
+        // Gentle rustle and tender soft tone when placing a rose
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(329.63, now); // E4
+        osc.frequency.exponentialRampToValueAtTime(261.63, now + 0.35); // C4
+        gain.gain.setValueAtTime(0.18, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.4);
         break;
       }
     }

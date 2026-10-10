@@ -81,7 +81,9 @@ export const RecipesSection: React.FC<RecipesSectionProps> = ({
             <span>
               {lang === 'uk' ? 'Офлайн час:' : 'Офлайн время:'}{' '}
               <strong className="text-cyan-300 font-mono">
-                {bonuses.offlineHoursAdd > 0 ? `+${bonuses.offlineHoursAdd} год` : '0 год'}
+                {bonuses.offlineHoursAdd > 0
+                  ? (lang === 'uk' ? `+${bonuses.offlineHoursAdd} год` : `+${bonuses.offlineHoursAdd} ч`)
+                  : (lang === 'uk' ? '0 год' : '0 ч')}
               </strong>
             </span>
           </div>
